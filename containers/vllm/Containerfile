@@ -11,5 +11,7 @@
 # Build: podman build -t localhost/llmstack-vllm:latest containers/vllm/
 FROM localhost/vllm-rdna4:rocm7.1.1-navi-fixed
 
-# Uncomment to pin additional Python packages needed by your models:
-# RUN python3 -m pip install --no-cache-dir <pkg>
+# Upgrade transformers from source: required for qwen3_5_moe architecture
+# (Qwen3.6-35B-A3B) which was not in the 4.57.x release branch.
+RUN pip install --no-cache-dir \
+    git+https://github.com/huggingface/transformers.git
