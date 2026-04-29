@@ -4,10 +4,11 @@ llmstack concurrent benchmark
 Measures: prefill throughput, decode throughput, TTFT, latency under concurrency.
 
 Usage:
-  python3 bench/concurrent_bench.py                         # defaults
+  python3 bench/concurrent_bench.py                              # defaults
   python3 bench/concurrent_bench.py --model qwen3-coder-30b-fp8
-  python3 bench/concurrent_bench.py --concurrency 16 --requests 64
-  python3 bench/concurrent_bench.py --quick                 # fast smoke bench
+  python3 bench/concurrent_bench.py --sweep 2,4,8,12,16 --requests-per-level 16
+  python3 bench/concurrent_bench.py --quick                      # fast smoke bench
+  python3 bench/concurrent_bench.py --no-thinking                # disable Qwen3 thinking mode
   llmctl bench qwen3-coder-30b-fp8
 
 Output: human-readable table + optional CSV (--csv results.csv)
@@ -57,7 +58,25 @@ PROMPT_SUITE = [
         "Be precise — this will be handed to an implementation team.",
         512,
     ),
+    (
+        "xlarge-2048",
+        "You are a principal engineer writing an architectural design document for a new "
+        "distributed key-value store. Write a comprehensive design covering: (1) data model "
+        "and storage layout, (2) consistent hashing and partition strategy across nodes, "
+        "(3) replication factor and quorum reads/writes, (4) failure detection and leader "
+        "election using Raft or Paxos, (5) client-side routing and retry logic, (6) "
+        "compaction and garbage collection strategy, (7) monitoring and observability hooks, "
+        "(8) security model including encryption at rest and in transit, (9) operational "
+        "runbooks for common failure modes such as node loss, network partition, and "
+        "clock skew. Be detailed and precise — this document will be reviewed by a team "
+        "of senior engineers before implementation begins. Include trade-off analysis for "
+        "key design decisions and explain why you chose consistency over availability or "
+        "vice versa for each subsystem.",
+        2048,
+    ),
 ]
+
+PROMPT_CHOICES = [p[0] for p in PROMPT_SUITE] + ["all"]
 
 
 # ── Core request function ─────────────────────────────────────────────────────
@@ -236,6 +255,26 @@ def report_suite(label, results, errors, wall_s, concurrency):
     }
 
 
+# ── Summary table ─────────────────────────────────────────────────────────────
+
+def print_summary(rows, model):
+    if len(rows) < 2:
+        return
+    print(f"\n{'═'*72}")
+    print(f"  SUMMARY  (model: {model})")
+    print(f"{'═'*72}")
+    print(f"  {'Label':<38}  {'req/s':>6}  {'prefill t/s':>11}  {'decode t/s':>10}  {'p90 lat':>8}")
+    print(f"  {'─'*38}  {'─'*6}  {'─'*11}  {'─'*10}  {'─'*8}")
+    for row in rows:
+        print(
+            f"  {row['label']:<38}  "
+            f"{row['req_per_s']:>6.2f}  "
+            f"{row['prefill_tps']:>11.1f}  "
+            f"{row['decode_tps']:>10.1f}  "
+            f"{row['latency_p90']:>8.2f}s"
+        )
+
+
 # ── Main ───────────────────────────────────────────────────────────────────────
 
 def main():
@@ -244,38 +283,61 @@ def main():
     ap.add_argument("--url",         default=DEFAULT_URL)
     ap.add_argument("--model",       default=DEFAULT_MODEL)
     ap.add_argument("--concurrency", type=int, default=8,
-                    help="parallel requests (default: 8)")
+                    help="parallel requests for single-level run (default: 8)")
+    ap.add_argument("--sweep",       default=None,
+                    help="comma-separated concurrency levels, e.g. 2,4,8,12,16")
     ap.add_argument("--requests",    type=int, default=32,
-                    help="total requests per prompt (default: 32)")
-    ap.add_argument("--prompt",      choices=["short-64","medium-256","long-512","all"],
+                    help="total requests per concurrency level (default: 32)")
+    ap.add_argument("--requests-per-level", type=int, default=None,
+                    help="override --requests when using --sweep")
+    ap.add_argument("--prompt",      choices=PROMPT_CHOICES,
                     default="all",
-                    help="which prompt to use (default: all)")
+                    help="which prompt(s) to use (default: all)")
     ap.add_argument("--quick",       action="store_true",
-                    help="fast run: 1 prompt (medium), concurrency=4, 16 requests")
+                    help="fast run: medium-256 only, concurrency=4, 16 requests")
     ap.add_argument("--no-thinking", action="store_true",
                     help="pass chat_template_kwargs enable_thinking=false (Qwen3 GGUF thinking models)")
-    ap.add_argument("--serial-n",    type=int, default=5,
-                    help="serial baseline requests per prompt (default: 5)")
+    ap.add_argument("--serial-n",    type=int, default=3,
+                    help="serial baseline requests per prompt (default: 3)")
     ap.add_argument("--csv",         default=None,
                     help="write summary rows to CSV file")
     args = ap.parse_args()
 
     if args.quick:
         args.prompt = "medium-256"
+        args.sweep = None
         args.concurrency = 4
         args.requests = 16
-        args.serial_n = 3
+        args.serial_n = 2
 
-    print("═" * 65)
+    # Build the concurrency levels list
+    if args.sweep:
+        try:
+            concurrency_levels = [int(x.strip()) for x in args.sweep.split(",")]
+        except ValueError:
+            print("ERROR: --sweep must be comma-separated integers, e.g. 2,4,8,12,16")
+            sys.exit(1)
+        requests_per_level = args.requests_per_level or args.requests
+    else:
+        concurrency_levels = [args.concurrency]
+        requests_per_level = args.requests
+
+    no_thinking = getattr(args, "no_thinking", False)
+
+    print("═" * 72)
     print(f"  llmstack concurrent benchmark")
     print(f"  model      : {args.model}")
     print(f"  url        : {args.url}")
-    print(f"  concurrency: {args.concurrency}")
-    print(f"  requests   : {args.requests} per prompt")
+    if args.sweep:
+        print(f"  sweep      : concurrency {concurrency_levels}")
+        print(f"  requests   : {requests_per_level} per level")
+    else:
+        print(f"  concurrency: {concurrency_levels[0]}")
+        print(f"  requests   : {requests_per_level} per prompt")
+    print(f"  no-thinking: {no_thinking}")
     print(f"  date       : {time.strftime('%Y-%m-%d %H:%M:%S')}")
-    print("═" * 65)
+    print("═" * 72)
 
-    no_thinking = getattr(args, "no_thinking", False)
     warmup(args.url, args.model, no_thinking=no_thinking)
 
     suite = [p for p in PROMPT_SUITE
@@ -284,12 +346,12 @@ def main():
     all_rows = []
 
     for prompt_label, prompt, max_tokens in suite:
-        print(f"\n{'─'*65}")
+        print(f"\n{'─'*72}")
         print(f"  Prompt: {prompt_label}  (max_tokens={max_tokens})")
-        print(f"{'─'*65}")
+        print(f"{'─'*72}")
 
-        # Serial baseline (single stream)
-        print(f"\n  [1/2] Serial baseline ({args.serial_n} requests):")
+        # Serial baseline (always single-stream, run once per prompt)
+        print(f"\n  [serial] baseline ({args.serial_n} requests):")
         serial_results = run_serial(
             args.url, args.model, prompt_label, prompt, max_tokens, args.serial_n,
             no_thinking=no_thinking
@@ -302,42 +364,27 @@ def main():
         if serial_row:
             all_rows.append(serial_row)
 
-        # Concurrent sweep
-        print(f"\n  [2/2] Concurrent  (concurrency={args.concurrency}, "
-              f"total={args.requests} requests):")
-        conc_results, errors, wall = run_concurrent(
-            args.url, args.model, prompt, max_tokens,
-            args.concurrency, args.requests,
-            no_thinking=no_thinking
-        )
-        conc_row = report_suite(
-            f"{prompt_label} conc={args.concurrency}",
-            conc_results, errors, wall, concurrency=args.concurrency
-        )
-        if conc_row:
-            # Speedup vs serial (decode tok/s comparison)
-            if serial_row and serial_row.get("decode_tps", 0) > 0:
-                speedup = conc_row["decode_tps"] / serial_row["decode_tps"]
-                print(f"\n  Concurrency speedup (decode tok/s): {speedup:.1f}×")
-            all_rows.append(conc_row)
-
-    # Summary table
-    if len(all_rows) > 1:
-        print(f"\n{'═'*65}")
-        print(f"  SUMMARY  (model: {args.model})")
-        print(f"{'═'*65}")
-        print(f"  {'Label':<35}  {'req/s':>6}  {'prefill t/s':>11}  {'decode t/s':>10}  {'p90 lat':>8}")
-        print(f"  {'─'*35}  {'─'*6}  {'─'*11}  {'─'*10}  {'─'*8}")
-        for row in all_rows:
-            print(
-                f"  {row['label']:<35}  "
-                f"{row['req_per_s']:>6.2f}  "
-                f"{row['prefill_tps']:>11.1f}  "
-                f"{row['decode_tps']:>10.1f}  "
-                f"{row['latency_p90']:>8.2f}s"
+        # Concurrency sweep
+        for i, conc in enumerate(concurrency_levels):
+            step = f"{i+1}/{len(concurrency_levels)}"
+            print(f"\n  [{step}] concurrency={conc}  ({requests_per_level} requests):")
+            conc_results, errors, wall = run_concurrent(
+                args.url, args.model, prompt, max_tokens,
+                conc, requests_per_level,
+                no_thinking=no_thinking
             )
+            conc_row = report_suite(
+                f"{prompt_label} conc={conc}",
+                conc_results, errors, wall, concurrency=conc
+            )
+            if conc_row:
+                if serial_row and serial_row.get("decode_tps", 0) > 0:
+                    speedup = conc_row["decode_tps"] / serial_row["decode_tps"]
+                    print(f"  Speedup vs serial (decode tok/s): {speedup:.1f}×")
+                all_rows.append(conc_row)
 
-    # CSV export
+    print_summary(all_rows, args.model)
+
     if args.csv and all_rows:
         with open(args.csv, "w", newline="") as f:
             w = csv.DictWriter(f, fieldnames=all_rows[0].keys())
