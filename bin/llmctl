@@ -1,0 +1,349 @@
+#!/usr/bin/env python3
+"""llmctl — LLMStack lifecycle and model manager
+
+Usage:
+  llmctl up              start llama-swap (downloads binary if needed)
+  llmctl down            stop llama-swap
+  llmctl status          show running state and loaded models
+  llmctl list            list all profiles in config/models.yaml
+  llmctl swap <profile>  preload / swap to a model profile
+  llmctl pick            interactive fzf/menu model picker
+  llmctl logs [profile]  tail logs (llama-swap log, or a model container)
+  llmctl bench [profile] run concurrent benchmark against a profile
+
+Install symlink (run once from the llmstack directory):
+  ln -sf "$(pwd)/bin/llmctl" ~/.local/bin/llmctl
+"""
+
+import json
+import os
+import re
+import signal
+import subprocess
+import sys
+import tarfile
+import tempfile
+import time
+import urllib.error
+import urllib.request
+from pathlib import Path
+
+# ── Paths ──────────────────────────────────────────────────────────────────────
+# Works correctly whether called directly or via ~/.local/bin symlink
+STACK_DIR = Path(__file__).resolve().parent.parent
+CONFIG_FILE = STACK_DIR / "config" / "models.yaml"
+BENCH_SCRIPT = STACK_DIR / "bench" / "concurrent_bench.py"
+
+LLAMA_SWAP_PORT = 8080
+LLAMA_SWAP_URL = f"http://127.0.0.1:{LLAMA_SWAP_PORT}"
+
+STATE_DIR = Path.home() / ".local" / "share" / "llmstack"
+PID_FILE = STATE_DIR / "llama-swap.pid"
+LOG_FILE = STATE_DIR / "llama-swap.log"
+
+LLAMA_SWAP_VERSION = "208"
+LLAMA_SWAP_BIN = Path.home() / ".local" / "bin" / "llama-swap"
+LLAMA_SWAP_DOWNLOAD = (
+    f"https://github.com/mostlygeek/llama-swap/releases/download/"
+    f"v{LLAMA_SWAP_VERSION}/"
+    f"llama-swap_{LLAMA_SWAP_VERSION}_linux_amd64.tar.gz"
+)
+
+
+# ── Helpers ────────────────────────────────────────────────────────────────────
+
+def _http(method, path, body=None, timeout=10):
+    url = f"{LLAMA_SWAP_URL}{path}"
+    data = json.dumps(body).encode() if body is not None else None
+    headers = {"Content-Type": "application/json"} if data else {}
+    req = urllib.request.Request(url, data=data, headers=headers, method=method)
+    try:
+        with urllib.request.urlopen(req, timeout=timeout) as r:
+            return json.loads(r.read())
+    except Exception:
+        return None
+
+
+def _is_running():
+    if not PID_FILE.exists():
+        return False
+    try:
+        pid = int(PID_FILE.read_text().strip())
+        os.kill(pid, 0)
+        return True
+    except (ValueError, ProcessLookupError, PermissionError):
+        return False
+
+
+def _list_profiles():
+    text = CONFIG_FILE.read_text()
+    profiles = []
+    in_models = False
+    for line in text.splitlines():
+        stripped = line.strip()
+        if stripped == "models:":
+            in_models = True
+            continue
+        if in_models:
+            # Top-level model keys are indented exactly 2 spaces
+            m = re.match(r"^  ([a-zA-Z0-9._-]+):\s*$", line)
+            if m:
+                profiles.append(m.group(1))
+    return profiles
+
+
+def _active_models():
+    data = _http("GET", "/v1/models")
+    if not data:
+        return set()
+    return {m["id"] for m in data.get("data", [])}
+
+
+def _ensure_binary():
+    if LLAMA_SWAP_BIN.exists():
+        return True
+    print(f"llama-swap v{LLAMA_SWAP_VERSION} not found — downloading...")
+    LLAMA_SWAP_BIN.parent.mkdir(parents=True, exist_ok=True)
+    with tempfile.TemporaryDirectory() as td:
+        tgz = Path(td) / "ls.tar.gz"
+        try:
+            urllib.request.urlretrieve(LLAMA_SWAP_DOWNLOAD, tgz)
+        except Exception as e:
+            print(f"Download failed: {e}")
+            return False
+        with tarfile.open(tgz, "r:gz") as tf:
+            for member in tf.getmembers():
+                if os.path.basename(member.name) == "llama-swap" and member.isfile():
+                    src = tf.extractfile(member)
+                    if src:
+                        LLAMA_SWAP_BIN.write_bytes(src.read())
+                        LLAMA_SWAP_BIN.chmod(0o755)
+                        print(f"Installed to {LLAMA_SWAP_BIN}")
+                        return True
+    print("ERROR: llama-swap binary not found in release archive")
+    return False
+
+
+# ── Commands ───────────────────────────────────────────────────────────────────
+
+def cmd_up(_args):
+    if _is_running():
+        pid = PID_FILE.read_text().strip()
+        print(f"llama-swap already running (pid {pid})")
+        return
+    if not _ensure_binary():
+        sys.exit(1)
+    STATE_DIR.mkdir(parents=True, exist_ok=True)
+    with open(LOG_FILE, "a") as log:
+        proc = subprocess.Popen(
+            [
+                str(LLAMA_SWAP_BIN),
+                "--config", str(CONFIG_FILE),
+                "--listen", f"0.0.0.0:{LLAMA_SWAP_PORT}",
+            ],
+            stdout=log,
+            stderr=log,
+            start_new_session=True,
+        )
+    PID_FILE.write_text(str(proc.pid))
+    print(f"llama-swap starting (pid {proc.pid}) on :{LLAMA_SWAP_PORT} ...")
+    for _ in range(20):
+        time.sleep(0.5)
+        if _http("GET", "/v1/models"):
+            print(f"Ready.  Point clients at: {LLAMA_SWAP_URL}/v1")
+            print(f"Log:  {LOG_FILE}")
+            return
+    print("Started but not yet responding. Check: llmctl status")
+    print(f"Log:  {LOG_FILE}")
+
+
+def cmd_down(_args):
+    if not _is_running():
+        print("llama-swap is not running")
+        return
+    pid = int(PID_FILE.read_text().strip())
+    try:
+        os.kill(pid, signal.SIGTERM)
+        print(f"Sent SIGTERM to llama-swap (pid {pid})")
+    except ProcessLookupError:
+        pass
+    # Wait for the process to exit and free the port before returning
+    for _ in range(40):
+        time.sleep(0.5)
+        try:
+            os.kill(pid, 0)
+        except ProcessLookupError:
+            break
+    PID_FILE.unlink(missing_ok=True)
+    # Extra pause to ensure the OS releases the socket
+    time.sleep(1)
+
+
+def cmd_status(_args):
+    running = _is_running()
+    pid_str = PID_FILE.read_text().strip() if PID_FILE.exists() else "—"
+    state = "RUNNING" if running else "STOPPED"
+    print(f"llama-swap: {state}  pid={pid_str}  port={LLAMA_SWAP_PORT}")
+    if not running:
+        return
+    active = _active_models()
+    if active:
+        print(f"Loaded models ({len(active)}):")
+        for m in sorted(active):
+            print(f"  • {m}")
+    else:
+        print("No models currently loaded")
+    # Quick GPU snapshot
+    try:
+        r = subprocess.run(
+            ["rocm-smi", "--showmeminfo", "vram"],
+            capture_output=True, text=True, timeout=5
+        )
+        lines = [l for l in r.stdout.splitlines() if "GPU" in l or "VRAM" in l]
+        if lines:
+            print("\nGPU VRAM:")
+            for l in lines[:12]:
+                print(f"  {l.strip()}")
+    except Exception:
+        pass
+
+
+def cmd_list(_args):
+    profiles = _list_profiles()
+    if not profiles:
+        print("No profiles found in config/models.yaml")
+        return
+    active = _active_models()
+    print(f"Profiles ({len(profiles)})  [* = loaded]:")
+    for p in profiles:
+        mark = " *" if p in active else ""
+        print(f"  {p}{mark}")
+
+
+def cmd_swap(args):
+    if not args:
+        print("Usage: llmctl swap <profile>")
+        sys.exit(1)
+    profile = args[0]
+    if not _is_running():
+        print("llama-swap is not running — run: llmctl up")
+        sys.exit(1)
+    print(f"Warming up '{profile}' (may take 60–180 s on cold start) ...")
+    result = _http(
+        "POST",
+        "/v1/chat/completions",
+        {"model": profile, "messages": [{"role": "user", "content": "hi"}], "max_tokens": 1},
+        timeout=660,
+    )
+    if result and result.get("choices"):
+        print(f"'{profile}' is loaded and ready")
+    elif result:
+        print(f"'{profile}' responded (result may be partial)")
+    else:
+        print(f"WARNING: no response from '{profile}' — check: llmctl logs {profile}")
+
+
+def cmd_pick(_args):
+    profiles = _list_profiles()
+    if not profiles:
+        print("No profiles in config/models.yaml")
+        return
+    # Try fzf first
+    try:
+        r = subprocess.run(
+            ["fzf", "--prompt", "Load model › ", "--height", "40%", "--reverse"],
+            input="\n".join(profiles),
+            capture_output=True,
+            text=True,
+        )
+        if r.returncode == 0 and r.stdout.strip():
+            cmd_swap([r.stdout.strip()])
+            return
+        if r.returncode != 0:
+            raise FileNotFoundError
+    except FileNotFoundError:
+        pass
+    # Numbered fallback
+    print("Available profiles:")
+    for i, p in enumerate(profiles, 1):
+        print(f"  {i:2d}) {p}")
+    try:
+        choice = input("Select [number]: ").strip()
+        idx = int(choice) - 1
+        if 0 <= idx < len(profiles):
+            cmd_swap([profiles[idx]])
+        else:
+            print("Invalid choice")
+    except (ValueError, EOFError):
+        print("Aborted")
+
+
+def cmd_logs(args):
+    target = args[0] if args else None
+    if target:
+        # Search for a running container matching the profile
+        for prefix in ("llmstack-vllm-", "llmstack-llama-"):
+            name = f"{prefix}{target}"
+            r = subprocess.run(
+                ["podman", "inspect", "--type", "container", name],
+                capture_output=True,
+            )
+            if r.returncode == 0:
+                print(f"Tailing container logs: {name}")
+                subprocess.run(["podman", "logs", "-f", name])
+                return
+        # Also try the fixed-name containers from models.yaml
+        for fixed in (f"llmstack-llama-qwen35-122b-q4", f"llmstack-llama-qwen35-122b-q6"):
+            if target in fixed:
+                subprocess.run(["podman", "logs", "-f", fixed])
+                return
+        print(f"No running container found for profile: {target}")
+        print("Tip: 'llmctl logs' (no args) shows the llama-swap process log")
+    else:
+        if LOG_FILE.exists():
+            subprocess.run(["tail", "-f", str(LOG_FILE)])
+        else:
+            print(f"No log at {LOG_FILE} — run: llmctl up")
+
+
+def cmd_bench(args):
+    if not BENCH_SCRIPT.exists():
+        print("bench/concurrent_bench.py is a Phase 2 deliverable.")
+        print(f"For now use: {STACK_DIR / 'bench'}")
+        print("Or point ~/ai/vllm_bench.py at http://127.0.0.1:8080/v1")
+        return
+    profile = args[0] if args else None
+    cmd_args = [sys.executable, str(BENCH_SCRIPT)]
+    if profile:
+        cmd_args += ["--model", profile, "--url", f"{LLAMA_SWAP_URL}/v1/chat/completions"]
+    subprocess.run(cmd_args)
+
+
+# ── Dispatch ───────────────────────────────────────────────────────────────────
+
+COMMANDS = {
+    "up": cmd_up,
+    "down": cmd_down,
+    "status": cmd_status,
+    "list": cmd_list,
+    "swap": cmd_swap,
+    "pick": cmd_pick,
+    "logs": cmd_logs,
+    "bench": cmd_bench,
+}
+
+
+def main():
+    if len(sys.argv) < 2 or sys.argv[1] in ("-h", "--help", "help"):
+        print(__doc__)
+        sys.exit(0)
+    subcmd = sys.argv[1]
+    if subcmd not in COMMANDS:
+        print(f"Unknown command: {subcmd}")
+        print("Commands: " + "  ".join(sorted(COMMANDS)))
+        sys.exit(1)
+    COMMANDS[subcmd](sys.argv[2:])
+
+
+if __name__ == "__main__":
+    main()

@@ -1,0 +1,42 @@
+# llama-server Vulkan backend — fresh build with qwen35moe support
+#
+# Two-stage build:
+#   Stage 1: compile llama.cpp (latest) against Vulkan
+#   Stage 2: use localhost/llama-vulkan-bleeding as runtime base
+#            (already has Mesa RADV + gfx1201 support, confirmed working)
+#
+# The runtime base is reused so Mesa driver upgrade stays separate from
+# llama.cpp version bumps. Rebuild this image to pick up new architectures.
+#
+# Build: podman build -t localhost/llmstack-llama:latest containers/llama-server/
+# Expected build time: ~15–25 min on Threadripper 9970X (32-core parallel)
+
+# ── Stage 1: Build llama-server ─────────────────────────────────────────────
+FROM ubuntu:24.04 AS builder
+
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    git cmake build-essential pkg-config \
+    libvulkan-dev glslang-tools libshaderc-dev \
+    && rm -rf /var/lib/apt/lists/*
+
+# Clone latest llama.cpp (shallow to save bandwidth)
+RUN git clone --depth 1 https://github.com/ggerganov/llama.cpp /llama.cpp
+
+WORKDIR /llama.cpp
+
+RUN cmake -B build \
+    -DGGML_VULKAN=ON \
+    -DCMAKE_BUILD_TYPE=Release \
+    -DBUILD_SHARED_LIBS=OFF \
+    -DLLAMA_BUILD_TESTS=OFF \
+    -DLLAMA_BUILD_EXAMPLES=OFF
+
+RUN cmake --build build --parallel "$(nproc)" --target llama-server
+
+# ── Stage 2: Runtime image with working RADV for gfx1201 ────────────────────
+FROM localhost/llama-vulkan-bleeding:latest
+
+COPY --from=builder /llama.cpp/build/bin/llama-server /usr/local/bin/llama-server
+
+WORKDIR /
+ENTRYPOINT ["/usr/local/bin/llama-server"]

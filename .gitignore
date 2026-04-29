@@ -1,0 +1,25 @@
+# Secrets and runtime state — never commit
+config/mcp.json
+.env
+*.pid
+*.log
+logs/
+
+# Downloaded binaries
+bin/llama-swap
+bin/llama-swap-ui
+
+# Python cache
+__pycache__/
+*.pyc
+*.pyo
+
+# Model files (live at /mnt/models/llm, not here)
+*.gguf
+*.safetensors
+*.bin
+
+# Editor / OS noise
+.DS_Store
+*.swp
+*~

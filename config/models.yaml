@@ -1,0 +1,181 @@
+# llmstack model registry
+# llama-swap docs: https://github.com/mostlygeek/llama-swap
+#
+# How routing works:
+#   Client sends:  POST /v1/chat/completions  {"model": "qwen3-coder-30b-fp8", ...}
+#   llama-swap:    looks up the profile, starts the backend if needed, proxies
+#
+# To add a model:
+#   1. Add a new entry under `models:`
+#   2. Set cmd to the podman run invocation (newlines = whitespace, ${PORT} is auto-assigned)
+#   3. Set cmdStop to `podman stop llmstack-<backend>-${MODEL_ID}`
+#   4. Run: llmctl list  (to verify it appears)
+#      Then: llmctl swap <profile>  (to load and warm it up)
+#
+# Backend naming convention:
+#   llmstack-vllm-<profile>   ← vLLM containers  (safetensors / FP8 / AWQ)
+#   llmstack-llama-<profile>  ← llama-server containers  (GGUF)
+
+healthCheckTimeout: 600   # seconds to wait for a model to become healthy on cold start (73 GB GGUF needs ~90-180 s)
+startPort: 9100           # llama-swap assigns backends ports starting here
+globalTTL: 0              # 0 = never auto-unload (set per-model below)
+
+models:
+
+  # ─── vLLM: Qwen3-Coder-30B-A3B-Instruct FP8 ────────────────────────────
+  # Best for: code generation, agent tool calls, Claude Code / OpenCode serving
+  # Backend: vLLM with TP=4 across all 4 R9700s
+  # VRAM:    ~30 GB spread across 4 GPUs (~7.5 GB each)
+  # Model:   /mnt/models/llm/Qwen3-Coder-30B-A3B-Instruct-FP8/  (safetensors, local)
+  qwen3-coder-30b-fp8:
+    name: "Qwen3-Coder-30B-A3B-Instruct-FP8"
+    ttl: 600
+    checkEndpoint: /health
+    aliases:
+      - qwen3-coder
+      - coder
+    cmd: |
+      podman run --replace --rm
+        --name llmstack-vllm-${MODEL_ID}
+        --device=/dev/kfd
+        --device=/dev/dri
+        --group-add keep-groups
+        --security-opt seccomp=unconfined
+        --security-opt apparmor=unconfined
+        --ipc=private
+        --shm-size=32g
+        --network=host
+        -v /mnt/models/llm:/models:ro
+        -e HSA_ENABLE_SDMA=0
+        -e VLLM_ROCM_USE_AITER=0
+        localhost/vllm-rdna4:rocm7.1.1-navi-fixed
+        serve /models/Qwen3-Coder-30B-A3B-Instruct-FP8
+        --host 127.0.0.1
+        --port ${PORT}
+        --served-model-name qwen3-coder-30b-fp8
+        --dtype auto
+        --tensor-parallel-size 4
+        --enable-expert-parallel
+        --max-num-seqs 32
+        --max-num-batched-tokens 16384
+        --gpu-memory-utilization 0.90
+        --trust-remote-code
+    cmdStop: podman stop llmstack-vllm-${MODEL_ID}
+
+  # ─── llama-server: Qwen3.5-122B-A10B GGUF Q4_K_M ───────────────────────
+  # Best for: highest quality reasoning, one-off heavyweight queries
+  # Backend: llama-server (Vulkan) with tensor-split across 4 R9700s
+  # VRAM:    ~73 GB across 4 GPUs (~18 GB each)
+  # Note:    Cold start ~90s; lower concurrency than vLLM backends
+  # Model:   /mnt/models/llm/lmstudio-community/Qwen3.5-122B-A10B-GGUF/  (split GGUF)
+  qwen3.5-122b-a10b-q4:
+    name: "Qwen3.5-122B-A10B (Q4_K_M)"
+    ttl: 600
+    checkEndpoint: /health
+    aliases:
+      - qwen3.5-122b
+      - qwen3.5-122b-a10b
+      - 122b
+    cmd: |
+      podman run --replace --rm
+        --name llmstack-llama-qwen35-122b-q4
+        --device=/dev/dri
+        --group-add keep-groups
+        --network=host
+        -v /mnt/models/llm:/models:ro
+        localhost/llama-vulkan-bleeding:latest
+        -m /models/lmstudio-community/Qwen3.5-122B-A10B-GGUF/Qwen3.5-122B-A10B-Q4_K_M-00001-of-00002.gguf
+        -ngl 999
+        --tensor-split 1,1,1,1
+        --host 127.0.0.1
+        --port ${PORT}
+        --ctx-size 32768
+        --batch-size 512
+        --ubatch-size 512
+        --jinja
+    cmdStop: podman stop llmstack-llama-qwen35-122b-q4
+
+  # ─── llama-server: Qwen3.5-122B-A10B GGUF Q6_K ─────────────────────────
+  # Higher quality variant (~98 GB) — tighter VRAM budget, limit context
+  qwen3.5-122b-a10b-q6:
+    name: "Qwen3.5-122B-A10B (Q6_K)"
+    ttl: 600
+    checkEndpoint: /health
+    unlisted: false
+    aliases:
+      - qwen3.5-122b-q6
+      - 122b-q6
+    cmd: |
+      podman run --replace --rm
+        --name llmstack-llama-qwen35-122b-q6
+        --device=/dev/dri
+        --group-add keep-groups
+        --network=host
+        -v /mnt/models/llm:/models:ro
+        localhost/llama-vulkan-bleeding:latest
+        -m /models/lmstudio-community/Qwen3.5-122B-A10B-GGUF/Qwen3.5-122B-A10B-Q6_K-00001-of-00003.gguf
+        -ngl 999
+        --tensor-split 1,1,1,1
+        --host 127.0.0.1
+        --port ${PORT}
+        --ctx-size 16384
+        --batch-size 512
+        --ubatch-size 512
+        --jinja
+    cmdStop: podman stop llmstack-llama-qwen35-122b-q6
+
+# ── Template for adding new models ──────────────────────────────────────────
+#
+# # vLLM (safetensors / FP8 / AWQ):
+# my-new-model:
+#   name: "Human Readable Name"
+#   ttl: 600
+#   checkEndpoint: /health
+#   aliases:
+#     - shortname
+#   cmd: |
+#     podman run --replace --rm
+#       --name llmstack-vllm-${MODEL_ID}
+#       --device=/dev/kfd
+#       --device=/dev/dri
+#       --group-add keep-groups
+#       --security-opt seccomp=unconfined
+#       --security-opt apparmor=unconfined
+#       --ipc=private
+#       --shm-size=32g
+#       --network=host
+#       -v /mnt/models/llm:/models:ro
+#       -e HSA_ENABLE_SDMA=0
+#       -e VLLM_ROCM_USE_AITER=0
+#       localhost/vllm-rdna4:rocm7.1.1-navi-fixed
+#       serve /models/<local-model-dir>
+#       --host 127.0.0.1
+#       --port ${PORT}
+#       --served-model-name my-new-model
+#       --dtype auto
+#       --tensor-parallel-size 4
+#       --gpu-memory-utilization 0.90
+#       --trust-remote-code
+#   cmdStop: podman stop llmstack-vllm-${MODEL_ID}
+#
+# # llama-server (GGUF):
+# my-gguf-model:
+#   name: "Human Readable Name"
+#   ttl: 600
+#   checkEndpoint: /health
+#   cmd: |
+#     podman run --replace --rm
+#       --name llmstack-llama-${MODEL_ID}
+#       --device=/dev/dri
+#       --group-add keep-groups
+#       --network=host
+#       -v /mnt/models/llm:/models:ro
+#       localhost/llama-vulkan-bleeding:latest
+#       -m /models/<path-to-model>.gguf
+#       -ngl 999
+#       --tensor-split 1,1,1,1
+#       --host 127.0.0.1
+#       --port ${PORT}
+#       --ctx-size 32768
+#       --jinja
+#   cmdStop: podman stop llmstack-llama-${MODEL_ID}

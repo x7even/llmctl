@@ -1,0 +1,15 @@
+# vLLM backend for AMD RDNA4 (gfx1201)
+#
+# Base image already contains:
+#   - ROCm 7.1.1 with navi/RDNA4 patches
+#   - vLLM 0.10.2rc1 + PyTorch 2.8
+#   - /usr/local/bin/rdna4_vllm_entrypoint.sh  (exec vllm "$@")
+#
+# This layer is intentionally thin — keep it so upgrades flow from
+# rebuilding the base image only.
+#
+# Build: podman build -t localhost/llmstack-vllm:latest containers/vllm/
+FROM localhost/vllm-rdna4:rocm7.1.1-navi-fixed
+
+# Uncomment to pin additional Python packages needed by your models:
+# RUN python3 -m pip install --no-cache-dir <pkg>
