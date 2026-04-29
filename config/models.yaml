@@ -31,6 +31,7 @@ models:
     name: "Qwen3-Coder-30B-A3B-Instruct-FP8"
     ttl: 600
     checkEndpoint: /health
+    concurrencyLimit: 32
     aliases:
       - qwen3-coder
       - coder
@@ -56,9 +57,9 @@ models:
         --dtype auto
         --tensor-parallel-size 4
         --enable-expert-parallel
-        --max-num-seqs 32
+        --max-num-seqs 64
         --max-num-batched-tokens 16384
-        --gpu-memory-utilization 0.90
+        --gpu-memory-utilization 0.95
         --trust-remote-code
     cmdStop: podman stop llmstack-vllm-${MODEL_ID}
 
@@ -72,6 +73,7 @@ models:
     name: "Qwen3.5-122B-A10B (Q4_K_M)"
     ttl: 600
     checkEndpoint: /health
+    concurrencyLimit: 8
     aliases:
       - qwen3.5-122b
       - qwen3.5-122b-a10b
@@ -101,6 +103,7 @@ models:
     name: "Qwen3.5-122B-A10B (Q6_K)"
     ttl: 600
     checkEndpoint: /health
+    concurrencyLimit: 6
     unlisted: false
     aliases:
       - qwen3.5-122b-q6
