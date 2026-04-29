@@ -83,7 +83,7 @@ models:
         --group-add keep-groups
         --network=host
         -v /mnt/models/llm:/models:ro
-        localhost/llama-vulkan-bleeding:latest
+        localhost/llmstack-llama:latest
         -m /models/lmstudio-community/Qwen3.5-122B-A10B-GGUF/Qwen3.5-122B-A10B-Q4_K_M-00001-of-00002.gguf
         -ngl 999
         --tensor-split 1,1,1,1
@@ -112,7 +112,7 @@ models:
         --group-add keep-groups
         --network=host
         -v /mnt/models/llm:/models:ro
-        localhost/llama-vulkan-bleeding:latest
+        localhost/llmstack-llama:latest
         -m /models/lmstudio-community/Qwen3.5-122B-A10B-GGUF/Qwen3.5-122B-A10B-Q6_K-00001-of-00003.gguf
         -ngl 999
         --tensor-split 1,1,1,1

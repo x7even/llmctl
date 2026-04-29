@@ -15,8 +15,8 @@
 FROM ubuntu:24.04 AS builder
 
 RUN apt-get update && apt-get install -y --no-install-recommends \
-    git cmake build-essential pkg-config \
-    libvulkan-dev glslang-tools libshaderc-dev \
+    ca-certificates git cmake build-essential pkg-config \
+    libvulkan-dev glslang-tools libshaderc-dev glslc \
     && rm -rf /var/lib/apt/lists/*
 
 # Clone latest llama.cpp (shallow to save bandwidth)
