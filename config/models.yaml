@@ -113,6 +113,8 @@ models:
         --enable-chunked-prefill
         --trust-remote-code
         --reasoning-parser qwen3
+        --enable-auto-tool-choice
+        --tool-call-parser qwen3_xml
         --speculative-config '{"method": "mtp", "num_speculative_tokens": 2}'
     cmdStop: podman stop llmstack-vllm-${MODEL_ID}
 
@@ -162,6 +164,8 @@ models:
         --enable-chunked-prefill
         --trust-remote-code
         --reasoning-parser qwen3
+        --enable-auto-tool-choice
+        --tool-call-parser qwen3_xml
         --chat-template /templates/qwen3.6-no-think.jinja
     cmdStop: podman stop llmstack-vllm-${MODEL_ID}
 
