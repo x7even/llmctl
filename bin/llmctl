@@ -2,14 +2,17 @@
 """llmctl — LLMStack lifecycle and model manager
 
 Usage:
-  llmctl up              start llama-swap (downloads binary if needed)
-  llmctl down            stop llama-swap
-  llmctl status          show running state and loaded models
-  llmctl list            list all profiles in config/models.yaml
-  llmctl swap <profile>  preload / swap to a model profile
-  llmctl pick            interactive fzf/menu model picker
-  llmctl logs [profile]  tail logs (llama-swap log, or a model container)
-  llmctl bench [profile] run concurrent benchmark against a profile
+  llmctl up                start llama-swap (downloads binary if needed)
+  llmctl down              stop llama-swap
+  llmctl status            show running state and loaded models
+  llmctl list              list all profiles in config/models.yaml
+  llmctl swap <profile>    preload / swap to a model profile
+  llmctl pick              interactive fzf/menu model picker
+  llmctl logs [profile]    tail logs (llama-swap log, or a model container)
+  llmctl bench [profile]   run concurrent benchmark against a profile
+  llmctl proxy-up          start llmproxy shim on :8081 (OpenCode workaround)
+  llmctl proxy-down        stop llmproxy shim
+  llmctl proxy-status      show llmproxy state
 
 Install symlink (run once from the llmstack directory):
   ln -sf "$(pwd)/bin/llmctl" ~/.local/bin/llmctl
@@ -40,6 +43,10 @@ LLAMA_SWAP_URL = f"http://127.0.0.1:{LLAMA_SWAP_PORT}"
 STATE_DIR = Path.home() / ".local" / "share" / "llmstack"
 PID_FILE = STATE_DIR / "llama-swap.pid"
 LOG_FILE = STATE_DIR / "llama-swap.log"
+PROXY_PID_FILE = STATE_DIR / "llmproxy.pid"
+PROXY_LOG_FILE = STATE_DIR / "llmproxy.log"
+PROXY_PORT = 9000
+PROXY_BIN = STACK_DIR / "bin" / "llmproxy"
 
 LLAMA_SWAP_VERSION = "208"
 LLAMA_SWAP_BIN = Path.home() / ".local" / "bin" / "llama-swap"
@@ -319,6 +326,66 @@ def cmd_bench(args):
     subprocess.run(cmd_args)
 
 
+# ── Proxy (llmproxy shim) ─────────────────────────────────────────────────────
+
+def _proxy_is_running():
+    if not PROXY_PID_FILE.exists():
+        return False
+    try:
+        pid = int(PROXY_PID_FILE.read_text().strip())
+        os.kill(pid, 0)
+        return True
+    except (ValueError, ProcessLookupError, PermissionError):
+        return False
+
+
+def cmd_proxy_up(_args):
+    if _proxy_is_running():
+        print(f"llmproxy already running (pid {PROXY_PID_FILE.read_text().strip()})")
+        return
+    if not PROXY_BIN.exists():
+        print(f"ERROR: {PROXY_BIN} not found")
+        sys.exit(1)
+    STATE_DIR.mkdir(parents=True, exist_ok=True)
+    with open(PROXY_LOG_FILE, "a") as log:
+        proc = subprocess.Popen(
+            [sys.executable, str(PROXY_BIN), str(PROXY_PORT)],
+            stdout=log, stderr=log, start_new_session=True,
+        )
+    PROXY_PID_FILE.write_text(str(proc.pid))
+    time.sleep(0.5)
+    if _proxy_is_running():
+        print(f"llmproxy started (pid {proc.pid}) on :{PROXY_PORT} → :8080")
+        print(f"Point OpenCode at: http://127.0.0.1:{PROXY_PORT}/v1")
+    else:
+        print("llmproxy failed to start — check:", PROXY_LOG_FILE)
+
+
+def cmd_proxy_down(_args):
+    if not _proxy_is_running():
+        print("llmproxy is not running")
+        return
+    pid = int(PROXY_PID_FILE.read_text().strip())
+    try:
+        os.kill(pid, signal.SIGTERM)
+        print(f"Sent SIGTERM to llmproxy (pid {pid})")
+    except ProcessLookupError:
+        pass
+    for _ in range(20):
+        time.sleep(0.25)
+        try:
+            os.kill(pid, 0)
+        except ProcessLookupError:
+            break
+    PROXY_PID_FILE.unlink(missing_ok=True)
+
+
+def cmd_proxy_status(_args):
+    state = "RUNNING" if _proxy_is_running() else "STOPPED"
+    pid_str = PROXY_PID_FILE.read_text().strip() if PROXY_PID_FILE.exists() else "—"
+    print(f"llmproxy: {state}  pid={pid_str}  port={PROXY_PORT} → :8080")
+
+
 # ── Dispatch ───────────────────────────────────────────────────────────────────
 
 COMMANDS = {
@@ -330,6 +397,9 @@ COMMANDS = {
     "pick": cmd_pick,
     "logs": cmd_logs,
     "bench": cmd_bench,
+    "proxy-up": cmd_proxy_up,
+    "proxy-down": cmd_proxy_down,
+    "proxy-status": cmd_proxy_status,
 }
 
 

@@ -1,0 +1,96 @@
+#!/usr/bin/env python3
+# Install: ln -sf "$(pwd)/bin/llmproxy" ~/.local/bin/llmproxy
+#
+# Workaround proxy: strips explicit "name":null from vLLM streaming tool_call chunks.
+#
+# Root cause: vLLM sends {"function": {"name": null, "arguments": "..."}} in follow-on
+# SSE chunks instead of omitting the name field entirely (as the OpenAI spec requires).
+# OpenCode's @ai-sdk/openai-compatible validates every chunk and raises:
+#   "Expected 'function.name' to be a string"
+#
+# This proxy sits between OpenCode (:8081) and llama-swap (:8080), intercepts SSE
+# streams, and deletes the null name field from tool_call deltas before forwarding.
+#
+# Remove this proxy once vLLM fixes the serialisation upstream.
+# Track: https://github.com/vllm-project/vllm/issues — search "tool_call name null streaming"
+
+import http.server
+import json
+import sys
+import urllib.error
+import urllib.request
+
+UPSTREAM = "http://127.0.0.1:8080"
+DEFAULT_PORT = 9000
+
+
+def _fix_sse_line(line: str) -> str:
+    if not line.startswith("data: "):
+        return line
+    payload = line[6:]
+    if payload.strip() == "[DONE]":
+        return line
+    try:
+        data = json.loads(payload)
+    except json.JSONDecodeError:
+        return line
+    patched = False
+    for choice in data.get("choices", []):
+        for tc in choice.get("delta", {}).get("tool_calls", []):
+            fn = tc.get("function")
+            if isinstance(fn, dict) and "name" in fn and fn["name"] is None:
+                del fn["name"]
+                patched = True
+    return ("data: " + json.dumps(data, separators=(",", ":"))) if patched else line
+
+
+class _Handler(http.server.BaseHTTPRequestHandler):
+    def log_message(self, fmt, *args):
+        pass
+
+    def _proxy(self):
+        length = int(self.headers.get("Content-Length", 0))
+        body = self.rfile.read(length) if length else None
+        headers = {k: v for k, v in self.headers.items()
+                   if k.lower() not in ("host", "content-length", "transfer-encoding")}
+        if body:
+            headers["Content-Length"] = str(len(body))
+        req = urllib.request.Request(
+            UPSTREAM + self.path, data=body, headers=headers, method=self.command
+        )
+        try:
+            resp = urllib.request.urlopen(req, timeout=660)
+        except urllib.error.HTTPError as e:
+            resp = e
+        self.send_response(resp.status)
+        streaming = False
+        for k, v in resp.headers.items():
+            if k.lower() == "transfer-encoding":
+                continue
+            self.send_header(k, v)
+            if k.lower() == "content-type" and "event-stream" in v:
+                streaming = True
+        self.end_headers()
+        if streaming:
+            for raw in resp:
+                line = raw.decode("utf-8").rstrip("\r\n")
+                self.wfile.write((_fix_sse_line(line) + "\n").encode())
+                self.wfile.flush()
+        else:
+            self.wfile.write(resp.read())
+
+    do_GET = do_POST = do_PUT = do_DELETE = _proxy
+
+
+def main():
+    port = int(sys.argv[1]) if len(sys.argv) > 1 else DEFAULT_PORT
+    server = http.server.ThreadingHTTPServer(("127.0.0.1", port), _Handler)
+    print(f"llmproxy :{port} → {UPSTREAM}  (Ctrl-C to stop)", flush=True)
+    try:
+        server.serve_forever()
+    except KeyboardInterrupt:
+        pass
+
+
+if __name__ == "__main__":
+    main()
