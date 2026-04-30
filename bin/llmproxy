@@ -1,15 +1,13 @@
 #!/usr/bin/env python3
 # Install: ln -sf "$(pwd)/bin/llmproxy" ~/.local/bin/llmproxy
 #
-# Workaround proxy: strips explicit "name":null from vLLM streaming tool_call chunks.
+# Workaround proxy: fixes vLLM streaming tool_call chunks for @ai-sdk/openai-compatible.
 #
 # Root cause: vLLM sends {"function": {"name": null, "arguments": "..."}} in follow-on
-# SSE chunks instead of omitting the name field entirely (as the OpenAI spec requires).
-# OpenCode's @ai-sdk/openai-compatible validates every chunk and raises:
-#   "Expected 'function.name' to be a string"
-#
-# This proxy sits between OpenCode (:8081) and llama-swap (:8080), intercepts SSE
-# streams, and deletes the null name field from tool_call deltas before forwarding.
+# SSE chunks instead of omitting the field per OpenAI spec. @ai-sdk/openai-compatible
+# validates every chunk with typeof name !== 'string', which fails on both null AND
+# undefined — so simply deleting the field is insufficient. We restore the name from
+# the first chunk (where it is correctly set) into all follow-on chunks.
 #
 # Remove this proxy once vLLM fixes the serialisation upstream.
 # Track: https://github.com/vllm-project/vllm/issues — search "tool_call name null streaming"
@@ -24,7 +22,8 @@ UPSTREAM = "http://127.0.0.1:8080"
 DEFAULT_PORT = 9000
 
 
-def _fix_sse_line(line: str) -> str:
+def _fix_sse_line(line: str, tool_names: dict) -> str:
+    """Patch null tool_call names using names seen in earlier chunks of this stream."""
     if not line.startswith("data: "):
         return line
     payload = line[6:]
@@ -38,8 +37,17 @@ def _fix_sse_line(line: str) -> str:
     for choice in data.get("choices", []):
         for tc in choice.get("delta", {}).get("tool_calls", []):
             fn = tc.get("function")
-            if isinstance(fn, dict) and "name" in fn and fn["name"] is None:
-                del fn["name"]
+            if not isinstance(fn, dict):
+                continue
+            idx = tc.get("index", 0)
+            name = fn.get("name")
+            if name is not None:
+                tool_names[idx] = name       # remember name from first chunk
+            elif "name" in fn:               # name key present but null
+                if idx in tool_names:
+                    fn["name"] = tool_names[idx]   # restore from first chunk
+                else:
+                    del fn["name"]           # no prior name seen, just omit
                 patched = True
     return ("data: " + json.dumps(data, separators=(",", ":"))) if patched else line
 
@@ -72,9 +80,9 @@ class _Handler(http.server.BaseHTTPRequestHandler):
                 streaming = True
         self.end_headers()
         if streaming:
-            # Read in small byte chunks and split on \n manually.
-            # urllib's line iterator can batch multiple SSE lines into one read,
-            # causing a patched line to be flushed after an unpatched one slips through.
+            # Per-request state: map of tool_call index → function name seen so far.
+            # Needed because @ai-sdk validates typeof name === 'string' on every chunk.
+            tool_names: dict = {}
             buf = b""
             while True:
                 chunk = resp.read(256)
@@ -84,11 +92,11 @@ class _Handler(http.server.BaseHTTPRequestHandler):
                 while b"\n" in buf:
                     raw_line, buf = buf.split(b"\n", 1)
                     line = raw_line.decode("utf-8", errors="replace").rstrip("\r")
-                    self.wfile.write((_fix_sse_line(line) + "\n").encode())
+                    self.wfile.write((_fix_sse_line(line, tool_names) + "\n").encode())
                     self.wfile.flush()
-            if buf:  # flush any trailing partial line
+            if buf:
                 line = buf.decode("utf-8", errors="replace").rstrip("\r")
-                self.wfile.write((_fix_sse_line(line) + "\n").encode())
+                self.wfile.write((_fix_sse_line(line, tool_names) + "\n").encode())
                 self.wfile.flush()
         else:
             self.wfile.write(resp.read())
