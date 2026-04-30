@@ -72,8 +72,22 @@ class _Handler(http.server.BaseHTTPRequestHandler):
                 streaming = True
         self.end_headers()
         if streaming:
-            for raw in resp:
-                line = raw.decode("utf-8").rstrip("\r\n")
+            # Read in small byte chunks and split on \n manually.
+            # urllib's line iterator can batch multiple SSE lines into one read,
+            # causing a patched line to be flushed after an unpatched one slips through.
+            buf = b""
+            while True:
+                chunk = resp.read(256)
+                if not chunk:
+                    break
+                buf += chunk
+                while b"\n" in buf:
+                    raw_line, buf = buf.split(b"\n", 1)
+                    line = raw_line.decode("utf-8", errors="replace").rstrip("\r")
+                    self.wfile.write((_fix_sse_line(line) + "\n").encode())
+                    self.wfile.flush()
+            if buf:  # flush any trailing partial line
+                line = buf.decode("utf-8", errors="replace").rstrip("\r")
                 self.wfile.write((_fix_sse_line(line) + "\n").encode())
                 self.wfile.flush()
         else:
