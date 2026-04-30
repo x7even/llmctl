@@ -49,7 +49,7 @@ models:
         -v /mnt/models/llm:/models:ro
         -e HSA_ENABLE_SDMA=0
         -e VLLM_ROCM_USE_AITER=0
-        localhost/vllm-rdna4:rocm7.1.1-navi-fixed
+        localhost/llmstack-vllm:latest
         serve /models/Qwen3-Coder-30B-A3B-Instruct-FP8
         --host 127.0.0.1
         --port ${PORT}
@@ -65,19 +65,25 @@ models:
         --trust-remote-code
     cmdStop: podman stop llmstack-vllm-${MODEL_ID}
 
-  # ─── vLLM: Qwen3.6-35B-A3B FP8 ────────────────────────────────────────
-  # Best for: coding, agents — smaller/faster than 30B-Coder, higher quality MoE
-  # Backend: vLLM TP=4, FP8 safetensors
-  # VRAM:    ~38 GB across 4 GPUs (~9.5 GB each)
-  # Model:   /mnt/models/llm/Qwen3.6-35B-A3B-FP8/  (downloading)
-  qwen3.6-35b-fp8:
-    name: "Qwen3.6-35B-A3B-FP8"
+  # ─── vLLM: Qwen3.6-35B-A3B FP8 — Code profile (quality-first + MTP) ────
+  # Best for: Claude Code, OpenCode, agentic coding — highest quality output
+  # Backend: vLLM 0.20.0 via docker.io/vllm/vllm-openai-rocm:latest (ROCm 7.2)
+  # VRAM:    ~35 GB across 4 GPUs + ~3 GB MTP draft head overhead (~9.5 GB each)
+  # MTP:     speculative decoding via bundled mtp.safetensors draft head
+  #          Mathematically lossless — main model verifies all tokens
+  #          Benchmarked: +25% serial (110→77 tok/s vs no-MTP), +52% at conc=8
+  # Context: 262144 tokens native (hybrid linear+full attention — 75% O(n) layers)
+  # Note:    thinking ON by default; --reasoning-parser strips <think> from content
+  #          Uses AMD official image — Qwen3_5MoeForConditionalGeneration needs 0.20.0+
+  qwen3.6-35b-code:
+    name: "Qwen3.6-35B-A3B-FP8 (code)"
     ttl: 600
     checkEndpoint: /health
     concurrencyLimit: 64
     aliases:
       - qwen3.6
       - qwen3.6-35b
+      - qwen3.6-35b-fp8
     cmd: |
       podman run --replace --rm
         --name llmstack-vllm-${MODEL_ID}
@@ -91,12 +97,61 @@ models:
         --network=host
         -v /mnt/models/llm:/models:ro
         -e HSA_ENABLE_SDMA=0
-        -e VLLM_ROCM_USE_AITER=0
-        localhost/vllm-rdna4:rocm7.1.1-navi-fixed
-        serve /models/Qwen3.6-35B-A3B-FP8
+        --entrypoint=""
+        docker.io/vllm/vllm-openai-rocm:latest
+        vllm serve /models/Qwen3.6-35B-A3B-FP8
         --host 127.0.0.1
         --port ${PORT}
-        --served-model-name qwen3.6-35b-fp8
+        --served-model-name qwen3.6-35b-code
+        --dtype auto
+        --tensor-parallel-size 4
+        --enable-expert-parallel
+        --max-num-seqs 64
+        --max-num-batched-tokens 32768
+        --gpu-memory-utilization 0.92
+        --enable-prefix-caching
+        --enable-chunked-prefill
+        --trust-remote-code
+        --reasoning-parser qwen3
+        --speculative-config '{"method": "mtp", "num_speculative_tokens": 2}'
+    cmdStop: podman stop llmstack-vllm-${MODEL_ID}
+
+  # ─── vLLM: Qwen3.6-35B-A3B FP8 — Fast profile (thinking OFF, max throughput) ─
+  # Best for: quick lookups, chat, tasks where latency matters more than depth
+  # Key difference: thinking disabled by default (no reasoning overhead)
+  #   Custom template config/templates/qwen3.6-no-think.jinja inverts the default
+  #   so thinking=off unless client explicitly passes enable_thinking=true
+  # VRAM:    ~35 GB across 4 GPUs (~8.75 GB each) — full 0.97 utilisation
+  # Benchmarked (thinking off): similar to baseline FP8 but faster TTFT; at conc=8
+  #   ~400 tok/s decode (medium-256) with no think block overhead
+  qwen3.6-35b-fast:
+    name: "Qwen3.6-35B-A3B-FP8 (fast)"
+    ttl: 600
+    checkEndpoint: /health
+    concurrencyLimit: 64
+    aliases:
+      - qwen3.6-fast
+      - qwen3.6-nothin
+    cmd: |
+      podman run --replace --rm
+        --name llmstack-vllm-${MODEL_ID}
+        --device=/dev/kfd
+        --device=/dev/dri
+        --group-add keep-groups
+        --security-opt seccomp=unconfined
+        --security-opt apparmor=unconfined
+        --ipc=private
+        --shm-size=32g
+        --network=host
+        -v /mnt/models/llm:/models:ro
+        -v /home/xin/ai/llmstack/config/templates:/templates:ro
+        -e HSA_ENABLE_SDMA=0
+        --entrypoint=""
+        docker.io/vllm/vllm-openai-rocm:latest
+        vllm serve /models/Qwen3.6-35B-A3B-FP8
+        --host 127.0.0.1
+        --port ${PORT}
+        --served-model-name qwen3.6-35b-fast
         --dtype auto
         --tensor-parallel-size 4
         --enable-expert-parallel
@@ -106,6 +161,61 @@ models:
         --enable-prefix-caching
         --enable-chunked-prefill
         --trust-remote-code
+        --reasoning-parser qwen3
+        --chat-template /templates/qwen3.6-no-think.jinja
+    cmdStop: podman stop llmstack-vllm-${MODEL_ID}
+
+  # ─── vLLM: Qwen3.6-35B-A3B FP8 — 512K context (YaRN RoPE extension) ────────
+  # Best for: large codebase ingestion, long document analysis, repo-wide context
+  # Context: 524288 tokens via YaRN RoPE scaling (factor=2.0 on native 262144 base)
+  #   Tested: correct needle retrieval at 420K tokens ✓
+  # VRAM:    ~35 GB model + KV cache for 512K fills VRAM quickly. With 4 GPUs @
+  #   0.92 util each, ~26 GB available for KV. At BF16 KV, ~5.3M tokens capacity
+  #   across the 10 full-attention layers — 512K should fit with room to spare.
+  # MTP:     included; speculative head is small relative to the KV overhead
+  # Warning: cold start slightly longer at 512K due to RoPE recalc on first load
+  #          Do not use for short queries — full 262K ctx profile is more efficient
+  qwen3.6-35b-512k:
+    name: "Qwen3.6-35B-A3B-FP8 (512K context)"
+    ttl: 600
+    checkEndpoint: /health
+    concurrencyLimit: 16
+    aliases:
+      - qwen3.6-512k
+      - qwen3.6-long
+    cmd: |
+      podman run --replace --rm
+        --name llmstack-vllm-${MODEL_ID}
+        --device=/dev/kfd
+        --device=/dev/dri
+        --group-add keep-groups
+        --security-opt seccomp=unconfined
+        --security-opt apparmor=unconfined
+        --ipc=private
+        --shm-size=32g
+        --network=host
+        -v /mnt/models/llm:/models:ro
+        -e HSA_ENABLE_SDMA=0
+        -e VLLM_ALLOW_LONG_MAX_MODEL_LEN=1
+        --entrypoint=""
+        docker.io/vllm/vllm-openai-rocm:latest
+        vllm serve /models/Qwen3.6-35B-A3B-FP8
+        --host 127.0.0.1
+        --port ${PORT}
+        --served-model-name qwen3.6-35b-512k
+        --dtype auto
+        --tensor-parallel-size 4
+        --enable-expert-parallel
+        --max-num-seqs 16
+        --max-num-batched-tokens 65536
+        --max-model-len 524288
+        --gpu-memory-utilization 0.92
+        --enable-prefix-caching
+        --enable-chunked-prefill
+        --trust-remote-code
+        --reasoning-parser qwen3
+        --hf-overrides '{"text_config": {"rope_scaling": {"type": "yarn", "factor": 2.0, "original_max_position_embeddings": 262144}}}'
+        --speculative-config '{"method": "mtp", "num_speculative_tokens": 2}'
     cmdStop: podman stop llmstack-vllm-${MODEL_ID}
 
   # ─── llama-server: Qwen3.6-35B-A3B GGUF UD-Q4_K_S (unsloth) ───────────
@@ -120,7 +230,6 @@ models:
     concurrencyLimit: 12
     aliases:
       - qwen3.6-gguf
-      - qwen3.6-fast
     cmd: |
       podman run --replace --rm
         --name llmstack-llama-${MODEL_ID}
