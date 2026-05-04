@@ -3,13 +3,15 @@
 #
 # Workaround proxy: fixes vLLM streaming tool_call chunks for @ai-sdk/openai-compatible.
 #
-# Root cause: vLLM sends {"function": {"name": null, "arguments": "..."}} in follow-on
-# SSE chunks instead of omitting the field per OpenAI spec. @ai-sdk/openai-compatible
-# validates every chunk with typeof name !== 'string', which fails on both null AND
-# undefined — so simply deleting the field is insufficient. We restore the name from
-# the first chunk (where it is correctly set) into all follow-on chunks.
+# Root cause: vLLM sends {"function": {"name": null}} in follow-on SSE chunks and
+# sometimes omits the name entirely for parallel tool calls (index > 0).
+# @ai-sdk validates typeof name === 'string' on every chunk — null and undefined
+# both fail.
 #
-# Remove this proxy once vLLM fixes the serialisation upstream.
+# Strategy: buffer chunks per unknown tool_call index until the real name arrives
+# (or a sibling index provides a fallback), then flush with name restored.
+#
+# Remove once vLLM fixes null-name serialisation upstream.
 # Track: https://github.com/vllm-project/vllm/issues — search "tool_call name null streaming"
 
 import http.server
@@ -17,22 +19,38 @@ import json
 import sys
 import urllib.error
 import urllib.request
+from pathlib import Path
 
 UPSTREAM = "http://127.0.0.1:8080"
 DEFAULT_PORT = 9000
+DEBUG_LOG = Path.home() / ".local/share/llmstack/llmproxy-debug.log"
+LOOKAHEAD = 32   # max chunks to buffer per unknown-named tool call
 
 
-def _fix_sse_line(line: str, tool_names: dict) -> str:
-    """Patch null tool_call names using names seen in earlier chunks of this stream."""
+def _dbg(msg: str) -> None:
+    with open(DEBUG_LOG, "a") as f:
+        f.write(msg + "\n")
+
+
+def _parse_tool_calls(line: str):
+    """Return (data_dict, tool_calls_list) or (None, []) if line isn't a tool_call chunk."""
     if not line.startswith("data: "):
-        return line
+        return None, []
     payload = line[6:]
     if payload.strip() == "[DONE]":
-        return line
+        return None, []
     try:
         data = json.loads(payload)
     except json.JSONDecodeError:
-        return line
+        return None, []
+    tcs = []
+    for choice in data.get("choices", []):
+        tcs.extend(choice.get("delta", {}).get("tool_calls", []))
+    return data, tcs
+
+
+def _apply_names(data: dict, tool_names: dict) -> tuple[str, bool]:
+    """Patch null names in data using tool_names. Returns (line, patched)."""
     patched = False
     for choice in data.get("choices", []):
         for tc in choice.get("delta", {}).get("tool_calls", []):
@@ -42,14 +60,90 @@ def _fix_sse_line(line: str, tool_names: dict) -> str:
             idx = tc.get("index", 0)
             name = fn.get("name")
             if name is not None:
-                tool_names[idx] = name       # remember name from first chunk
-            elif "name" in fn:               # name key present but null
+                tool_names[idx] = name
+                _dbg(f"NAME_SET idx={idx} name={name!r}")
+            elif "name" in fn:
                 if idx in tool_names:
-                    fn["name"] = tool_names[idx]   # restore from first chunk
+                    fn["name"] = tool_names[idx]
+                    _dbg(f"NAME_RESTORED idx={idx} name={tool_names[idx]!r}")
+                    patched = True
                 else:
-                    del fn["name"]           # no prior name seen, just omit
+                    # No name for this index yet — caller handles buffering
+                    _dbg(f"NAME_UNKNOWN idx={idx}")
+                    return None, False   # signal: needs buffering
+    return ("data: " + json.dumps(data, separators=(",", ":"))) if patched else ("data: " + json.dumps(data, separators=(",", ":"))), True
+
+
+def _process_line(line: str, tool_names: dict) -> str | None:
+    """Return patched line, or None if the line needs to be buffered."""
+    data, tcs = _parse_tool_calls(line)
+    if data is None:
+        return line   # not a tool_call chunk, pass through
+    if not tcs:
+        return line
+
+    needs_buffer = False
+    for tc in tcs:
+        fn = tc.get("function")
+        if isinstance(fn, dict) and "name" in fn and fn.get("name") is None:
+            idx = tc.get("index", 0)
+            if idx not in tool_names:
+                needs_buffer = True
+
+    if needs_buffer:
+        return None
+
+    patched = False
+    for tc in tcs:
+        fn = tc.get("function")
+        if not isinstance(fn, dict):
+            continue
+        idx = tc.get("index", 0)
+        name = fn.get("name")
+        if name is not None:
+            tool_names[idx] = name
+            _dbg(f"NAME_SET idx={idx} name={name!r}")
+        elif "name" in fn:
+            if idx in tool_names:
+                fn["name"] = tool_names[idx]
+                _dbg(f"NAME_RESTORED idx={idx} name={tool_names[idx]!r}")
                 patched = True
     return ("data: " + json.dumps(data, separators=(",", ":"))) if patched else line
+
+
+def _flush_buffered(pending: list, tool_names: dict) -> list:
+    """Apply now-known names to buffered lines. Returns lines ready to write."""
+    out = []
+    for line in pending:
+        data, tcs = _parse_tool_calls(line)
+        if data is None or not tcs:
+            out.append(line)
+            continue
+        patched = False
+        for tc in tcs:
+            fn = tc.get("function")
+            if not isinstance(fn, dict):
+                continue
+            idx = tc.get("index", 0)
+            if "name" in fn and fn.get("name") is None:
+                if idx in tool_names:
+                    fn["name"] = tool_names[idx]
+                    _dbg(f"NAME_FLUSHED idx={idx} name={tool_names[idx]!r}")
+                    patched = True
+                else:
+                    # Still unknown — use any known name as fallback
+                    fallback = next(iter(tool_names.values()), None)
+                    if fallback:
+                        fn["name"] = fallback
+                        tool_names[idx] = fallback
+                        _dbg(f"NAME_FALLBACK idx={idx} name={fallback!r}")
+                        patched = True
+                    else:
+                        del fn["name"]
+                        _dbg(f"NAME_FORCED_DELETE idx={idx}")
+                        patched = True
+        out.append(("data: " + json.dumps(data, separators=(",", ":"))) if patched else line)
+    return out
 
 
 class _Handler(http.server.BaseHTTPRequestHandler):
@@ -80,9 +174,8 @@ class _Handler(http.server.BaseHTTPRequestHandler):
                 streaming = True
         self.end_headers()
         if streaming:
-            # Per-request state: map of tool_call index → function name seen so far.
-            # Needed because @ai-sdk validates typeof name === 'string' on every chunk.
             tool_names: dict = {}
+            pending: list = []   # buffered lines awaiting a name for unknown indices
             buf = b""
             while True:
                 chunk = resp.read(256)
@@ -92,11 +185,44 @@ class _Handler(http.server.BaseHTTPRequestHandler):
                 while b"\n" in buf:
                     raw_line, buf = buf.split(b"\n", 1)
                     line = raw_line.decode("utf-8", errors="replace").rstrip("\r")
-                    self.wfile.write((_fix_sse_line(line, tool_names) + "\n").encode())
+
+                    # First scan for any name-sets in this line to unblock pending
+                    _, tcs = _parse_tool_calls(line)
+                    for tc in tcs:
+                        fn = tc.get("function")
+                        if isinstance(fn, dict):
+                            name = fn.get("name")
+                            if name is not None:
+                                tool_names[tc.get("index", 0)] = name
+
+                    # Flush any previously buffered lines that now have names
+                    if pending:
+                        for flushed in _flush_buffered(pending, tool_names):
+                            self.wfile.write((flushed + "\n").encode())
+                            self.wfile.flush()
+                        pending.clear()
+
+                    result = _process_line(line, tool_names)
+                    if result is None:
+                        # Name still unknown — buffer it, but cap buffer size
+                        pending.append(line)
+                        if len(pending) >= LOOKAHEAD:
+                            for flushed in _flush_buffered(pending, tool_names):
+                                self.wfile.write((flushed + "\n").encode())
+                                self.wfile.flush()
+                            pending.clear()
+                    else:
+                        self.wfile.write((result + "\n").encode())
+                        self.wfile.flush()
+
+            # Flush any remaining buffered lines at end of stream
+            if pending:
+                for flushed in _flush_buffered(pending, tool_names):
+                    self.wfile.write((flushed + "\n").encode())
                     self.wfile.flush()
             if buf:
                 line = buf.decode("utf-8", errors="replace").rstrip("\r")
-                self.wfile.write((_fix_sse_line(line, tool_names) + "\n").encode())
+                self.wfile.write((_process_line(line, tool_names) or line + "\n").encode())
                 self.wfile.flush()
         else:
             self.wfile.write(resp.read())
