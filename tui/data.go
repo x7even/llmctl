@@ -241,7 +241,19 @@ func fetchAll(baseURL string) AppData {
 	}
 }
 
-// ── Swap ──────────────────────────────────────────────────────────────────────
+// ── Swap / Unload ─────────────────────────────────────────────────────────────
+
+func unloadAll(baseURL string) error {
+	resp, err := httpClient.Get(baseURL + "/unload")
+	if err != nil {
+		return err
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode >= 400 {
+		return fmt.Errorf("HTTP %d", resp.StatusCode)
+	}
+	return nil
+}
 
 func swapModel(baseURL, profile string) error {
 	client := &http.Client{Timeout: 300 * time.Second}

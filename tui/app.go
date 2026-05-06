@@ -72,10 +72,11 @@ func thStyle(v, lo, hi float64) lipgloss.Style {
 
 // ── Messages ───────────────────────────────────────────────────────────────────
 
-type msgTick      struct{}
-type msgData      AppData
-type msgLog       []string
-type msgSwapDone  struct { profile string; err error }
+type msgTick        struct{}
+type msgData        AppData
+type msgLog         []string
+type msgSwapDone    struct{ profile string; err error }
+type msgUnloadDone  struct{ err error }
 
 // ── App ────────────────────────────────────────────────────────────────────────
 
@@ -191,6 +192,13 @@ func (a *app) cmdSwap(profile string) tea.Cmd {
 	}
 }
 
+func (a *app) cmdUnload() tea.Cmd {
+	url := a.baseURL
+	return func() tea.Msg {
+		return msgUnloadDone{err: unloadAll(url)}
+	}
+}
+
 func (a *app) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	switch msg := msg.(type) {
 
@@ -219,6 +227,16 @@ func (a *app) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			a.swapMsg = fmt.Sprintf("✗ %v", msg.err)
 		} else {
 			a.swapMsg = fmt.Sprintf("✓ loaded %s", msg.profile)
+		}
+		a.swapMsgAt = time.Now()
+		return a, a.cmdFetch()
+
+	case msgUnloadDone:
+		a.swapping = false
+		if msg.err != nil {
+			a.swapMsg = fmt.Sprintf("✗ unload: %v", msg.err)
+		} else {
+			a.swapMsg = "✓ unloaded"
 		}
 		a.swapMsgAt = time.Now()
 		return a, a.cmdFetch()
@@ -337,6 +355,14 @@ func (a *app) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 				a.swapMsg = ""
 				return a, tea.Batch(a.cmdSwap(target), a.spin.Tick)
 			}
+		}
+
+	case "u":
+		if !a.swapping && a.data.Active != nil {
+			a.swapping = true
+			a.swapFor = ""
+			a.swapMsg = ""
+			return a, tea.Batch(a.cmdUnload(), a.spin.Tick)
 		}
 	}
 
@@ -646,7 +672,11 @@ func (a *app) renderModels() string {
 
 	// Status line at top
 	if a.swapping {
-		sb.WriteString(a.spin.View() + fmt.Sprintf(" Loading %s…\n", a.swapFor))
+		action := fmt.Sprintf("Loading %s…", a.swapFor)
+		if a.swapFor == "" {
+			action = "Unloading…"
+		}
+		sb.WriteString(a.spin.View() + " " + action + "\n")
 	} else if a.swapMsg != "" && time.Since(a.swapMsgAt) < 5*time.Second {
 		if strings.HasPrefix(a.swapMsg, "✓") {
 			sb.WriteString(stGreen.Render(a.swapMsg) + "\n")
@@ -690,7 +720,7 @@ func (a *app) renderStatus() string {
 	d := pollIntervals[a.intervalIdx]
 	dStr := d.String()
 	hint := fmt.Sprintf(
-		" [tab] panel  [f] fullscreen  [↑↓/jk] nav  [s/↵] swap  [p] poll:%s  [r] reload  [q] quit ",
+		" [tab] panel  [f] fullscreen  [↑↓/jk] nav  [s/↵] swap  [u] unload  [p] poll:%s  [r] reload  [q] quit ",
 		dStr,
 	)
 	return lipgloss.NewStyle().

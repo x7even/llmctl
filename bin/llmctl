@@ -7,6 +7,7 @@ Usage:
   llmctl status            show running state and loaded models
   llmctl list              list all profiles in config/models.yaml
   llmctl swap <profile>    preload / swap to a model profile
+  llmctl unload            unload all running models (free VRAM without stopping llama-swap)
   llmctl pick              interactive fzf/menu model picker
   llmctl logs [profile]    tail logs (llama-swap log, or a model container)
   llmctl bench [profile]   run concurrent benchmark against a profile
@@ -227,6 +228,19 @@ def cmd_list(_args):
         print(f"  {p}{mark}")
 
 
+def cmd_unload(_args):
+    if not _is_running():
+        print("llama-swap is not running")
+        return
+    try:
+        req = urllib.request.Request(f"{LLAMA_SWAP_URL}/unload")
+        with urllib.request.urlopen(req, timeout=30) as r:
+            r.read()
+        print("All models unloaded")
+    except Exception as e:
+        print(f"Unload failed: {e}")
+
+
 def cmd_swap(args):
     if not args:
         print("Usage: llmctl swap <profile>")
@@ -394,6 +408,7 @@ COMMANDS = {
     "status": cmd_status,
     "list": cmd_list,
     "swap": cmd_swap,
+    "unload": cmd_unload,
     "pick": cmd_pick,
     "logs": cmd_logs,
     "bench": cmd_bench,
