@@ -172,10 +172,15 @@ func fetchROCM() ([]GPUInfo, bool) {
 	if err != nil {
 		return nil, false
 	}
+	return parseROCMText(string(out)), true
+}
+
+var rocmLineRe = regexp.MustCompile(`GPU\[(\d+)\]\s*:\s*(.+)`)
+
+func parseROCMText(text string) []GPUInfo {
 	gpuMap := map[int]*GPUInfo{}
-	lineRe := regexp.MustCompile(`GPU\[(\d+)\]\s*:\s*(.+)`)
-	for _, line := range strings.Split(string(out), "\n") {
-		m := lineRe.FindStringSubmatch(line)
+	for _, line := range strings.Split(text, "\n") {
+		m := rocmLineRe.FindStringSubmatch(line)
 		if m == nil {
 			continue
 		}
@@ -200,13 +205,12 @@ func fetchROCM() ([]GPUInfo, bool) {
 	for i := range gpuMap {
 		gpus = append(gpus, *gpuMap[i])
 	}
-	// sort by index
 	for i := 1; i < len(gpus); i++ {
 		for j := i; j > 0 && gpus[j].Index < gpus[j-1].Index; j-- {
 			gpus[j], gpus[j-1] = gpus[j-1], gpus[j]
 		}
 	}
-	return gpus, true
+	return gpus
 }
 
 // ── Composite fetch ───────────────────────────────────────────────────────────
