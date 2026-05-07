@@ -186,6 +186,25 @@ func TestFetchRunning_portFromProxy(t *testing.T) {
 	}
 }
 
+func TestFetchRunning_modelFieldFallback(t *testing.T) {
+	// newer llama-swap versions return "model" instead of "id"
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		fmt.Fprint(w, `{"running":[{"model":"qwen3.6-35b-code","proxy":"http://127.0.0.1:9104"}]}`)
+	}))
+	defer srv.Close()
+
+	active := fetchRunning(srv.URL)
+	if active == nil {
+		t.Fatal("want active, got nil")
+	}
+	if active.ID != "qwen3.6-35b-code" {
+		t.Errorf("ID from model field: want qwen3.6-35b-code, got %q", active.ID)
+	}
+	if active.Port != 9104 {
+		t.Errorf("Port: want 9104, got %d", active.Port)
+	}
+}
+
 func TestFetchRunning_unreachable(t *testing.T) {
 	// port 1 is never listening
 	if got := fetchRunning("http://127.0.0.1:1"); got != nil {

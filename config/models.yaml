@@ -24,9 +24,10 @@ models:
 
   # ─── vLLM: Qwen3-Coder-30B-A3B-Instruct FP8 ────────────────────────────
   # Best for: code generation, agent tool calls, Claude Code / OpenCode serving
-  # Backend: vLLM with TP=4 across all 4 R9700s
+  # Backend: vLLM 0.20.0 via docker.io/vllm/vllm-openai-rocm:latest (ROCm 7.2)
   # VRAM:    ~30 GB spread across 4 GPUs (~7.5 GB each)
   # Model:   /mnt/models/llm/Qwen3-Coder-30B-A3B-Instruct-FP8/  (safetensors, local)
+  # Note:    No bundled MTP head (no speculative decoding)
   qwen3-coder-30b-fp8:
     name: "Qwen3-Coder-30B-A3B-Instruct-FP8"
     ttl: 600
@@ -48,10 +49,10 @@ models:
         --network=host
         -v /mnt/models/llm:/models:ro
         -e HSA_ENABLE_SDMA=0
-        -e VLLM_ROCM_USE_AITER=0
         -e TORCH_BLAS_PREFER_HIPBLASLT=1
-        localhost/llmstack-vllm:latest
-        serve /models/Qwen3-Coder-30B-A3B-Instruct-FP8
+        --entrypoint=""
+        docker.io/vllm/vllm-openai-rocm:latest
+        vllm serve /models/Qwen3-Coder-30B-A3B-Instruct-FP8
         --host 127.0.0.1
         --port ${PORT}
         --served-model-name qwen3-coder-30b-fp8
@@ -60,7 +61,6 @@ models:
         --enable-expert-parallel
         --max-num-seqs 64
         --max-num-batched-tokens 32768
-        --kv-cache-dtype fp8
         --gpu-memory-utilization 0.97
         --enable-prefix-caching
         --enable-chunked-prefill

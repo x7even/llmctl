@@ -63,7 +63,8 @@ func getJSON(url string, v any) error {
 func fetchRunning(baseURL string) *ActiveModel {
 	var result struct {
 		Running []struct {
-			ID    string `json:"id"`
+			ID    string `json:"id"`    // older llama-swap versions
+			Model string `json:"model"` // newer llama-swap versions
 			Port  int    `json:"port"`
 			Proxy string `json:"proxy"`
 		} `json:"running"`
@@ -72,6 +73,10 @@ func fetchRunning(baseURL string) *ActiveModel {
 		return nil
 	}
 	r := result.Running[0]
+	id := r.ID
+	if id == "" {
+		id = r.Model
+	}
 	port := r.Port
 	if port == 0 && r.Proxy != "" {
 		parts := strings.Split(strings.TrimRight(r.Proxy, "/"), ":")
@@ -79,7 +84,7 @@ func fetchRunning(baseURL string) *ActiveModel {
 			port, _ = strconv.Atoi(parts[len(parts)-1])
 		}
 	}
-	return &ActiveModel{ID: r.ID, Port: port}
+	return &ActiveModel{ID: id, Port: port}
 }
 
 func fetchProfiles(baseURL string) []string {

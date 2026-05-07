@@ -1,0 +1,10 @@
+{
+  "model": "qwen3.6-35b-code",
+  "concurrency": 8,
+  "n_requests": 12,
+  "decode_tps": 540.3542018208085,
+  "latency_mean_s": 2.865893833086981,
+  "latency_p90_s": 2.9842765650100773,
+  "errors": 0,
+  "timestamp": "2026-05-07 10:48:15"
+}

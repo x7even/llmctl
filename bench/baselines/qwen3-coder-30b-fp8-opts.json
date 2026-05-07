@@ -1,0 +1,10 @@
+{
+  "model": "qwen3-coder-30b-fp8",
+  "concurrency": 8,
+  "n_requests": 12,
+  "decode_tps": 208.4798399336462,
+  "latency_mean_s": 7.4131684492519225,
+  "latency_p90_s": 7.519972098001745,
+  "errors": 0,
+  "timestamp": "2026-05-07 16:08:52"
+}

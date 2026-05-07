@@ -65,7 +65,8 @@ def get_active(base_url):
         port = m.get("port", 0)
         if not port and m.get("proxy"):
             port = int(m["proxy"].rstrip("/").split(":")[-1])
-        return m["id"], port
+        model_id = m.get("id") or m.get("model")  # field name varies by llama-swap version
+        return model_id, port
     except Exception:
         return None, None
 
