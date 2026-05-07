@@ -3,7 +3,7 @@
 OpenAI-compatible LLM serving stack for **concurrent agent use**.  
 Designed for: Claude Code · OpenCode · MCP testing · agent frameworks · raw API clients.
 
-Hardware: 4× AMD Radeon AI PRO R9700 (gfx1201, 32 GB each = 128 GB total VRAM)  
+Reference hardware: 4× AMD Radeon AI PRO R9700 (gfx1201, 32 GB each = 128 GB total VRAM) — see [Hardware compatibility](#hardware-compatibility) for other GPUs.  
 Backends: **vLLM** (FP8/safetensors, PagedAttention, high concurrency) + **llama-server Vulkan** (GGUF models)  
 Router: **llama-swap** — one OpenAI endpoint, models loaded on demand by the `model` field
 
@@ -12,9 +12,14 @@ Router: **llama-swap** — one OpenAI endpoint, models loaded on demand by the `
 ## Quick start
 
 ```bash
-# Install CLI tools (one-time, from llmstack directory)
-ln -sf "$(pwd)/bin/llmctl"   ~/.local/bin/llmctl
-ln -sf "$(pwd)/bin/llmpanel" ~/.local/bin/llmpanel
+# Install llmpanel (pre-built binary — no Go required)
+curl -fsSL https://raw.githubusercontent.com/x7even/llmctl/master/install-llmpanel.sh | bash
+
+# Install llmctl (clone this repo first)
+ln -sf "$(pwd)/bin/llmctl" ~/.local/bin/llmctl
+
+# Configure for your GPU count (auto-detects via rocm-smi)
+scripts/configure
 
 # Start the router
 llmctl up
@@ -188,6 +193,43 @@ Clients  ──►  llmproxy :9000  ──►  llama-swap :8080  ──►  vLLM
 | GPU not visible in container | Check user is in `video` and `render` groups: `groups` |
 | Tool call errors in OpenCode | Use llmproxy (`llmctl proxy-up`); see `docs/workarounds.md` |
 | `Expected 'function.name' to be a string` | Same — llmproxy fixes this; point client at `:9000` |
+
+---
+
+## Hardware compatibility
+
+The containers and config in this repo are built specifically for the **AMD Radeon AI PRO R9700 (gfx1201 / RDNA4)**. Here is what each backend requires if you want to adapt it to other hardware:
+
+| Backend | Requirement | Notes |
+|---------|-------------|-------|
+| **vLLM** | ROCm-compatible AMD GPU | Container image is ROCm 7.1.1 + gfx1201 AITER patch. Other AMD cards (MI300X, MI250X, RX 7900 series) need a different base image and `HSA_OVERRIDE_GFX_VERSION`. NVIDIA requires a CUDA build of vLLM instead. |
+| **llama-server (Vulkan)** | Any Vulkan-capable GPU | Works on AMD, NVIDIA, and Intel out of the box. No code changes needed — just point the `-m` path at your GGUF. |
+| **llama-swap** | None | CPU-only router; hardware-agnostic. |
+| **GPU monitoring** | AMD with `rocm-smi` | `llmpanel` displays `rocm-smi unavailable` gracefully on other platforms. |
+
+### Single-GPU setup
+
+Run `scripts/configure` after cloning — it auto-detects your GPU count via `rocm-smi` and patches `config/models.yaml` accordingly:
+
+```bash
+scripts/configure              # auto-detect and apply
+scripts/configure --dry-run    # preview without writing
+scripts/configure --gpu-count 1  # override if rocm-smi isn't available
+```
+
+What it adjusts:
+
+| Setting | 1 GPU | 2 GPU | 4 GPU (default) |
+|---------|-------|-------|-----------------|
+| `--tensor-parallel-size` | 1 | 2 | 4 |
+| `--tensor-split` (llama-server) | *(removed)* | `1,1` | `1,1,1,1` |
+| `--enable-expert-parallel` | *(removed)* | kept | kept |
+
+**VRAM limits** — the 122B models won't fit on fewer than 3 GPUs (Q4, ~73 GB) or 4 GPUs (Q6, ~98 GB). The script warns if your GPU count is below the minimum; those profiles should be removed from `models.yaml` in that case.
+
+### Container image builder (Phase 2)
+
+A `build-local.sh` script is planned that will detect GPU vendor/architecture and build the vLLM container image from a public ROCm or CUDA base — enabling use on non-R9700 AMD GPUs and NVIDIA hardware. The llama-server (Vulkan) backend already works without rebuilding.
 
 ---
 

@@ -1,0 +1,143 @@
+#!/usr/bin/env python3
+"""
+Configure config/models.yaml for your GPU count.
+
+Detects ROCm GPU count automatically, or use --gpu-count to override.
+Patches --tensor-parallel-size and --tensor-split in all profiles.
+Writes a backup (.bak) before modifying.
+
+Usage:
+    scripts/configure                 # auto-detect, apply changes
+    scripts/configure --dry-run       # preview changes only
+    scripts/configure --gpu-count 2   # override GPU count
+"""
+
+import argparse
+import re
+import shutil
+import subprocess
+import sys
+from pathlib import Path
+
+REPO_ROOT = Path(__file__).parent.parent
+DEFAULT_CONFIG = REPO_ROOT / "config" / "models.yaml"
+
+# Models that require a minimum number of GPUs due to VRAM size.
+# (profile_id, min_gpus, reason)
+VRAM_MINIMUMS = [
+    ("qwen3.5-122b-a10b-q6", 4, "~98 GB — requires 4×32 GB GPUs"),
+    ("qwen3.5-122b-a10b-q4", 3, "~73 GB — requires at least 3×32 GB GPUs"),
+]
+
+
+def detect_gpu_count() -> int | None:
+    try:
+        out = subprocess.check_output(
+            ["rocm-smi", "--listdevices"],
+            stderr=subprocess.DEVNULL,
+            text=True,
+        )
+        count = sum(1 for line in out.splitlines() if re.match(r"^GPU\[", line))
+        return count if count > 0 else None
+    except Exception:
+        return None
+
+
+def patch(text: str, n: int) -> str:
+    # vLLM: --tensor-parallel-size N
+    text = re.sub(
+        r"(--tensor-parallel-size\s+)\d+",
+        lambda m: m.group(1) + str(n),
+        text,
+    )
+
+    # vLLM: --enable-expert-parallel only makes sense with TP > 1
+    if n == 1:
+        text = re.sub(r"\n(\s+--enable-expert-parallel)\s*", "\n", text)
+    elif "--enable-expert-parallel" not in text:
+        # don't add it back — user may have intentionally removed it
+        pass
+
+    # llama-server: --tensor-split
+    if n == 1:
+        # remove the flag entirely; Vulkan uses the single GPU automatically
+        text = re.sub(r"\n(\s+--tensor-split\s+[\d,]+)\s*", "\n", text)
+    else:
+        split_val = ",".join(["1"] * n)
+        text = re.sub(
+            r"(--tensor-split\s+)[\d,]+",
+            lambda m: m.group(1) + split_val,
+            text,
+        )
+
+    return text
+
+
+def check_vram_warnings(n: int) -> None:
+    for profile, minimum, reason in VRAM_MINIMUMS:
+        if n < minimum:
+            print(
+                f"  WARNING: {profile} needs {minimum} GPU(s) ({reason}).\n"
+                f"           With {n} GPU(s) it will fail to load — consider\n"
+                f"           removing or disabling this profile.",
+                file=sys.stderr,
+            )
+
+
+def main() -> None:
+    ap = argparse.ArgumentParser(
+        description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter
+    )
+    ap.add_argument("--gpu-count", type=int, metavar="N", help="override detected GPU count")
+    ap.add_argument("--dry-run", action="store_true", help="print result without writing")
+    ap.add_argument(
+        "--config",
+        default=str(DEFAULT_CONFIG),
+        metavar="PATH",
+        help=f"path to models.yaml (default: {DEFAULT_CONFIG})",
+    )
+    args = ap.parse_args()
+
+    n = args.gpu_count
+    if n is None:
+        n = detect_gpu_count()
+    if n is None:
+        print(
+            "Could not detect GPU count via rocm-smi.\n"
+            "Use --gpu-count N to set it explicitly.",
+            file=sys.stderr,
+        )
+        sys.exit(1)
+
+    if n < 1:
+        print("GPU count must be at least 1.", file=sys.stderr)
+        sys.exit(1)
+
+    path = Path(args.config)
+    if not path.exists():
+        print(f"Config not found: {path}", file=sys.stderr)
+        sys.exit(1)
+
+    original = path.read_text()
+    patched = patch(original, n)
+
+    if original == patched:
+        print(f"No changes needed — already configured for {n} GPU(s).")
+        check_vram_warnings(n)
+        return
+
+    if args.dry_run:
+        print(f"--- dry run: would configure for {n} GPU(s) ---")
+        print(patched)
+        check_vram_warnings(n)
+        return
+
+    backup = Path(str(path) + ".bak")
+    shutil.copy(path, backup)
+    path.write_text(patched)
+    print(f"Configured for {n} GPU(s). Backup saved to {backup.name}")
+    check_vram_warnings(n)
+
+
+if __name__ == "__main__":
+    main()
