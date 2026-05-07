@@ -11,6 +11,10 @@ Usage:
   python3 bench/concurrent_bench.py --no-thinking                # disable Qwen3 thinking mode
   llmctl bench qwen3-coder-30b-fp8
 
+  # Save results as a named baseline, then compare after a config change:
+  python3 bench/concurrent_bench.py --save bench/baselines/before-fp8kv.json
+  python3 bench/concurrent_bench.py --compare bench/baselines/before-fp8kv.json
+
 Output: human-readable table + optional CSV (--csv results.csv)
 """
 
@@ -19,12 +23,54 @@ import csv
 import json
 import os
 import statistics
+import subprocess
 import sys
+import threading
 import time
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from pathlib import Path
 
 import requests
+
+# ── VRAM polling (background thread during bench runs) ────────────────────────
+
+class VRAMPoller:
+    """Polls rocm-smi in a background thread; exposes peak VRAM used (GB)."""
+    def __init__(self):
+        self._peak = None
+        self._stop = threading.Event()
+        self._t = threading.Thread(target=self._run, daemon=True)
+
+    def start(self):
+        self._t.start()
+        return self
+
+    def stop(self):
+        self._stop.set()
+
+    @property
+    def peak_gb(self):
+        return self._peak
+
+    def _run(self):
+        while not self._stop.is_set():
+            try:
+                out = subprocess.check_output(
+                    ["rocm-smi", "--showmeminfo", "vram"],
+                    stderr=subprocess.DEVNULL, text=True,
+                )
+                total = sum(
+                    int(line.split(":")[-1].strip())
+                    for line in out.splitlines()
+                    if "VRAM Total Used Memory (B):" in line
+                )
+                gb = total / 1e9
+                if self._peak is None or gb > self._peak:
+                    self._peak = gb
+            except Exception:
+                pass
+            self._stop.wait(1.0)
+
 
 # ── Default configuration ─────────────────────────────────────────────────────
 
@@ -153,6 +199,7 @@ def run_concurrent(url, model, prompt, max_tokens, concurrency, total_requests, 
     results = []
     errors  = 0
     t_start = time.perf_counter()
+    poller  = VRAMPoller().start()
 
     def worker(_):
         s = requests.Session()
@@ -174,9 +221,10 @@ def run_concurrent(url, model, prompt, max_tokens, concurrency, total_requests, 
             sys.stdout.write(f"\r    {done}/{total_requests}  errors={errors}")
             sys.stdout.flush()
 
+    poller.stop()
     print()
     wall = time.perf_counter() - t_start
-    return results, errors, wall
+    return results, errors, wall, poller.peak_gb
 
 
 # ── Stats helpers ─────────────────────────────────────────────────────────────
@@ -301,6 +349,10 @@ def main():
                     help="serial baseline requests per prompt (default: 3)")
     ap.add_argument("--csv",         default=None,
                     help="write summary rows to CSV file")
+    ap.add_argument("--save",        default=None, metavar="FILE",
+                    help="save results as a named baseline JSON")
+    ap.add_argument("--compare",     default=None, metavar="FILE",
+                    help="compare results against a saved baseline JSON")
     args = ap.parse_args()
 
     if args.quick:
@@ -368,16 +420,19 @@ def main():
         for i, conc in enumerate(concurrency_levels):
             step = f"{i+1}/{len(concurrency_levels)}"
             print(f"\n  [{step}] concurrency={conc}  ({requests_per_level} requests):")
-            conc_results, errors, wall = run_concurrent(
+            conc_results, errors, wall, vram_peak = run_concurrent(
                 args.url, args.model, prompt, max_tokens,
                 conc, requests_per_level,
                 no_thinking=no_thinking
             )
+            if vram_peak is not None:
+                print(f"  Peak VRAM during run: {vram_peak:.2f} GB")
             conc_row = report_suite(
                 f"{prompt_label} conc={conc}",
                 conc_results, errors, wall, concurrency=conc
             )
             if conc_row:
+                conc_row["vram_peak_gb"] = vram_peak
                 if serial_row and serial_row.get("decode_tps", 0) > 0:
                     speedup = conc_row["decode_tps"] / serial_row["decode_tps"]
                     print(f"  Speedup vs serial (decode tok/s): {speedup:.1f}×")
@@ -391,6 +446,58 @@ def main():
             w.writeheader()
             w.writerows(all_rows)
         print(f"\n  Results written to {args.csv}")
+
+    # ── Save baseline ────────────────────────────────────────────────────────
+    if args.save and all_rows:
+        payload = {
+            "model":     args.model,
+            "timestamp": time.strftime("%Y-%m-%d %H:%M:%S"),
+            "rows":      all_rows,
+        }
+        Path(args.save).parent.mkdir(parents=True, exist_ok=True)
+        Path(args.save).write_text(json.dumps(payload, indent=2))
+        print(f"\n  Baseline saved → {args.save}")
+
+    # ── Compare against baseline ─────────────────────────────────────────────
+    if args.compare and Path(args.compare).exists():
+        baseline = json.loads(Path(args.compare).read_text())
+        b_rows   = {r["label"]: r for r in baseline.get("rows", [])}
+        ts       = baseline.get("timestamp", "?")
+        print(f"\n{'═'*72}")
+        print(f"  COMPARISON vs baseline ({ts}  model: {baseline.get('model','?')})")
+        print(f"{'═'*72}")
+        print(f"  {'Label':<38}  {'decode Δ':>9}  {'p90 lat Δ':>10}  {'VRAM peak':>10}  Result")
+        print(f"  {'─'*38}  {'─'*9}  {'─'*10}  {'─'*10}  ──────")
+
+        any_fail = False
+        for row in all_rows:
+            label = row["label"]
+            if label not in b_rows:
+                continue
+            base = b_rows[label]
+
+            tps_old, tps_new = base["decode_tps"],   row["decode_tps"]
+            p90_old, p90_new = base["latency_p90"],  row["latency_p90"]
+            tps_pct = (tps_new - tps_old) / tps_old * 100 if tps_old else 0
+            p90_pct = (p90_new - p90_old) / p90_old * 100 if p90_old else 0
+
+            tps_ok  = tps_pct >= -5   # no more than 5% regression
+            p90_ok  = p90_pct <= 5    # no more than 5% latency increase
+            passed  = tps_ok and p90_ok
+            if not passed:
+                any_fail = True
+
+            vram_str = f"{row['vram_peak_gb']:.1f} GB" if row.get("vram_peak_gb") else "—"
+            result   = "✓ PASS" if passed else "✗ FAIL"
+            print(
+                f"  {label:<38}  "
+                f"{tps_pct:>+8.1f}%  "
+                f"{p90_pct:>+9.1f}%  "
+                f"{vram_str:>10}  "
+                f"{result}"
+            )
+
+        print(f"\n  Overall regression check: {'PASS' if not any_fail else 'FAIL'}")
 
     print()
 
