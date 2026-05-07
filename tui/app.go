@@ -615,8 +615,23 @@ func (a *app) renderInference() string {
 	if m.KVCache != nil {
 		kvStr = fmt.Sprintf("%.1f%%", *m.KVCache*100)
 	}
-	sb.WriteString(fmt.Sprintf("  Running: %.0f  Waiting: %.0f  KV: %s\n",
-		m.Running, m.Waiting, kvStr))
+	pfxStr := stDim.Render("—")
+	if m.PrefixHitRate != nil {
+		pct := *m.PrefixHitRate * 100
+		// higher hit rate is better — invert threshold direction
+		var st lipgloss.Style
+		switch {
+		case pct >= 70:
+			st = stGreen
+		case pct >= 30:
+			st = stYellow
+		default:
+			st = stRed
+		}
+		pfxStr = st.Render(fmt.Sprintf("%.1f%%", pct))
+	}
+	sb.WriteString(fmt.Sprintf("  Running: %.0f  Waiting: %.0f  KV: %s  PfxHit: %s\n",
+		m.Running, m.Waiting, kvStr, pfxStr))
 
 	decStr := "—"
 	if a.decodeRate != nil {

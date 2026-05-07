@@ -19,12 +19,13 @@ type ActiveModel struct {
 }
 
 type VLLMMetrics struct {
-	Running  float64
-	Waiting  float64
-	KVCache  *float64 // nil = unavailable
-	TokPerS  *float64
-	GenTotal *float64
-	TTFT     *float64 // nil = no data yet
+	Running       float64
+	Waiting       float64
+	KVCache       *float64 // nil = unavailable
+	PrefixHitRate *float64 // nil = unavailable; 0–1 fraction
+	TokPerS       *float64
+	GenTotal      *float64
+	TTFT          *float64 // nil = no data yet
 }
 
 type GPUInfo struct {
@@ -146,12 +147,13 @@ func fetchVLLM(port int) *VLLMMetrics {
 		ttft = &v
 	}
 	return &VLLMMetrics{
-		Running:  derefF(parseMetric(txt, "vllm:num_requests_running")),
-		Waiting:  derefF(parseMetric(txt, "vllm:num_requests_waiting")),
-		KVCache:  kv,
-		TokPerS:  parseMetric(txt, "vllm:avg_generation_throughput_toks_per_s"),
-		GenTotal: parseMetric(txt, "vllm:generation_tokens_total"),
-		TTFT:     ttft,
+		Running:       derefF(parseMetric(txt, "vllm:num_requests_running")),
+		Waiting:       derefF(parseMetric(txt, "vllm:num_requests_waiting")),
+		KVCache:       kv,
+		PrefixHitRate: parseMetric(txt, "vllm:gpu_prefix_cache_hit_rate"),
+		TokPerS:       parseMetric(txt, "vllm:avg_generation_throughput_toks_per_s"),
+		GenTotal:      parseMetric(txt, "vllm:generation_tokens_total"),
+		TTFT:          ttft,
 	}
 }
 

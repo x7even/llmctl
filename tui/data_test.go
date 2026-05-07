@@ -14,6 +14,7 @@ const sampleMetrics = `
 vllm:num_requests_running{model_name="qwen3.6-35b-code",version="0.20.0"} 4.0
 vllm:num_requests_waiting{model_name="qwen3.6-35b-code",version="0.20.0"} 2.0
 vllm:kv_cache_usage_perc{model_name="qwen3.6-35b-code"} 0.1234
+vllm:gpu_prefix_cache_hit_rate{model_name="qwen3.6-35b-code"} 0.873
 vllm:avg_generation_throughput_toks_per_s{model_name="qwen3.6-35b-code"} 387.5
 vllm:time_to_first_token_seconds_sum{model_name="qwen3.6-35b-code"} 8.4
 vllm:time_to_first_token_seconds_count{model_name="qwen3.6-35b-code"} 10.0
@@ -30,6 +31,7 @@ func TestParseMetric_present(t *testing.T) {
 		{"vllm:num_requests_running", 4.0},
 		{"vllm:num_requests_waiting", 2.0},
 		{"vllm:kv_cache_usage_perc", 0.1234},
+		{"vllm:gpu_prefix_cache_hit_rate", 0.873},
 		{"vllm:avg_generation_throughput_toks_per_s", 387.5},
 		{"vllm:time_to_first_token_seconds_sum", 8.4},
 		{"vllm:time_to_first_token_seconds_count", 10.0},
@@ -244,6 +246,9 @@ func TestFetchVLLM_metrics(t *testing.T) {
 	}
 	if m.KVCache == nil || *m.KVCache != 0.1234 {
 		t.Errorf("KVCache: want 0.1234, got %v", m.KVCache)
+	}
+	if m.PrefixHitRate == nil || *m.PrefixHitRate != 0.873 {
+		t.Errorf("PrefixHitRate: want 0.873, got %v", m.PrefixHitRate)
 	}
 	if m.TTFT == nil {
 		t.Fatal("want TTFT, got nil")
