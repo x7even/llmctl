@@ -10,12 +10,21 @@ import (
 	tea "github.com/charmbracelet/bubbletea"
 )
 
+// set by -ldflags "-X main.version=v1.2.3" at build time
+var version = "dev"
+
 func main() {
 	baseURL := flag.String("url", "http://127.0.0.1:8080", "llama-swap base URL")
 	interval := flag.Duration("interval", time.Second, "poll interval (500ms, 1s, 2s, 5s, 15s)")
 	configPath := flag.String("config", defaultConfig(), "path to models.yaml")
 	logPath := flag.String("log", defaultLog(), "path to llama-swap log")
+	showVersion := flag.Bool("version", false, "print version and exit")
 	flag.Parse()
+
+	if *showVersion {
+		fmt.Println(version)
+		return
+	}
 
 	a := newApp(*baseURL, *interval, *configPath, *logPath)
 	p := tea.NewProgram(a, tea.WithAltScreen())
