@@ -67,6 +67,54 @@ models:
         --trust-remote-code
     cmdStop: podman stop llmstack-vllm-${MODEL_ID}
 
+  # ─── vLLM: Qwen3.6-35B-A3B AWQ Int4 ────────────────────────────────────
+  # Best for: benchmarking Q4 vs FP8 quality/throughput tradeoff
+  # Backend: vLLM 0.20.0 via AMD official image, AWQ quantization
+  # VRAM:    ~20 GB across 4 GPUs (~5 GB each) — leaves headroom for large KV cache
+  # Note:    No MTP head; no speculative decoding
+  qwen3.6-35b-awq:
+    name: "Qwen3.6-35B-A3B-AWQ (Int4)"
+    ttl: 600
+    checkEndpoint: /health
+    concurrencyLimit: 64
+    aliases:
+      - qwen3.6-awq
+      - qwen3.6-q4
+    cmd: |
+      podman run --replace --rm
+        --name llmstack-vllm-${MODEL_ID}
+        --device=/dev/kfd
+        --device=/dev/dri
+        --group-add keep-groups
+        --security-opt seccomp=unconfined
+        --security-opt apparmor=unconfined
+        --ipc=private
+        --shm-size=32g
+        --network=host
+        -v /mnt/models/llm:/models:ro
+        -e HSA_ENABLE_SDMA=0
+        -e TORCH_BLAS_PREFER_HIPBLASLT=1
+        --entrypoint=""
+        docker.io/vllm/vllm-openai-rocm:latest
+        vllm serve /models/QuantTrio/Qwen3.6-35B-A3B-AWQ
+        --host 127.0.0.1
+        --port ${PORT}
+        --served-model-name qwen3.6-35b-awq
+        --dtype auto
+        --quantization awq
+        --tensor-parallel-size 4
+        --max-num-seqs 64
+        --max-num-batched-tokens 32768
+        --kv-cache-dtype fp8
+        --gpu-memory-utilization 0.92
+        --enable-prefix-caching
+        --enable-chunked-prefill
+        --trust-remote-code
+        --reasoning-parser qwen3
+        --enable-auto-tool-choice
+        --tool-call-parser qwen3_xml
+    cmdStop: podman stop llmstack-vllm-${MODEL_ID}
+
   # ─── vLLM: Qwen3.6-35B-A3B FP8 — Code profile (quality-first + MTP) ────
   # Best for: Claude Code, OpenCode, agentic coding — highest quality output
   # Backend: vLLM 0.20.0 via docker.io/vllm/vllm-openai-rocm:latest (ROCm 7.2)
