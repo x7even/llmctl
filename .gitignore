@@ -5,9 +5,11 @@ config/mcp.json
 *.log
 logs/
 
-# Downloaded binaries
+# Built/downloaded binaries
 bin/llama-swap
 bin/llama-swap-ui
+bin/llmpanel
+tui/tui
 
 # Python cache
 __pycache__/

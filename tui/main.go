@@ -38,7 +38,7 @@ func defaultConfig() string {
 	home, _ := os.UserHomeDir()
 	candidates := []string{
 		filepath.Join(home, "ai/llmstack/config/models.yaml"),
-		"~/ai/llmstack/config/models.yaml",
+		"/opt/llmstack/config/models.yaml",
 	}
 	for _, c := range candidates {
 		if _, err := os.Stat(c); err == nil {

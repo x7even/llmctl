@@ -198,7 +198,7 @@ models:
         --shm-size=32g
         --network=host
         -v /mnt/models/llm:/models:ro
-        -v ~/ai/llmstack/config/templates:/templates:ro
+        -v ${LLMSTACK_DIR:-$HOME/ai/llmstack}/config/templates:/templates:ro
         -e HSA_ENABLE_SDMA=0
         -e TORCH_BLAS_PREFER_HIPBLASLT=1
         --entrypoint=""
