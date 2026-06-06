@@ -16,7 +16,7 @@
 #   llmstack-vllm-<profile>   ← vLLM containers  (safetensors / FP8 / AWQ)
 #   llmstack-llama-<profile>  ← llama-server containers  (GGUF)
 
-healthCheckTimeout: 600   # seconds to wait for a model to become healthy on cold start (73 GB GGUF needs ~90-180 s)
+healthCheckTimeout: 1200  # seconds to wait for a model to become healthy on cold start; vLLM 0.22.1 first boot takes ~18 min (384 graph capture sizes)
 startPort: 9100           # llama-swap assigns backends ports starting here
 globalTTL: 0              # 0 = never auto-unload (set per-model below)
 
