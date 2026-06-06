@@ -102,8 +102,12 @@ llmctl swap qwen3.6-35b-code
 
 - Sends a warm-up chat completion request (max_tokens=1) which causes
   llama-swap to start the backend container
-- Blocks until the container is healthy and responds (up to 11 min timeout)
-- On cold page cache a 35 GB model takes ~60 s; a 73 GB GGUF takes ~90–180 s
+- Blocks until the container is healthy and responds (up to 5 min timeout — adequate for warm starts)
+- **First boot** on a new machine: vLLM compiles Inductor kernels (~14 min) then captures
+  CUDA graphs (~13 s). Total ~18–20 min. Run `llmctl logs <profile>` to watch progress and
+  wait for "Application startup complete." Subsequent starts use the cached compilation
+  (`.vllm-cache/`) and take ~2–3 min.
+- GGUF cold start: ~5 s (35B) or 90–180 s (122B, first disk read)
 
 **Aliases work:** `llmctl swap qwen3.6` is equivalent to
 `llmctl swap qwen3.6-35b-code` if `qwen3.6` is listed as an alias.
@@ -185,9 +189,18 @@ Run the concurrent benchmark against a loaded profile.
 llmctl bench qwen3.6-35b-code
 ```
 
-Requires `bench/concurrent_bench.py` (Phase 2 deliverable). Prints aggregate
-tok/s, TTFT, and per-GPU VRAM. Used to establish throughput baselines and
-detect regressions.
+Wraps `bench/concurrent_bench.py`. Prints aggregate tok/s, TTFT, and per-GPU VRAM.
+Used to establish throughput baselines and detect regressions after config changes.
+
+For a full sweep across all prompt sizes and concurrency levels:
+```bash
+python3 bench/concurrent_bench.py \
+  --model qwen3.6-35b-code \
+  --sweep 1,2,4,8,16 \
+  --prompt all \
+  --no-thinking \
+  --save bench/baselines/qwen3.6-35b-code-$(date +%Y%m%d).json
+```
 
 ---
 
@@ -257,7 +270,7 @@ llmproxy: RUNNING  pid=23456  port=9000 → :8080
 | Symptom | Action |
 |---------|--------|
 | `up` hangs past 10 s | Check `llama-swap.log`; confirm GPUs are free (`rocm-smi`) |
-| `swap` times out | Cold GGUF load can take 3 min — increase timeout or check container logs |
+| `swap` times out | First vLLM boot takes 18–20 min; run `llmctl logs <profile>` and wait manually. Subsequent starts are ~2–3 min. |
 | `swap` returns no response | `llmctl logs <profile>` to see backend errors |
 | Port 8080 already in use | Another process is on 8080; `lsof -i :8080` to identify |
 | `unload` no-ops silently | Nothing was loaded; llama-swap returns OK regardless |

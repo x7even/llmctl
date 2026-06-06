@@ -17,12 +17,31 @@ No screen; GPU-only headless rig. PCIe 5.0 ×16 per slot.
 
 | Image | vLLM | ROCm | Use when |
 |---|---|---|---|
-| `localhost/llmstack-vllm:latest` | 0.10.2rc2 | 7.1.1 | Legacy safetensors, Qwen3-Coder |
-| `docker.io/vllm/vllm-openai-rocm:latest` | 0.20.0 | 7.2 | Qwen3.6 (Qwen3_5MoeForConditionalGeneration) |
+| `docker.io/vllm/vllm-openai-rocm:latest` | 0.22.1 | 7.2 | All vLLM profiles (FP8, AWQ, safetensors) |
 | `localhost/llmstack-llama:latest` | llama.cpp | Vulkan | GGUF models |
 
-The `vllm-openai-rocm` image has a broken default entrypoint for the `serve`
-subcommand; all its profiles use `--entrypoint="" ... vllm serve`.
+All vLLM profiles use `--entrypoint="" ... vllm serve` because the AMD official
+image has `ENTRYPOINT ["vllm", "serve"]` — omitting the explicit `vllm serve`
+prefix results in `vllm serve serve /models/...` which fails.
+
+### vLLM cold start time
+
+First boot per machine compiles Inductor kernels and calibrates FP8 KV cache:
+
+| Phase | Time | Cached? |
+|---|---|---|
+| Inductor torch.compile (4 TP ranks) | ~14 min | Yes — `.vllm-cache/torch_compile_cache/` |
+| CUDA graph capture (6 batch sizes) | ~13 s | No — re-runs each start |
+| **Total first boot** | **~18–20 min** | |
+| **Total subsequent boots** | **~2–3 min** | |
+
+The compilation cache is mounted via `-v .vllm-cache:/root/.cache/vllm` and
+`-v .triton-cache:/root/.triton/cache`. After the first start these directories
+are populated and subsequent starts skip the Inductor compilation entirely.
+
+`healthCheckTimeout` is set to 300 s — sufficient for warm starts. On a fresh
+machine (empty cache), manually run `llmctl logs <profile>` and wait for
+"Application startup complete." before the first use.
 
 ---
 
@@ -36,30 +55,45 @@ subcommand; all its profiles use `--entrypoint="" ... vllm serve`.
 output quality matters more than raw latency.
 
 **Key settings:**
-- `--gpu-memory-utilization 0.92` — 8% headroom for MTP draft model overhead
 - `--speculative-config '{"method": "mtp", "num_speculative_tokens": 2}'` — Multi-Token
-  Prediction using the bundled `mtp.safetensors` draft head. Mathematically
-  lossless: the main model verifies every proposed token; only accepted tokens
-  appear in output. Disabled tokens never reach the client.
-- `--reasoning-parser qwen3` — strips `<think>…</think>` from the `content`
-  field and places it in `reasoning_content`. Clients that don't handle
-  reasoning_content (like curl) see clean output; clients that do (e.g.
-  OpenCode with thinking display) see the chain-of-thought separately.
-- Thinking **ON** by default (Qwen3.6 native behaviour). Cannot be overridden
-  per-request on this profile — use `qwen3.6-35b-fast` if you need it off.
-- Context: 262,144 tokens (native)
+  Prediction using the bundled `mtp.safetensors` draft head. Lossless: main model
+  verifies every proposed token. Gains are largest at higher concurrency where
+  batch decoding amortises verification cost.
+- `--kv-cache-dtype fp8` — KV values stored in FP8; reduces VRAM per token,
+  enabling larger effective batch sizes.
+- `--enable-expert-parallel` — MoE experts distributed across GPUs for better
+  utilisation with TP=4.
+- `--reasoning-parser qwen3` — strips `<think>…</think>` from `content` and
+  exposes it in `reasoning_content`. Thinking is ON by default (Qwen3.6 native).
+- `--enable-prefix-caching` — caches common prompt prefixes across requests.
+  Agentic workflows with shared system prompts see 2–3× effective throughput gain.
+- `--cudagraph-capture-sizes 1 2 4 8 16 32` — explicit graph sizes instead of
+  the default ~2000. Cuts graph capture from ~14 min to 13 s with no throughput
+  loss at practical concurrency levels (batches > 32 fall back to eager).
+- Context: 262,144 tokens (native hybrid linear+full attention)
 
-**MTP benchmark results (vs baseline FP8, conc=8, medium-256 prompt):**
+**Benchmark — vLLM 0.22.1, no-thinking, MTP enabled (2026-06-06):**
 
-| Metric | Baseline FP8 | + MTP | Δ |
-|---|---|---|---|
-| Serial decode tok/s | 77 | 110 | +43% |
-| conc=8 decode tok/s | 410 | 626 | +53% |
-| conc=8 xlarge-2048 tok/s | 390 | 626 | +61% |
+| Prompt | serial | conc=2 | conc=4 | conc=8 | conc=16 |
+|--------|--------|--------|--------|--------|---------|
+| short-64    | 38 | 56  | 90  | **208** | 347 |
+| medium-256  | 43 | 77  | 145 | **261** | 481 |
+| long-512    | 47 | 82  | 155 | **274** | 507 |
+| xlarge-2048 | 43 | 81  | 155 | **335** | 651 |
 
-MTP gains are largest on long completions where the draft head can predict
-repetitive or predictable tokens (code, prose continuation). Gains are smaller
-on highly creative or random outputs.
+Decode tok/s. p90 latency at conc=8: ~5 s (medium), ~12 s (long), ~49 s (xlarge).
+
+**Comparison across configurations (medium-256, conc=8):**
+
+| Config | decode tok/s |
+|--------|-------------|
+| vLLM 0.20.0 + MTP + thinking | 485 |
+| vLLM 0.20.0 no-MTP no-thinking | 222 |
+| vLLM 0.22.1 + MTP no-thinking | **261** |
+| AWQ Int4 no-MTP no-thinking | 250 |
+
+The 0.20.0 thinking number is not directly comparable (thinking tokens inflate
+measured throughput). The 0.22.1 and AWQ no-thinking numbers are clean comparisons.
 
 ---
 
@@ -70,28 +104,13 @@ on highly creative or random outputs.
 **Use for:** Quick lookups, chat, summarisation, tasks where TTFT matters and
 extended reasoning is unnecessary overhead.
 
-**Key difference from code profile:**
-- Thinking **OFF** by default via a custom chat template
-  (`config/templates/qwen3.6-no-think.jinja`). The template inverts the
-  default condition: thinking only activates if the client explicitly passes
-  `chat_template_kwargs: {"enable_thinking": true}`.
-- `--gpu-memory-utilization 0.97` — no MTP; reclaims the headroom used by the
-  draft model to maximise KV cache.
-- No MTP — removes speculative decoding overhead at low concurrency. At
-  conc=1, MTP's verification cost slightly hurts throughput for short tasks
-  where the draft hit rate is low.
-
-**Why a separate template?** vLLM does not expose a per-request `enable_thinking`
-default at the server level; the only way to invert the default is to ship a
-modified chat template. The template change is a one-line condition inversion:
-
-```
-# stock template (thinks by default):
-{%- if enable_thinking is defined and enable_thinking is false %}
-
-# fast template (silent by default):
-{%- if enable_thinking is defined and enable_thinking is true %}
-```
+**Key differences from code profile:**
+- Thinking **OFF** by default via custom template `config/templates/qwen3.6-no-think.jinja`.
+  The template inverts the default condition — thinking only activates if the client
+  explicitly passes `chat_template_kwargs: {"enable_thinking": true}`.
+- `--gpu-memory-utilization 0.97` — no MTP draft head; reclaims headroom for KV cache.
+- No MTP — removes speculative decoding overhead. At conc=1 with short tasks, MTP
+  verification cost slightly hurts throughput when draft hit rate is low.
 
 ---
 
@@ -99,14 +118,10 @@ modified chat template. The template change is a one-line condition inversion:
 
 **Aliases:** `qwen3.6-512k`, `qwen3.6-long`
 
-**Use for:** Ingesting entire repositories, long document QA, tasks that
-exceed the native 262K context window.
+**Use for:** Ingesting entire repositories, long document QA, tasks that exceed
+the native 262K context window.
 
-**Context extension mechanism — YaRN RoPE scaling:**
-
-Qwen3.6's native max is 262,144 tokens. This profile doubles it to 524,288
-via YaRN (Yet Another RoPE extensioN), which rescales the RoPE positional
-embeddings with a factor of 2.0:
+**Context extension — YaRN RoPE scaling:**
 
 ```
 --hf-overrides '{"text_config": {"rope_scaling": {
@@ -116,61 +131,110 @@ embeddings with a factor of 2.0:
 }}}'
 ```
 
-The env var `VLLM_ALLOW_LONG_MAX_MODEL_LEN=1` is also required to bypass
-vLLM's safety check (max_model_len > model's native limit).
-
-**Tested:** Needle-in-a-haystack retrieval at 420,000 tokens — correct output
-confirmed. Performance at the full 524K edge is expected to degrade slightly
-due to YaRN interpolation artefacts, but retrieval remains correct.
+Tested: needle-in-a-haystack retrieval at 420,000 tokens — correct output confirmed.
 
 **Architecture note — why Qwen3.6 handles long context well:**
 
-Qwen3.6 is a hybrid attention MoE. Only 10 of its 40 attention layers are
-full (quadratic) attention; the remaining 30 use linear attention (O(n)
-complexity). This means:
-- KV cache is only needed for 25% of layers, massively reducing VRAM per token
-- Prefill is much cheaper than a pure-transformer of similar size
-- 512K context becomes practical where it would OOM on a dense model
+Qwen3.6 is a hybrid attention MoE: only 10 of 40 attention layers use full (quadratic)
+attention; the remaining 30 use linear attention (O(n)). KV cache is needed for 25%
+of layers only, making 512K context practical where it would OOM on a dense model.
 
-**Concurrency limit:** Reduced to 16 (vs 64 for shorter profiles). At 512K
-context, a single sequence consumes most of the available KV cache. Running
->16 concurrent 512K sessions simultaneously would OOM.
-
-**MTP:** Included, with 0.92 GPU utilisation to accommodate the draft head.
+**Concurrency limit:** 16. At 512K context, one sequence consumes most available KV cache.
 
 ---
 
-### `qwen3.6-35b-q4ks` — GGUF low-latency serial
+### `qwen3.6-35b-awq` — AWQ Int4 quantisation
 
-**Aliases:** `qwen3.6-gguf`, `qwen3.6-fast` *(note: superseded by vLLM fast profile for concurrent load)*
+**Aliases:** `qwen3.6-awq`, `qwen3.6-q4`
 
-**Use for:** Single-user interactive sessions where serial latency is the
-priority and GPU VRAM is already occupied by another backend.
+**Use for:** Memory-constrained deployments; benchmarking quantisation quality/throughput
+tradeoff vs FP8; loading alongside another model.
 
-**Backend:** llama-server (Vulkan/RADV). GGUF UD-Q4_K_S (unsloth quant).
-~20 GB across 4 GPUs — generous KV headroom.
+**Key settings:**
+- `--quantization awq` — AWQ 4-bit weight quantisation.
+- No `--enable-expert-parallel` — AWQ's MoE layers use a Triton WNA16 fallback kernel
+  that is incompatible with expert parallelism (causes `IndexError: index out of bounds`).
+- VRAM: ~20 GB (15 GB less than FP8) — leaves ~108 GB for KV cache and other models.
+
+**Benchmark (vLLM 0.20.0, no-thinking, no-MTP, 2026-05-08):**
+
+| Metric | medium-256 |
+|--------|-----------|
+| serial | 92 tok/s |
+| conc=8 | 250 tok/s |
+
+AWQ serial is faster than FP8 serial (92 vs 69 no-MTP) due to smaller model footprint.
+At conc=8 it's slightly below FP8+MTP (250 vs 261) because FP8 benefits more from
+batched execution.
+
+---
+
+### `qwen3.6-27b-fp8` — dense 27B model
+
+**Aliases:** `qwen3.6-27b`, `qwen3.6-dense`
+
+**Use for:** Tasks requiring the highest code quality; Qwen3.6-27B scores higher on
+SWE-bench (77.2) than the 35B-A3B MoE (73.4) despite having a smaller total parameter
+count — because all 27B parameters are active on every forward pass.
+
+**Architecture note:**
+
+Unlike the 35B-A3B (3B active parameters per token), the 27B model activates all 27B
+parameters per forward pass. This makes it slower but more accurate:
+
+| | 35B-A3B MoE | 27B dense |
+|---|---|---|
+| Total params | 35B | 27B |
+| Active params/token | 3B | 27B |
+| SWE-bench | 73.4 | **77.2** |
+| serial decode | 43 tok/s | 23 tok/s |
+| conc=8 decode | 261 tok/s | 153 tok/s |
+| VRAM (FP8) | ~35 GB | ~29 GB |
+
+**Benchmark (vLLM 0.22.1, medium-256, 2026-05-09):**
+
+| | serial | conc=4 | conc=8 |
+|---|---|---|---|
+| decode tok/s | 23 | 125 | **153** |
+
+---
+
+### `qwen3.6-27b-q4km` — dense 27B Q4_K_M GGUF
+
+**Aliases:** `qwen3.6-27b-gguf`, `qwen3.6-27b-q4`
+
+**Use for:** Code tasks where VRAM is at a premium; comparing quantisation quality
+(FP8 vs Q4) on the dense 27B model.
+
+**Backend:** llama-server (Vulkan). ~17 GB across 4 GPUs.
+
+**Benchmark (llama-server, medium-256, 2026-05-09):**
+
+| | serial | conc=4 | conc=8 |
+|---|---|---|---|
+| decode tok/s | 22 | 45 | **41** |
+
+Note: throughput drops at conc=8 vs conc=4 — llama-server's Vulkan threading
+model saturates around 4–6 parallel sessions for a 27B dense model.
+For concurrent workloads, prefer `qwen3.6-27b-fp8`.
+
+---
+
+### `qwen3.6-35b-q4ks` — 35B MoE GGUF
+
+**Aliases:** `qwen3.6-gguf`
+
+**Use for:** Serial interactive sessions where VRAM is already occupied; GPU-free
+CPU inference is not needed but VRAM headroom matters.
+
+**Backend:** llama-server (Vulkan). UD-Q4_K_S (unsloth quant). ~20 GB.
 
 **When to prefer over vLLM profiles:**
-- Conc=1 sessions: GGUF slightly wins on raw serial tok/s (~83 vs ~77 FP8)
-- Memory-constrained: GGUF uses ~15 GB less VRAM than FP8
+- Conc=1: comparable serial throughput, fast cold start (~5 s vs ~2 min)
+- Memory-constrained: frees ~15 GB vs FP8
 
-**When to prefer vLLM profiles:**
-- Any concurrent load ≥2: FP8 is 2–2.4× faster at conc=8+
-- Code quality: FP8 runs full precision, no quantisation artefacts
-- MTP: only available on vLLM backends
-
-**Benchmark: GGUF vs FP8 decode tok/s (2026-04-30)**
-
-| Prompt | GGUF conc=1 | GGUF conc=8 | GGUF conc=12 | FP8 conc=1 | FP8 conc=8 | FP8+MTP conc=8 |
-|---|---|---|---|---|---|---|
-| short-64    | 80  | 140 | 163 | 77  | 154 | ~200 est. |
-| medium-256  | 81  | 169 | 175 | 78  | 410 | 626       |
-| long-512    | 83  | 181 | 180 | 76  | 392 | ~600 est. |
-| xlarge-2048 | 83  | 189 | 189 | 66  | 390 | 626       |
-
-GGUF conc=12 shows a throughput plateau — llama-server's threading model
-doesn't scale beyond ~10–12 parallel sessions. FP8 with PagedAttention
-continues to scale.
+**When to prefer vLLM:**
+- Concurrency ≥ 2: FP8 PagedAttention scales; llama-server plateaus at ~10 parallel sessions
 
 ---
 
@@ -178,19 +242,14 @@ continues to scale.
 
 **Aliases:** `qwen3-coder`, `coder`
 
-**Use for:** Kept as a fallback; the original benchmark baseline. Qwen3.6
-outperforms this in both quality and concurrency throughput.
+**Use for:** Retained as a benchmark reference. Qwen3.6 outperforms it on both
+quality and concurrency throughput.
 
-**Backend:** `localhost/llmstack-vllm:latest` (vLLM 0.10.2rc2, ROCm 7.1.1).
-Model: `/mnt/models/llm/Qwen3-Coder-30B-A3B-Instruct-FP8/`.
+**Benchmark (vLLM 0.22.1, medium-256, 2026-05-07):**
 
-**Benchmark (2026-04-29):** Serial ~50 tok/s. conc=32 short: **827 tok/s
-(16.6× speedup)** — best raw scaling observed across all models. However,
-output quality is lower than Qwen3.6 on complex reasoning.
-
-**Architecture note:** Standard dense MoE (not hybrid linear attention).
-Uses `localhost/llmstack-vllm:latest` because it predates the
-Qwen3_5MoeForConditionalGeneration architecture that requires vLLM 0.20.0.
+| | serial | conc=8 |
+|---|---|---|
+| decode tok/s | 39 | **158** |
 
 ---
 
@@ -199,7 +258,7 @@ Qwen3_5MoeForConditionalGeneration architecture that requires vLLM 0.20.0.
 **Aliases:** `qwen3.5-122b`, `122b` / `qwen3.5-122b-q6`, `122b-q6`
 
 **Use for:** Heavyweight single queries requiring maximum reasoning depth.
-Not suited for concurrent serving — KV cache fills 4 GPUs at ~18 GB each.
+Not suitable for concurrent serving — KV cache fills all 4 GPUs.
 
 **Backend:** llama-server Vulkan. Split GGUF across 4 GPUs via `--tensor-split 1,1,1,1`.
 
@@ -208,45 +267,48 @@ Not suited for concurrent serving — KV cache fills 4 GPUs at ~18 GB each.
 | q4 | Q4_K_M | ~73 GB | 32768 | 8 |
 | q6 | Q6_K   | ~98 GB | 16384 | 6 |
 
-Q6 is higher quality but leaves less KV headroom; context is halved to 16K
-to avoid OOM at concurrency 6. Use q4 unless output quality is the bottleneck.
-
-Cold start: ~90–180s (first disk read of 73–98 GB over NVMe).
-
----
-
-## Tensor parallelism rationale
-
-Neither Qwen3.6-35B-FP8 (31.2 GB) nor Qwen3-Coder-30B-FP8 (31.2 GB) fits
-in a single 32 GB R9700. Even if it did, single-GPU throughput would be
-memory-bandwidth limited. With TP=4:
-
-- **4× aggregate HBM bandwidth:** ~12.8 TB/s effective (4× ~3.2 TB/s)
-- **All-reduce cost:** ~1.5ms per token over PCIe 5.0 — small vs generation time
-- **KV cache distributed:** each GPU holds 1/4 of the KV, enabling much larger
-  effective batch sizes
-
-Single-GPU serving would only win if the model fit comfortably (say, <25 GB)
-and the workload was strictly serial. At conc ≥ 4, TP=4 wins decisively.
+Cold start: ~90–180 s (first disk read of 73–98 GB over NVMe).
 
 ---
 
 ## FP8 kernel config note
 
-vLLM warns at startup: `Config file not found for device_name=AMD_Radeon_R9700,dtype=fp8_w8a8`.
-The R9700 (gfx1201) does not yet have a hand-tuned FP8 GEMM kernel config in
-the vLLM kernel registry. vLLM falls back to MI300X defaults, which are
-sub-optimal for RDNA4's memory hierarchy. Generating a custom config (via
-`python -m vllm.tools.profiler`) is a future tuning opportunity that could
-improve throughput by ~10–20%.
+vLLM warns at startup:
+
+```
+Using default W8A8 Block FP8 kernel config. Performance might be sub-optimal!
+Config file not found for device_name=AMD_Radeon_R9700, dtype=fp8_w8a8
+```
+
+The R9700 (gfx1201 / RDNA4) does not yet have hand-tuned FP8 GEMM kernel configs in
+the vLLM kernel registry. vLLM falls back to MI300X defaults. Generating a custom
+config (via `python -m vllm.tools.profiler`) is a future tuning opportunity that
+could improve throughput by ~10–20%.
+
+---
+
+## Tensor parallelism rationale
+
+Neither Qwen3.6-35B-FP8 (~31 GB) nor Qwen3-Coder-30B-FP8 (~31 GB) fits in a single
+32 GB R9700. Even if they did, single-GPU throughput would be memory-bandwidth limited.
+With TP=4:
+
+- **4× aggregate HBM bandwidth** across 4 GPUs
+- **All-reduce cost** ~1.5 ms per token over PCIe 5.0 — small vs generation time
+- **KV cache distributed** across 4 GPUs, enabling much larger effective batch sizes
+
+At conc ≥ 4, TP=4 wins decisively over single-GPU.
 
 ---
 
 ## Adding a new profile
 
 See the template section at the bottom of `config/models.yaml`. Key steps:
-1. Add the YAML stanza (vLLM or llama-server template as appropriate)
-2. Set `concurrencyLimit` explicitly — the default of 10 causes 429s under load
-3. Run `llmctl list` to verify the profile appears
-4. Run `llmctl swap <profile>` to load and warm it up
-5. Run `bench/concurrent_bench.py --model <profile> --quick` for a smoke benchmark
+
+1. Add the YAML stanza (vLLM or llama-server template)
+2. Include `--cudagraph-capture-sizes 1 2 4 8 16 32` and the cache volume mounts
+3. Set `concurrencyLimit` explicitly — the default causes 429s under load
+4. `llmctl list` to verify the profile appears
+5. `llmctl swap <profile>` to load and warm it up
+6. `bench/concurrent_bench.py --model <profile> --quick --no-thinking` for a smoke benchmark
+7. Save a full baseline: `bench/concurrent_bench.py --model <profile> --sweep 1,2,4,8,16 --prompt all --no-thinking --save bench/baselines/<profile>.json`

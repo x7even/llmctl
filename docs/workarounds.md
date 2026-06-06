@@ -63,7 +63,7 @@ When vLLM fixes the null serialisation (check release notes for "tool_call
 streaming" or "SSE null name"), do the following:
 
 1. `llmctl proxy-down`
-2. In `~/.config/opencode/opencode.json`, change `baseURL` port from `8081`
+2. In `~/.config/opencode/opencode.json`, change `baseURL` port from `9000`
    back to `8080`
 3. The `bin/llmproxy` file and `proxy-*` llmctl commands can then be removed
 
