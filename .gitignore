@@ -5,6 +5,10 @@ config/mcp.json
 *.log
 logs/
 
+# vLLM/Triton compilation caches — large, machine-specific, regenerated on first boot
+.vllm-cache/
+.triton-cache/
+
 # Built/downloaded binaries
 bin/llama-swap
 bin/llama-swap-ui

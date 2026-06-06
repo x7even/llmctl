@@ -16,7 +16,7 @@
 #   llmstack-vllm-<profile>   ← vLLM containers  (safetensors / FP8 / AWQ)
 #   llmstack-llama-<profile>  ← llama-server containers  (GGUF)
 
-healthCheckTimeout: 1200  # seconds to wait for a model to become healthy on cold start; vLLM 0.22.1 first boot takes ~18 min (384 graph capture sizes)
+healthCheckTimeout: 300   # seconds; vLLM cold start ~1-2 min with --cudagraph-capture-sizes 1 2 4 8 16 32
 startPort: 9100           # llama-swap assigns backends ports starting here
 globalTTL: 0              # 0 = never auto-unload (set per-model below)
 
@@ -48,6 +48,8 @@ models:
         --shm-size=32g
         --network=host
         -v /mnt/models/llm:/models:ro
+        -v ${LLMSTACK_DIR:-$HOME/ai/llmstack}/.vllm-cache:/root/.cache/vllm
+        -v ${LLMSTACK_DIR:-$HOME/ai/llmstack}/.triton-cache:/root/.triton/cache
         -e HSA_ENABLE_SDMA=0
         -e TORCH_BLAS_PREFER_HIPBLASLT=1
         --entrypoint=""
@@ -58,7 +60,7 @@ models:
         --served-model-name qwen3.6-27b-fp8
         --dtype auto
         --tensor-parallel-size 4
-        --max-num-seqs 64
+        --max-num-seqs 32
         --max-num-batched-tokens 32768
         --kv-cache-dtype fp8
         --gpu-memory-utilization 0.92
@@ -68,6 +70,7 @@ models:
         --reasoning-parser qwen3
         --enable-auto-tool-choice
         --tool-call-parser qwen3_xml
+        --cudagraph-capture-sizes 1 2 4 8 16 32
     cmdStop: podman stop llmstack-vllm-${MODEL_ID}
 
   # ─── llama-server: Qwen3.6-27B Q4_K_M GGUF ─────────────────────────────
@@ -130,6 +133,8 @@ models:
         --shm-size=32g
         --network=host
         -v /mnt/models/llm:/models:ro
+        -v ${LLMSTACK_DIR:-$HOME/ai/llmstack}/.vllm-cache:/root/.cache/vllm
+        -v ${LLMSTACK_DIR:-$HOME/ai/llmstack}/.triton-cache:/root/.triton/cache
         -e HSA_ENABLE_SDMA=0
         -e TORCH_BLAS_PREFER_HIPBLASLT=1
         --entrypoint=""
@@ -141,12 +146,13 @@ models:
         --dtype auto
         --tensor-parallel-size 4
         --enable-expert-parallel
-        --max-num-seqs 64
+        --max-num-seqs 32
         --max-num-batched-tokens 32768
         --gpu-memory-utilization 0.97
         --enable-prefix-caching
         --enable-chunked-prefill
         --trust-remote-code
+        --cudagraph-capture-sizes 1 2 4 8 16 32
     cmdStop: podman stop llmstack-vllm-${MODEL_ID}
 
   # ─── vLLM: Qwen3.6-35B-A3B AWQ Int4 ────────────────────────────────────
@@ -174,6 +180,8 @@ models:
         --shm-size=32g
         --network=host
         -v /mnt/models/llm:/models:ro
+        -v ${LLMSTACK_DIR:-$HOME/ai/llmstack}/.vllm-cache:/root/.cache/vllm
+        -v ${LLMSTACK_DIR:-$HOME/ai/llmstack}/.triton-cache:/root/.triton/cache
         -e HSA_ENABLE_SDMA=0
         -e TORCH_BLAS_PREFER_HIPBLASLT=1
         --entrypoint=""
@@ -185,7 +193,7 @@ models:
         --dtype auto
         --quantization awq
         --tensor-parallel-size 4
-        --max-num-seqs 64
+        --max-num-seqs 32
         --max-num-batched-tokens 32768
         --kv-cache-dtype fp8
         --gpu-memory-utilization 0.92
@@ -195,6 +203,7 @@ models:
         --reasoning-parser qwen3
         --enable-auto-tool-choice
         --tool-call-parser qwen3_xml
+        --cudagraph-capture-sizes 1 2 4 8 16 32
     cmdStop: podman stop llmstack-vllm-${MODEL_ID}
 
   # ─── vLLM: Qwen3.6-35B-A3B FP8 — Code profile (quality-first + MTP) ────
@@ -228,6 +237,8 @@ models:
         --shm-size=32g
         --network=host
         -v /mnt/models/llm:/models:ro
+        -v ${LLMSTACK_DIR:-$HOME/ai/llmstack}/.vllm-cache:/root/.cache/vllm
+        -v ${LLMSTACK_DIR:-$HOME/ai/llmstack}/.triton-cache:/root/.triton/cache
         -e HSA_ENABLE_SDMA=0
         -e TORCH_BLAS_PREFER_HIPBLASLT=1
         --entrypoint=""
@@ -239,7 +250,7 @@ models:
         --dtype auto
         --tensor-parallel-size 4
         --enable-expert-parallel
-        --max-num-seqs 64
+        --max-num-seqs 32
         --max-num-batched-tokens 32768
         --kv-cache-dtype fp8
         --gpu-memory-utilization 0.92
@@ -250,6 +261,7 @@ models:
         --enable-auto-tool-choice
         --tool-call-parser qwen3_xml
         --speculative-config '{"method": "mtp", "num_speculative_tokens": 2}'
+        --cudagraph-capture-sizes 1 2 4 8 16 32
     cmdStop: podman stop llmstack-vllm-${MODEL_ID}
 
   # ─── vLLM: Qwen3.6-35B-A3B FP8 — Fast profile (thinking OFF, max throughput) ─
@@ -281,6 +293,8 @@ models:
         --network=host
         -v /mnt/models/llm:/models:ro
         -v ${LLMSTACK_DIR:-$HOME/ai/llmstack}/config/templates:/templates:ro
+        -v ${LLMSTACK_DIR:-$HOME/ai/llmstack}/.vllm-cache:/root/.cache/vllm
+        -v ${LLMSTACK_DIR:-$HOME/ai/llmstack}/.triton-cache:/root/.triton/cache
         -e HSA_ENABLE_SDMA=0
         -e TORCH_BLAS_PREFER_HIPBLASLT=1
         --entrypoint=""
@@ -292,7 +306,7 @@ models:
         --dtype auto
         --tensor-parallel-size 4
         --enable-expert-parallel
-        --max-num-seqs 64
+        --max-num-seqs 32
         --max-num-batched-tokens 32768
         --kv-cache-dtype fp8
         --gpu-memory-utilization 0.97
@@ -303,6 +317,7 @@ models:
         --enable-auto-tool-choice
         --tool-call-parser qwen3_xml
         --chat-template /templates/qwen3.6-no-think.jinja
+        --cudagraph-capture-sizes 1 2 4 8 16 32
     cmdStop: podman stop llmstack-vllm-${MODEL_ID}
 
   # ─── vLLM: Qwen3.6-35B-A3B FP8 — 512K context (YaRN RoPE extension) ────────
@@ -335,6 +350,8 @@ models:
         --shm-size=32g
         --network=host
         -v /mnt/models/llm:/models:ro
+        -v ${LLMSTACK_DIR:-$HOME/ai/llmstack}/.vllm-cache:/root/.cache/vllm
+        -v ${LLMSTACK_DIR:-$HOME/ai/llmstack}/.triton-cache:/root/.triton/cache
         -e HSA_ENABLE_SDMA=0
         -e VLLM_ALLOW_LONG_MAX_MODEL_LEN=1
         -e TORCH_BLAS_PREFER_HIPBLASLT=1
@@ -358,6 +375,7 @@ models:
         --reasoning-parser qwen3
         --hf-overrides '{"text_config": {"rope_scaling": {"type": "yarn", "factor": 2.0, "original_max_position_embeddings": 262144}}}'
         --speculative-config '{"method": "mtp", "num_speculative_tokens": 2}'
+        --cudagraph-capture-sizes 1 2 4 8 16 32
     cmdStop: podman stop llmstack-vllm-${MODEL_ID}
 
   # ─── llama-server: Qwen3.6-35B-A3B GGUF UD-Q4_K_S (unsloth) ───────────
