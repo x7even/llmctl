@@ -161,7 +161,7 @@ llmctl pick
 
 ## Terminal control panel (`llmpanel`)
 
-`llmpanel` is a roctop-style TUI that combines monitoring and control in one
+`llmpanel` is a [roctop-style](https://github.com/x7even/roctop) TUI that combines monitoring and control in one
 terminal window.
 
 ```bash
