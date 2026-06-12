@@ -25,7 +25,7 @@ models:
   # ─── vLLM: Qwen3.6-27B FP8 (dense, code-optimised) ─────────────────────
   # Best for: code generation — highest quality in the Qwen3.6 family for code
   #           (SWE-bench 77.2 vs 35B-A3B's 73.4)
-  # Backend: vLLM 0.20.0 via AMD official image
+  # Backend: vLLM 0.22.1 via AMD official image
   # VRAM:    ~29 GB across 4 GPUs (~7.5 GB each) — dense model, no MoE sparsity
   # Note:    No MTP draft head; thinking ON by default
   qwen3.6-27b-fp8:
@@ -109,7 +109,7 @@ models:
 
   # ─── vLLM: Qwen3-Coder-30B-A3B-Instruct FP8 ────────────────────────────
   # Best for: code generation, agent tool calls, Claude Code / OpenCode serving
-  # Backend: vLLM 0.20.0 via docker.io/vllm/vllm-openai-rocm:latest (ROCm 7.2)
+  # Backend: vLLM 0.22.1 via docker.io/vllm/vllm-openai-rocm:latest (ROCm 7.2)
   # VRAM:    ~30 GB spread across 4 GPUs (~7.5 GB each)
   # Model:   /mnt/models/llm/Qwen3-Coder-30B-A3B-Instruct-FP8/  (safetensors, local)
   # Note:    No bundled MTP head (no speculative decoding)
@@ -157,7 +157,7 @@ models:
 
   # ─── vLLM: Qwen3.6-35B-A3B AWQ Int4 ────────────────────────────────────
   # Best for: benchmarking Q4 vs FP8 quality/throughput tradeoff
-  # Backend: vLLM 0.20.0 via AMD official image, AWQ quantization
+  # Backend: vLLM 0.22.1 via AMD official image, AWQ quantization
   # VRAM:    ~20 GB across 4 GPUs (~5 GB each) — leaves headroom for large KV cache
   # Note:    No MTP head; no speculative decoding
   qwen3.6-35b-awq:
@@ -208,14 +208,14 @@ models:
 
   # ─── vLLM: Qwen3.6-35B-A3B FP8 — Code profile (quality-first + MTP) ────
   # Best for: Claude Code, OpenCode, agentic coding — highest quality output
-  # Backend: vLLM 0.20.0 via docker.io/vllm/vllm-openai-rocm:latest (ROCm 7.2)
+  # Backend: vLLM 0.22.1 via docker.io/vllm/vllm-openai-rocm:latest (ROCm 7.2)
   # VRAM:    ~35 GB across 4 GPUs + ~3 GB MTP draft head overhead (~9.5 GB each)
   # MTP:     speculative decoding via bundled mtp.safetensors draft head
   #          Mathematically lossless — main model verifies all tokens
   #          Benchmarked: +25% serial (110→77 tok/s vs no-MTP), +52% at conc=8
   # Context: 262144 tokens native (hybrid linear+full attention — 75% O(n) layers)
   # Note:    thinking ON by default; --reasoning-parser strips <think> from content
-  #          Uses AMD official image — Qwen3_5MoeForConditionalGeneration needs 0.20.0+
+  #          Uses AMD official image — Qwen3_5MoeForConditionalGeneration requires 0.22.1+
   qwen3.6-35b-code:
     name: "Qwen3.6-35B-A3B-FP8 (code)"
     ttl: 600

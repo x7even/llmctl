@@ -1,17 +1,14 @@
-# vLLM backend for AMD RDNA4 (gfx1201)
+# DEPRECATED — locally-built vLLM image (broken with transformers 5.x)
 #
-# Base image already contains:
-#   - ROCm 7.1.1 with navi/RDNA4 patches
-#   - vLLM 0.10.2rc1 + PyTorch 2.8
-#   - /usr/local/bin/rdna4_vllm_entrypoint.sh  (exec vllm "$@")
+# This image (vLLM 0.10.2rc1, ROCm 7.1.1) is no longer used. Transformers 5.x
+# removed `all_special_tokens_extended`, causing an AttributeError on all Qwen3
+# models at startup.
 #
-# This layer is intentionally thin — keep it so upgrades flow from
-# rebuilding the base image only.
+# All profiles now use the AMD official image instead:
+#   docker.io/vllm/vllm-openai-rocm:latest  (vLLM 0.22.1, ROCm 7.2)
 #
-# Build: podman build -t localhost/llmstack-vllm:latest containers/vllm/
+# This file is retained for reference only.
 FROM localhost/vllm-rdna4:rocm7.1.1-navi-fixed
 
-# Upgrade transformers from source: required for qwen3_5_moe architecture
-# (Qwen3.6-35B-A3B) which was not in the 4.57.x release branch.
 RUN pip install --no-cache-dir \
     git+https://github.com/huggingface/transformers.git
