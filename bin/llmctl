@@ -241,6 +241,38 @@ def cmd_unload(_args):
         print(f"Unload failed: {e}")
 
 
+def _diagnose_swap_failure():
+    hints = []
+    if not Path("/dev/kfd").exists():
+        hints.append(
+            "  • /dev/kfd not found — ROCm is likely not installed on this host.\n"
+            "    Install ROCm, then confirm with: ls /dev/kfd"
+        )
+    else:
+        try:
+            import grp
+            render_members = grp.getgrnam("render").gr_mem
+            video_members  = grp.getgrnam("video").gr_mem
+            user = os.environ.get("USER", "")
+            if user and user not in render_members and user not in video_members:
+                hints.append(
+                    f"  • User '{user}' is not in the 'render' or 'video' group.\n"
+                    "    Fix: sudo usermod -aG render,video $USER  (then log out and back in)"
+                )
+        except (KeyError, Exception):
+            pass
+    if hints:
+        print("Possible causes:")
+        for h in hints:
+            print(h)
+    else:
+        print(
+            "  If the log shows 'exit status 125', the container failed to start.\n"
+            "  Common causes: image pull failed, /dev/kfd missing (ROCm not installed),\n"
+            "  or user not in the 'render'/'video' group."
+        )
+
+
 def cmd_swap(args):
     if not args:
         print("Usage: llmctl swap <profile>")
@@ -262,6 +294,7 @@ def cmd_swap(args):
         print(f"'{profile}' responded (result may be partial)")
     else:
         print(f"WARNING: no response from '{profile}' — check: llmctl logs {profile}")
+        _diagnose_swap_failure()
 
 
 def cmd_pick(_args):

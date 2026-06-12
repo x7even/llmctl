@@ -9,6 +9,19 @@ Router: **llama-swap** — one OpenAI endpoint, models loaded on demand by the `
 
 ---
 
+## Prerequisites
+
+Before cloning, confirm these are in place:
+
+- **ROCm installed** — `/dev/kfd` must exist. If `ls /dev/kfd` returns "No such file", install ROCm first: [ROCm installation guide](https://rocm.docs.amd.com/projects/install-on-linux/en/latest/)
+- **podman installed** — `which podman`. Rootless podman is assumed throughout.
+- **GPU device group membership** — your user must be in the `render` (and optionally `video`) group: `groups | grep render`. If not: `sudo usermod -aG render,video $USER` then log out and back in.
+- **Models on disk** — the config expects models at `/mnt/models/llm/`. Adjust the `-v` mount paths in `config/models.yaml` if yours are elsewhere.
+
+The vLLM container image (`docker.io/vllm/vllm-openai-rocm:latest`) is large (~20 GB) and will be pulled automatically on first `llmctl swap`. Make sure you have the disk space and a reasonable connection before starting.
+
+---
+
 ## Quick start
 
 ```bash
@@ -245,6 +258,7 @@ Clients  ──►  llmproxy :9000  ──►  llama-swap :8080  ──►  vLLM
 |---------|-----|
 | `llmctl up` hangs | Check `~/.local/share/llmstack/llama-swap.log` |
 | `llmctl swap` times out | First vLLM boot compiles Inductor kernels — up to 20 min; check `llmctl logs <profile>`. Subsequent starts are ~2–3 min (cached). |
+| Log shows `exit status 125` | The container failed to start before running. Most likely cause: `/dev/kfd` doesn't exist (ROCm not installed). Run `ls /dev/kfd` — if missing, see [Prerequisites](#prerequisites). Also check `podman images` to confirm the image was pulled. |
 | vLLM fails to start | `llmctl logs <profile>`; confirm image exists with `podman images` |
 | GGUF model not found | Verify path in `config/models.yaml` matches `/mnt/models/llm/...` |
 | GPU not visible in container | Check user is in `video` and `render` groups: `groups` |
