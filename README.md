@@ -3,7 +3,7 @@
 OpenAI-compatible LLM serving stack for **concurrent agent use**.  
 Designed for: Claude Code · OpenCode · MCP testing · agent frameworks · raw API clients.
 
-Reference hardware: 4× AMD Radeon AI PRO R9700 (gfx1201, 32 GB each = 128 GB total VRAM) — see [Hardware compatibility](#hardware-compatibility) for other GPUs.  
+Reference hardware: 1–4× AMD Radeon AI PRO R9700 (gfx1201, 32 GB each) — `scripts/configure` auto-detects your GPU count and patches the config accordingly. See [Hardware compatibility](#hardware-compatibility) for details.  
 Backends: **vLLM 0.22.1** (FP8/AWQ/safetensors, PagedAttention, high concurrency) + **llama-server Vulkan** (GGUF models)  
 Router: **llama-swap** — one OpenAI endpoint, models loaded on demand by the `model` field
 
@@ -255,7 +255,7 @@ Clients  ──►  llmproxy :9000  ──►  llama-swap :8080  ──►  vLLM
 
 ## Hardware compatibility
 
-The containers and config in this repo are built specifically for the **AMD Radeon AI PRO R9700 (gfx1201 / RDNA4)**. Here is what each backend requires if you want to adapt it to other hardware:
+The containers and config in this repo are built for the **AMD Radeon AI PRO R9700 (gfx1201 / RDNA4)**. **1 to 4 GPUs are supported** — `scripts/configure` auto-detects your count and patches `tensor-parallel-size`, `tensor-split`, and expert-parallel settings accordingly. The benchmarks in this repo use 4× R9700 (128 GB total); fewer GPUs reduce throughput and limit which models fit. Here is what each backend requires if you want to adapt it to other hardware:
 
 | Backend | Requirement | Notes |
 |---------|-------------|-------|
@@ -264,7 +264,7 @@ The containers and config in this repo are built specifically for the **AMD Rade
 | **llama-swap** | None | CPU-only router; hardware-agnostic. |
 | **GPU monitoring** | AMD with `rocm-smi` | `llmpanel` displays `rocm-smi unavailable` gracefully on other platforms. |
 
-### Single-GPU setup
+### GPU count configuration
 
 Run `scripts/configure` after cloning — it auto-detects your GPU count via `rocm-smi` and patches `config/models.yaml` accordingly:
 
