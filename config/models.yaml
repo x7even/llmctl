@@ -16,7 +16,7 @@
 #   llmstack-vllm-<profile>   ← vLLM containers  (safetensors / FP8 / AWQ)
 #   llmstack-llama-<profile>  ← llama-server containers  (GGUF)
 
-healthCheckTimeout: 300   # seconds; vLLM cold start ~1-2 min with --cudagraph-capture-sizes 1 2 4 8 16 32
+healthCheckTimeout: 1200  # seconds; Gemma4 first-boot Triton compile ~18 min; warm starts ~2-3 min
 startPort: 9100           # llama-swap assigns backends ports starting here
 globalTTL: 0              # 0 = never auto-unload (set per-model below)
 
@@ -479,6 +479,140 @@ models:
         --cache-type-v q8_0
         --jinja
     cmdStop: podman stop llmstack-llama-qwen35-122b-q6
+
+  # ─── llama-server: Gemma 4 26B-A4B Q8_0 GGUF (vision-capable) ──────────
+  # Best for: multimodal tasks (image+text), strong general reasoning, vision QA
+  # Only vision-capable profile in the stack — loads mmproj alongside the GGUF
+  # Architecture: MoE with 26B total weights / 4B active params per token
+  #   → fast decode despite Q8 size; comparable active-param cost to the Qwen3 MoEs
+  # Backend: llama-server (Vulkan) — NOT vLLM (multimodal GGUF not supported in vLLM)
+  # VRAM:    ~26 GB total ÷ 4 GPUs = ~6.5 GB each; generous KV cache headroom
+  # Model:   /mnt/models/llm/lmstudio-community/gemma-4-26B-A4B-it-GGUF/
+  gemma4-26b-q8:
+    name: "Gemma 4 26B-A4B (Q8_0 + Vision)"
+    ttl: 600
+    checkEndpoint: /health
+    concurrencyLimit: 16
+    aliases:
+      - gemma4
+      - gemma4-26b
+      - gemma4-moe
+      - gemma4-vision
+    cmd: |
+      podman run --replace --rm
+        --name llmstack-llama-${MODEL_ID}
+        --device=/dev/dri
+        --group-add keep-groups
+        --network=host
+        -v /mnt/models/llm:/models:ro
+        localhost/llmstack-llama:latest
+        -m /models/lmstudio-community/gemma-4-26B-A4B-it-GGUF/gemma-4-26B-A4B-it-Q8_0.gguf
+        --mmproj /models/lmstudio-community/gemma-4-26B-A4B-it-GGUF/mmproj-gemma-4-26B-A4B-it-BF16.gguf
+        -ngl 999
+        --tensor-split 1,1,1,1
+        --host 127.0.0.1
+        --port ${PORT}
+        --ctx-size 32768
+        --batch-size 1024
+        --ubatch-size 512
+        --parallel 16
+        --cache-type-k q8_0
+        --cache-type-v q8_0
+        --jinja
+    cmdStop: podman stop llmstack-llama-${MODEL_ID}
+
+  # ─── llama-server: Gemma 4 12B Q4_K_M GGUF (lightweight vision) ─────────
+  # Best for: quick vision tasks, low-latency image QA, VRAM-constrained use
+  # Lowest VRAM footprint with vision capability in the stack
+  # VRAM:    ~7 GB total ÷ 4 GPUs = ~1.75 GB each — can co-load with other models
+  # Note:    Model not yet downloaded; path follows lmstudio-community convention
+  gemma4-12b-q4:
+    name: "Gemma 4 12B (Q4_K_M + Vision)"
+    ttl: 600
+    checkEndpoint: /health
+    concurrencyLimit: 16
+    aliases:
+      - gemma4-12b
+      - gemma4-small
+      - gemma4-fast
+    cmd: |
+      podman run --replace --rm
+        --name llmstack-llama-${MODEL_ID}
+        --device=/dev/dri
+        --group-add keep-groups
+        --network=host
+        -v /mnt/models/llm:/models:ro
+        localhost/llmstack-llama:latest
+        -m /models/lmstudio-community/gemma-4-12B-it-GGUF/gemma-4-12B-it-Q4_K_M.gguf
+        --mmproj /models/lmstudio-community/gemma-4-12B-it-GGUF/mmproj-gemma-4-12B-it-BF16.gguf
+        -ngl 999
+        --tensor-split 1,1,1,1
+        --host 127.0.0.1
+        --port ${PORT}
+        --ctx-size 32768
+        --batch-size 1024
+        --ubatch-size 512
+        --parallel 16
+        --cache-type-k q8_0
+        --cache-type-v q8_0
+        --jinja
+    cmdStop: podman stop llmstack-llama-${MODEL_ID}
+
+  # ─── vLLM: Gemma 4 26B-A4B BF16 — high-concurrency agent serving ────────
+  # Best for: concurrent agent workloads hitting Gemma 4 in parallel
+  # Architecture: MoE, 26B total / 4B active params → fast decode at high concurrency
+  # Backend: vLLM 0.22.1 via AMD official image (ROCm 7.2)
+  # VRAM:    ~52 GB BF16 ÷ 4 GPUs = ~13 GB each; ~76 GB free for KV cache
+  # Note:    No --reasoning-parser (Gemma 4 IT has no thinking mode by default)
+  #          No --kv-cache-dtype fp8 (BF16 model; leave KV at default bf16)
+  #          No --enable-expert-parallel (not tested/supported for Gemma 4 MoE on vLLM)
+  #          No --speculative-config (no MTP head bundled with base checkpoint)
+  #          --tool-call-parser gemma4: dedicated parser for Gemma 4's non-JSON
+  #          wire format (<|tool_call>call:func{...}<tool_call|>) — NOT "pythonic"
+  #          Model path: /models/google/gemma-4-26B-A4B-it (HF org/repo layout)
+  #          Note: model not yet downloaded to /mnt/models/llm/google/
+  gemma4-26b-a4b:
+    name: "Gemma 4 26B-A4B (BF16, vLLM)"
+    ttl: 600
+    checkEndpoint: /health
+    concurrencyLimit: 32
+    aliases:
+      - gemma4-vllm
+      - gemma4-concurrent
+    cmd: |
+      podman run --replace --rm
+        --name llmstack-vllm-${MODEL_ID}
+        --device=/dev/kfd
+        --device=/dev/dri
+        --group-add keep-groups
+        --security-opt seccomp=unconfined
+        --security-opt apparmor=unconfined
+        --ipc=private
+        --shm-size=32g
+        --network=host
+        -v /mnt/models/llm:/models:ro
+        -v ${LLMSTACK_DIR:-$HOME/ai/llmstack}/.vllm-cache:/root/.cache/vllm
+        -v ${LLMSTACK_DIR:-$HOME/ai/llmstack}/.triton-cache:/root/.triton/cache
+        -e HSA_ENABLE_SDMA=0
+        -e TORCH_BLAS_PREFER_HIPBLASLT=1
+        --entrypoint=""
+        docker.io/vllm/vllm-openai-rocm:latest
+        vllm serve /models/google/gemma-4-26B-A4B-it
+        --host 127.0.0.1
+        --port ${PORT}
+        --served-model-name gemma4-26b-a4b
+        --dtype auto
+        --tensor-parallel-size 4
+        --max-num-seqs 32
+        --max-num-batched-tokens 32768
+        --gpu-memory-utilization 0.92
+        --enable-prefix-caching
+        --enable-chunked-prefill
+        --trust-remote-code
+        --enable-auto-tool-choice
+        --tool-call-parser gemma4
+        --cudagraph-capture-sizes 1 2 4 8 16 32
+    cmdStop: podman stop llmstack-vllm-${MODEL_ID}
 
 # ── Template for adding new models ──────────────────────────────────────────
 #

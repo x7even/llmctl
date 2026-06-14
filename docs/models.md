@@ -271,6 +271,212 @@ Cold start: ~90–180 s (first disk read of 73–98 GB over NVMe).
 
 ---
 
+## Gemma 4
+
+Google's Gemma 4 is a vision-capable MoE model family. Gemma 4 26B-A4B has 26B total
+parameters but only 4B active per forward pass (top-8 routing across small 704-dim experts),
+giving MoE-class throughput at a fraction of the VRAM of a dense model. It supports
+multimodal input (image + text) via a bundled SigLIP-400M vision encoder. Thinking/reasoning
+mode is active by default in the IT variant.
+
+Three profiles are configured. As of 2026-06-13, only `gemma4-26b-q8` has model files on
+disk and has been benchmarked. The other two require model downloads before use.
+
+---
+
+### `gemma4-26b-q8` — Gemma 4 26B Q8 GGUF (primary, on disk)
+
+**Aliases:** `gemma4`, `gemma4-26b`, `gemma4-moe`, `gemma4-vision`
+
+**Backend:** llama-server (Vulkan). GGUF Q8_0.
+**Model path:** `/mnt/models/llm/lmstudio-community/gemma-4-26B-A4B-it-GGUF/`
+**VRAM:** ~28 GB across 4 GPUs (~7 GB each) at Q8_0.
+
+**Use for:** General reasoning, instruction following, vision tasks (image QA, OCR,
+diagram analysis). Strong all-round alternative to Qwen3.6 for non-code tasks where
+vision input is needed. Thinking mode active by default — token counts include `<think>`
+blocks; use `--no-thinking` in bench to measure decode throughput cleanly.
+
+**Special capabilities:**
+- **Vision:** Accepts image URLs or base64 via the standard OpenAI multimodal format
+  (`content: [{type: "image_url", ...}]`). The llama-server image must be built with
+  vision support enabled (`--mmproj` flag in the profile).
+- **Thinking/reasoning mode:** The IT model activates extended reasoning by default.
+  This inflates measured token counts relative to models with thinking off. Benchmark
+  numbers below reflect thinking active (not suppressed).
+- **MoE efficiency:** 4B active params per token. At Q8_0, decode throughput scales
+  well with concurrency — long-512 throughput nearly doubles from conc=1 to conc=16,
+  consistent with effective request batching on longer contexts.
+
+**Key config notes:**
+- `--tool-call-parser gemma4` — Gemma 4 uses a non-JSON wire format
+  (`<|tool_call>call:func_name{...}<tool_call|>`). The dedicated `gemma4` parser is
+  required; `pythonic` or `json` parsers do not handle this format.
+- `--reasoning-parser` intentionally omitted for the llama-server GGUF profile. The
+  vLLM profile (`gemma4-26b-a4b`) would need it, but there is a confirmed upstream bug
+  (vLLM #39130): adding `--reasoning-parser gemma4` while `enable_thinking=false`
+  silently disables structured output (xgrammar) for all requests.
+- `--enable-expert-parallel` omitted — not validated for Gemma 4's expert architecture
+  (704-dim experts, top-8 routing); tested only for DeepSeek-V3 and Qwen3 MoE.
+
+**Benchmark — llama-server Vulkan, `bench/concurrent_bench.py` (2026-06-13):**
+
+| Prompt | conc=1 | conc=4 | conc=8 | conc=16 |
+|--------|--------|--------|--------|---------|
+| short-64    |  56.8 |  90.6 | **127.5** | 129.7 |
+| medium-256  |  65.5 | 117.2 | **153.9** | 135.8 |
+| long-512    |  66.8 | 119.0 | **155.5** | 129.7 |
+| xlarge-2048 |  67.3 | 114.8 | **150.6** | 125.0 |
+
+Decode tok/s. Baseline saved: `bench/baselines/gemma4-26b-q8-20260613.json`.
+Peak VRAM: 32.1 GB (single GPU, tensor-split across 4 × R9700).
+Sweet spot: conc=8 across all prompt sizes. conc=16 shows a slight dip (llama-server
+queue saturation at `--parallel 16`). Decode rate is remarkably stable across prompt
+sizes at the same concurrency — characteristic of the MoE architecture where only 4B
+parameters are active per token regardless of prompt length.
+
+---
+
+### `gemma4-12b-q4` — Gemma 4 12B Q4 GGUF
+
+**Aliases:** `gemma4-12b`, `gemma4-small`, `gemma4-fast`
+
+**Backend:** llama-server (Vulkan). GGUF Q4_K_M.
+**Model path:** `/mnt/models/llm/lmstudio-community/gemma-4-12B-it-GGUF/`
+**VRAM:** ~13.4 GB across 4 GPUs (~3.4 GB each) — lowest footprint in the stack.
+
+**Use for:** Lightweight inference and quick tasks. Dense 12B model — slower per token
+than the MoE 26B Q8 but uses less than half the VRAM, making it co-loadable alongside
+heavier profiles. Also vision-capable via the bundled mmproj.
+
+**Benchmark — llama-server Vulkan, `bench/concurrent_bench.py` (2026-06-13):**
+
+| Prompt | conc=1 | conc=4 | conc=8 | conc=16 |
+|--------|--------|--------|--------|---------|
+| short-64    |  32.6 |  62.5 |  **83.7** | 78.4 |
+| medium-256  |  36.1 |  81.2 | **108.9** | 94.8 |
+| long-512    |  36.3 |  83.9 | **108.5** | 94.0 |
+| xlarge-2048 |  35.2 |  82.4 | **107.1** | 93.6 |
+
+Decode tok/s. Baseline saved: `bench/baselines/gemma4-12b-q4-20260613.json`.
+Peak VRAM: 13.4 GB. Sweet spot: conc=8 across all prompt sizes (2.6–3.0× serial).
+Throughput is remarkably flat across prompt sizes (~35 tok/s serial) — consistent with
+a dense model where bandwidth cost per token is fixed by parameter count, not context.
+
+---
+
+### `gemma4-26b-a4b` — Gemma 4 26B vLLM BF16
+
+**Aliases:** `gemma4-vllm`, `gemma4-concurrent`
+
+**Backend:** vLLM 0.22.1 (`docker.io/vllm/vllm-openai-rocm:latest`), BF16 safetensors.
+**Model path:** `/mnt/models/llm/google/gemma-4-26B-A4B-it`
+**VRAM:** 122.7 GB across 4 GPUs — nearly fills all 128 GB. Profile is exclusive; cannot
+co-load with any other model. The large VRAM footprint is the model weights (49 GB BF16)
+plus the KV cache pool vLLM allocates at startup.
+
+**Use for:** High-concurrency agent workloads. vLLM's PagedAttention and MoE architecture
+(4B active params per token) combine to give outstanding batching efficiency — **528 tok/s
+at conc=16** on medium-256 prompts, which beats `qwen3.6-35b-code` with MTP (481 tok/s).
+Use this profile when many parallel requests are hitting Gemma 4 simultaneously.
+
+**First boot:** vLLM triggers Inductor/Triton compile on first start (~3–5 min with warm
+`.vllm-cache/`). The `healthCheckTimeout` in models.yaml is set to 1200 s to cover this.
+Subsequent starts: ~2–3 min.
+
+**Key config notes:**
+- `--tool-call-parser gemma4` — Gemma 4's tool-call wire format requires its own parser
+- Triton attention backend is forced automatically by vLLM (heterogeneous head dims)
+- No `--enable-expert-parallel` — not validated for this MoE architecture
+- No `--kv-cache-dtype fp8` — BF16 weights; leave KV at default
+
+**Benchmark — vLLM 0.22.1 BF16, `bench/concurrent_bench.py` (2026-06-13):**
+
+| Prompt | conc=1 | conc=4 | conc=8 | conc=16 | conc=32 |
+|--------|--------|--------|--------|---------|---------|
+| short-64    |  53.1 | 123.1 | 140.0 | 243.0 | **394.8** |
+| medium-256  |  53.4 | 167.1 | 287.1 | **528.2** | 540.7 |
+| long-512    |  53.5 | 170.8 | 289.8 | **476.1** | 483.1 |
+| xlarge-2048 |  53.1 | 165.9 | 294.5 | **485.7** | 492.5 |
+
+Decode tok/s. Baseline saved: `bench/baselines/gemma4-26b-a4b-20260613.json`.
+Peak VRAM: 122.7 GB. Sweet spot: conc=16 for medium/long/xlarge (conc=32 adds <3%).
+Scaling factor from serial to conc=16: **9.9×** on medium-256 — exceptional MoE batching.
+The throughput plateau at conc=16→32 reflects the `--max-num-seqs 32` ceiling being
+reached; the model is compute-bound, not queue-bound, at this level.
+
+---
+
+### Gemma 4 cross-model comparison
+
+All three Gemma 4 profiles benchmarked. Medium-256 prompt, decode tok/s:
+
+| Model | backend | quant | VRAM | conc=1 | conc=8 | conc=16 |
+|-------|---------|-------|------|--------|--------|---------|
+| `gemma4-26b-a4b` | vLLM | BF16 | 123 GB | 53.4 | 287.1 | **528.2** |
+| `gemma4-26b-q8` | llama-server | Q8_0 GGUF | 32 GB | 65.5 | 153.9 | 135.8 |
+| `gemma4-12b-q4` | llama-server | Q4_K_M GGUF | 13 GB | 36.1 | 108.9 | 94.8 |
+| — | — | — | — | — | — | — |
+| `qwen3.6-35b-code` (MTP, no-think) | vLLM | FP8 | 35 GB | 43 | 261 | 481 |
+| `qwen3.6-35b-fast` (no-think) | vLLM | FP8 | 35 GB | 69 | 222 | — |
+| `qwen3.6-35b-q4ks` | llama-server | Q4_K_S | 20 GB | ~80 | ~175 | — |
+
+**Key findings:**
+- `gemma4-26b-a4b` **beats** `qwen3.6-35b-code+MTP` at conc=16 (528 vs 481 tok/s) despite
+  being BF16 vs FP8 and having no speculative decoding. The 4B active params per token
+  allows vLLM to pack dramatically more requests per batch.
+- `gemma4-26b-q8` serial (65.5) is comparable to Qwen3.6 FP8 serial (43–69) but doesn't
+  scale as well with concurrency — llama-server caps at `--parallel 16` without vLLM's
+  PagedAttention. Advantage: 32 GB VRAM vs 123 GB, can co-load with other models.
+- `gemma4-12b-q4` is the lightest vision-capable option at 13 GB — can run alongside any
+  other profile in the stack. Throughput ~109 tok/s at conc=8 is solid for its size.
+
+---
+
+### Vision usage — image input with `gemma4-26b-q8`
+
+Pass images using the OpenAI multimodal `content` array format. The `image_url` type
+accepts either an HTTPS URL or a base64 data URI:
+
+```bash
+curl http://localhost:8080/v1/chat/completions \
+  -H "Content-Type: application/json" \
+  -d '{
+    "model": "gemma4-26b-q8",
+    "max_tokens": 512,
+    "messages": [
+      {
+        "role": "user",
+        "content": [
+          {
+            "type": "image_url",
+            "image_url": {
+              "url": "https://upload.wikimedia.org/wikipedia/commons/thumb/4/47/PNG_transparency_demonstration_1.png/280px-PNG_transparency_demonstration_1.png"
+            }
+          },
+          {
+            "type": "text",
+            "text": "Describe what you see in this image."
+          }
+        ]
+      }
+    ]
+  }'
+```
+
+To use a local file, encode it as base64 and substitute the `url` value:
+
+```bash
+B64=$(base64 -w 0 /path/to/image.png)
+# then set "url": "data:image/png;base64,${B64}"
+```
+
+The `--mmproj` flag in the profile points to the bundled SigLIP-400M multimodal
+projector. If the model loads but image requests return errors, verify the `--mmproj`
+path in `config/models.yaml` matches the actual filename in the GGUF directory.
+
+---
+
 ## FP8 kernel config note
 
 vLLM warns at startup:
