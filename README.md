@@ -33,7 +33,9 @@ ln -sf "$(pwd)/bin/llmctl" ~/.local/bin/llmctl
 # 2. Install llmpanel TUI (pre-built binary — no Go required)
 curl -fsSL https://raw.githubusercontent.com/x7even/llmctl/master/install-llmpanel.sh | bash
 
-# 3. Configure for your GPU count (auto-detects via rocm-smi)
+# 3. Configure for your machine (GPU count + absolute paths)
+#    This is required — models.yaml ships with __LLMSTACK_DIR__ placeholders
+#    that configure replaces with the actual repo path, and patches GPU count.
 scripts/configure
 
 # 4. Start the router
@@ -270,6 +272,7 @@ Clients  ──►  llmproxy :9000  ──►  llama-swap :8080  ──►  vLLM
 
 | Symptom | Fix |
 |---------|-----|
+| Container exits immediately with `invalid argument` | Run `scripts/configure` — `models.yaml` still has `__LLMSTACK_DIR__` placeholders. podman rejects them as invalid volume source paths. |
 | `llmctl up` hangs | Check `~/.local/share/llmstack/llama-swap.log` |
 | `llmctl swap` times out | First vLLM boot compiles Inductor kernels — up to 20 min; check `llmctl logs <profile>`. Subsequent starts are ~2–3 min (cached). |
 | Log shows `exit status 125` | The container failed to start before running. Most likely cause: `/dev/kfd` doesn't exist (ROCm not installed). Run `ls /dev/kfd` — if missing, see [Prerequisites](#prerequisites). Also check `podman images` to confirm the image was pulled. |
@@ -292,23 +295,28 @@ The containers and config in this repo are built for the **AMD Radeon AI PRO R97
 | **llama-swap** | None | CPU-only router; hardware-agnostic. |
 | **GPU monitoring** | AMD with `rocm-smi` | `llmpanel` displays `rocm-smi unavailable` gracefully on other platforms. |
 
-### GPU count configuration
+### Configuration (required after cloning)
 
-Run `scripts/configure` after cloning — it auto-detects your GPU count via `rocm-smi` and patches `config/models.yaml` accordingly:
+`scripts/configure` must be run once after cloning. It does two things:
+
+1. **Replaces `__LLMSTACK_DIR__`** — `config/models.yaml` ships with this literal placeholder in all volume mount paths. llama-swap executes container commands without a shell, so environment variables like `$HOME` aren't expanded at runtime. `configure` substitutes the placeholder with the absolute path to your repo clone.
+
+2. **Patches GPU count** — auto-detected via `rocm-smi`, or set with `--gpu-count`.
 
 ```bash
-scripts/configure              # auto-detect and apply
-scripts/configure --dry-run    # preview without writing
-scripts/configure --gpu-count 1  # override if rocm-smi isn't available
+scripts/configure                  # auto-detect GPU count, apply both fixes
+scripts/configure --dry-run        # preview the result without writing
+scripts/configure --gpu-count 2    # override GPU count (if rocm-smi isn't available)
 ```
 
-What it adjusts:
+What it adjusts in `config/models.yaml`:
 
-| Setting | 1 GPU | 2 GPU | 4 GPU (default) |
-|---------|-------|-------|-----------------|
-| `--tensor-parallel-size` | 1 | 2 | 4 |
-| `--tensor-split` (llama-server) | *(removed)* | `1,1` | `1,1,1,1` |
-| `--enable-expert-parallel` | *(removed)* | kept | kept |
+| Setting | What changes |
+|---------|-------------|
+| `__LLMSTACK_DIR__` | Replaced with the absolute path to this repo (e.g. `/home/alice/ai/llmstack`) |
+| `--tensor-parallel-size` | Set to your GPU count |
+| `--tensor-split` (llama-server) | Set to `1,1,...` matching GPU count (removed for 1 GPU) |
+| `--enable-expert-parallel` | Removed when GPU count is 1 |
 
 **VRAM limits** — the 122B models won't fit on fewer than 3 GPUs (Q4, ~73 GB) or 4 GPUs (Q6, ~98 GB). The script warns if your GPU count is below the minimum; those profiles should be removed from `models.yaml` in that case.
 
