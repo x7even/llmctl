@@ -87,6 +87,9 @@ llmpanel
 | `qwen3-coder-30b-fp8` | vLLM TP=4 | ~30 GB | 32K | Legacy code model; retained as baseline reference |
 | `qwen3.5-122b-a10b-q4` | llama-server Vulkan | ~73 GB | 32K | Heavyweight reasoning; one-off queries |
 | `qwen3.5-122b-a10b-q6` | llama-server Vulkan | ~98 GB | 16K | Maximum quality (tight VRAM budget) |
+| `gemma4-26b-a4b` | vLLM TP=4, BF16 | ~123 GB | 128K | High-concurrency; **528 tok/s conc=16**; vision; exclusive VRAM |
+| `gemma4-26b-q8` | llama-server Vulkan | ~32 GB | 32K | Vision-capable; 154 tok/s conc=8; co-loadable |
+| `gemma4-12b-q4` | llama-server Vulkan | ~13 GB | 32K | Lightest vision option; co-loadable with any profile |
 
 **Aliases** (short names that route to the same profile):
 
@@ -102,6 +105,8 @@ llmpanel
 | `qwen3-coder`, `coder` | `qwen3-coder-30b-fp8` |
 | `qwen3.5-122b`, `122b` | `qwen3.5-122b-a10b-q4` |
 | `qwen3.5-122b-q6`, `122b-q6` | `qwen3.5-122b-a10b-q6` |
+| `gemma4`, `gemma4-26b`, `gemma4-moe`, `gemma4-vision` | `gemma4-26b-q8` |
+| `gemma4-vllm`, `gemma4-concurrent` | `gemma4-26b-a4b` |
 
 See `docs/models.md` for benchmark data, architecture details, and tuning notes.
 
@@ -109,17 +114,22 @@ See `docs/models.md` for benchmark data, architecture details, and tuning notes.
 
 ## Benchmarks at a glance
 
-Measured on 4× R9700 (128 GB total), vLLM 0.22.1, no-thinking, MTP enabled where noted.
+Measured on 4× R9700 (128 GB total), vLLM 0.22.1, no-thinking unless noted, MTP enabled where noted.
 Metric: decode tok/s.
 
 | Profile | serial | conc=4 | conc=8 | conc=16 |
 |---------|--------|--------|--------|---------|
-| `qwen3.6-35b-code` (medium-256, MTP) | 43 | 145 | **261** | 481 |
+| `gemma4-26b-a4b` (medium-256, BF16, thinking on¹) | 53 | 167 | 287 | **528** |
 | `qwen3.6-35b-code` (xlarge-2048, MTP) | 43 | 155 | **335** | 651 |
+| `qwen3.6-35b-code` (medium-256, MTP) | 43 | 145 | **261** | 481 |
 | `qwen3.6-35b-awq` (medium-256) | 92 | — | **250** | — |
 | `qwen3.6-35b-fp8` no-MTP (medium-256) | 69 | — | **222** | — |
-| `qwen3.6-27b-fp8` (medium-256) | 23 | 125 | **153** | — |
+| `gemma4-26b-q8` (medium-256, Q8 GGUF, thinking on¹) | 66 | 117 | **154** | — |
 | `qwen3-coder-30b-fp8` (medium-256) | 39 | — | **158** | — |
+| `qwen3.6-27b-fp8` (medium-256) | 23 | 125 | **153** | — |
+| `gemma4-12b-q4` (medium-256, Q4 GGUF, thinking on¹) | 36 | 81 | **109** | — |
+
+¹ Gemma 4 IT activates extended reasoning by default; thinking tokens inflate measured tok/s vs no-thinking benchmarks.
 
 See `docs/models.md` for full tables across all prompt sizes and concurrency levels.
 
@@ -156,6 +166,8 @@ llmctl swap qwen3.6-35b-code     # quality-first (MTP, 262K context)
 llmctl swap qwen3.6-35b-fast     # same model, thinking off by default
 llmctl swap qwen3.6-35b-512k     # 512K context (YaRN)
 llmctl swap qwen3.5-122b         # heavyweight reasoning
+llmctl swap gemma4               # Gemma 4 26B Q8 vision (alias → gemma4-26b-q8)
+llmctl swap gemma4-vllm          # Gemma 4 26B BF16 vLLM — highest concurrent tok/s
 
 # Free VRAM without stopping the router
 llmctl unload
