@@ -119,17 +119,19 @@ Metric: decode tok/s.
 
 | Profile | serial | conc=4 | conc=8 | conc=16 |
 |---------|--------|--------|--------|---------|
-| `gemma4-26b-a4b` (medium-256, BF16, thinking on¹) | 53 | 167 | 287 | **528** |
-| `qwen3.6-35b-code` (xlarge-2048, MTP) | 43 | 155 | **335** | 651 |
-| `qwen3.6-35b-code` (medium-256, MTP) | 43 | 145 | **261** | 481 |
-| `qwen3.6-35b-awq` (medium-256) | 92 | — | **250** | — |
-| `qwen3.6-35b-fp8` no-MTP (medium-256) | 69 | — | **222** | — |
+| `gemma4-26b-a4b` (medium-256, BF16, thinking on¹)² | 53 | 167 | 287 | **528** |
+| `qwen3.6-35b-code` (xlarge-2048, MTP)² | 43 | 155 | **335** | 651 |
+| `qwen3.6-35b-code` (medium-256, MTP)² | 43 | 145 | **261** | 481 |
+| `qwen3.6-35b-awq` (medium-256)² | 92 | — | **250** | — |
+| `qwen3.6-35b-fp8` no-MTP (medium-256)² | 69 | — | **222** | — |
 | `gemma4-26b-q8` (medium-256, Q8 GGUF, thinking on¹) | 66 | 117 | **154** | — |
-| `qwen3-coder-30b-fp8` (medium-256) | 39 | — | **158** | — |
-| `qwen3.6-27b-fp8` (medium-256) | 23 | 125 | **153** | — |
+| `qwen3-coder-30b-fp8` (medium-256)² | 39 | — | **158** | — |
+| `qwen3.6-27b-fp8` (medium-256)² | 23 | 125 | **153** | — |
 | `gemma4-12b-q4` (medium-256, Q4 GGUF, thinking on¹) | 36 | 81 | **109** | — |
 
 ¹ Gemma 4 IT activates extended reasoning by default; thinking tokens inflate measured tok/s vs no-thinking benchmarks.
+
+² vLLM profiles (non-GGUF) use PagedAttention and continuous batching, enabling dramatically better concurrency scaling — throughput grows near-linearly from serial to conc=16 and beyond. GGUF profiles (llama-server Vulkan) plateau early due to fixed-thread batching; serial latency is comparable but concurrent throughput is several times lower at the same concurrency level.
 
 See `docs/models.md` for full tables across all prompt sizes and concurrency levels.
 
