@@ -239,10 +239,8 @@ models:
         -v /mnt/models/llm:/models:ro
         -v /home/xin/ai/llmstack/.vllm-cache:/root/.cache/vllm
         -v /home/xin/ai/llmstack/.triton-cache:/root/.triton/cache
-        -v /home/xin/ai/llmstack/vllm-tuned-configs:/vllm-tuned-configs:ro
         -e HSA_ENABLE_SDMA=0
         -e TORCH_BLAS_PREFER_HIPBLASLT=1
-        -e VLLM_TUNED_CONFIG_FOLDER=/vllm-tuned-configs
         --entrypoint=""
         docker.io/vllm/vllm-openai-rocm:latest
         vllm serve /models/Qwen3.6-35B-A3B-FP8
@@ -297,10 +295,8 @@ models:
         -v /home/xin/ai/llmstack/config/templates:/templates:ro
         -v /home/xin/ai/llmstack/.vllm-cache:/root/.cache/vllm
         -v /home/xin/ai/llmstack/.triton-cache:/root/.triton/cache
-        -v /home/xin/ai/llmstack/vllm-tuned-configs:/vllm-tuned-configs:ro
         -e HSA_ENABLE_SDMA=0
         -e TORCH_BLAS_PREFER_HIPBLASLT=1
-        -e VLLM_TUNED_CONFIG_FOLDER=/vllm-tuned-configs
         --entrypoint=""
         docker.io/vllm/vllm-openai-rocm:latest
         vllm serve /models/Qwen3.6-35B-A3B-FP8
@@ -356,11 +352,9 @@ models:
         -v /mnt/models/llm:/models:ro
         -v /home/xin/ai/llmstack/.vllm-cache:/root/.cache/vllm
         -v /home/xin/ai/llmstack/.triton-cache:/root/.triton/cache
-        -v /home/xin/ai/llmstack/vllm-tuned-configs:/vllm-tuned-configs:ro
         -e HSA_ENABLE_SDMA=0
         -e VLLM_ALLOW_LONG_MAX_MODEL_LEN=1
         -e TORCH_BLAS_PREFER_HIPBLASLT=1
-        -e VLLM_TUNED_CONFIG_FOLDER=/vllm-tuned-configs
         --entrypoint=""
         docker.io/vllm/vllm-openai-rocm:latest
         vllm serve /models/Qwen3.6-35B-A3B-FP8
