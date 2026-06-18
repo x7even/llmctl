@@ -301,12 +301,12 @@ def cmd_swap(args):
     if not _is_running():
         print("llama-swap is not running — run: llmctl up")
         sys.exit(1)
-    print(f"Warming up '{profile}' (may take 60–180 s on cold start) ...")
+    print(f"Warming up '{profile}' (may take up to 20 min on first boot) ...")
     result = _http(
         "POST",
         "/v1/chat/completions",
         {"model": profile, "messages": [{"role": "user", "content": "hi"}], "max_tokens": 1},
-        timeout=660,
+        timeout=1260,
     )
     if result and result.get("choices"):
         print(f"'{profile}' is loaded and ready")

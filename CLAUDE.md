@@ -70,10 +70,18 @@ llmctl down && llmctl up
 | Phase | Time | Cached? |
 |-------|------|---------|
 | Inductor torch.compile (4 TP ranks in parallel) | ~14 min | ✅ `.vllm-cache/` |
+| Model profiling/warmup (FP8 KV calibration) | ~14 min | ❌ every start |
 | CUDA graph capture (6 batch sizes) | ~13 s | ❌ every start |
-| FP8 KV scale calibration | ~3 min | ❌ every start |
-| **Total — first boot** | **~18–20 min** | |
-| **Total — subsequent boots** | **~2–3 min** | |
+| **Total — first boot** | **~30 min** | |
+| **Total — subsequent boots** | **~16 min** | |
+
+Note: the model profiling/warmup run (FP8 KV calibration + memory profiling) takes ~800 s every
+cold start for Qwen3.6-35B-A3B-FP8 with TP=4/EP=4 and 262K context. This is unavoidable.
+`healthCheckTimeout: 1200` in models.yaml and `llmctl swap` timeout of 1260 s accommodate this.
+
+**TTL must be 0 for these profiles.** llama-swap's TTL timer starts from container launch, not
+from when the model becomes healthy. If startup (800 s) exceeds TTL (600 s), the model is
+immediately unloaded the moment it becomes healthy. All three FP8-35B profiles set `ttl: 0`.
 
 The cache directories `.vllm-cache/` and `.triton-cache/` live in this repo root (gitignored).
 They **must exist on the host** — created automatically by `mkdir -p .vllm-cache .triton-cache`
@@ -100,12 +108,15 @@ vllm serve /models/...
 --cudagraph-capture-sizes 1 2 4 8 16 32
 
 # 3. Persistent cache volumes — without these, torch.compile re-runs every start (~14 min)
--v ${LLMSTACK_DIR:-$HOME/ai/llmstack}/.vllm-cache:/root/.cache/vllm
--v ${LLMSTACK_DIR:-$HOME/ai/llmstack}/.triton-cache:/root/.triton/cache
+-v /home/xin/ai/llmstack/.vllm-cache:/root/.cache/vllm
+-v /home/xin/ai/llmstack/.triton-cache:/root/.triton/cache
 ```
 
 If you add a new vLLM profile and omit any of these, the first startup will take 18+ minutes
 or fail with `unrecognized arguments`.
+
+**Important**: llama-swap v223+ executes `cmd` without a shell — `$LLMSTACK_DIR` and other
+shell variables are NOT expanded. Use hardcoded absolute paths in all volume mounts.
 
 ### AWQ + expert-parallel = hard crash
 
@@ -135,16 +146,27 @@ causes `AttributeError` on Qwen3 models at startup. **Do not use this image.**
 
 All vLLM profiles must use: `docker.io/vllm/vllm-openai-rocm:latest` (vLLM 0.22.1, ROCm 7.2)
 
-### FP8 kernel config warnings are expected
+### FP8 kernel config — MoE experts are tuned, dense layers are not
 
-vLLM prints at startup:
+At startup, vLLM will show two types of FP8 config messages:
+
+**MoE expert layers (tuned — expected "Using configuration from"):**
+```
+Using configuration from /vllm-tuned-configs/E=64,N=512,device_name=AMD_Radeon_R9700,dtype=fp8_w8a8,block_shape=[128,128].json
+```
+This file lives in `vllm-tuned-configs/` and is mounted via `-v /home/xin/ai/llmstack/vllm-tuned-configs:/vllm-tuned-configs:ro`
+with `-e VLLM_TUNED_CONFIG_FOLDER=/vllm-tuned-configs` set in the env.
+
+**Dense attention/FFN layers (not yet tuned — expected warning):**
 ```
 Using default W8A8 Block FP8 kernel config. Performance might be sub-optimal!
-Config file not found for device_name=AMD_Radeon_R9700
+Config file not found at .../N=3072,K=2048,device_name=AMD_Radeon_R9700,dtype=fp8_w8a8,block_shape=[128,128].json
 ```
-This is a known issue — the R9700 (gfx1201) has no hand-tuned FP8 GEMM kernel in
-vLLM's registry. It falls back to MI300X defaults. Performance is measurable but acceptable.
-Do not attempt to suppress or work around this warning; it requires upstream tuning work.
+The `N=3072,K=2048` config (shared attention GEMM layers) has not been tuned for R9700.
+This warning is expected and acceptable — it falls back to MI300X defaults.
+
+If startup shows "Config file not found for device_name=AMD_Radeon_R9700" for the MoE config
+(E=64,N=512), the VLLM_TUNED_CONFIG_FOLDER env var or the volume mount is broken.
 
 ---
 
@@ -215,7 +237,8 @@ All measured on 4× R9700, vLLM 0.22.1, `--no-thinking`, MTP where noted.
 
 | Profile | serial | conc=8 | conc=16 |
 |---------|--------|--------|---------|
-| qwen3.6-35b-code (MTP) | 43 | 261 | 481 |
+| qwen3.6-35b-code (MTP, no tuned MoE config) | 43 | 261 | 481 |
+| qwen3.6-35b-code (MTP, R9700 tuned MoE config) | 43 | 175 | — |
 | qwen3.6-35b-awq | 92 | 250 | — |
 | qwen3.6-35b-fp8 no-MTP | 69 | 222 | — |
 | qwen3.6-27b-fp8 | 23 | 153 | — |
@@ -223,6 +246,12 @@ All measured on 4× R9700, vLLM 0.22.1, `--no-thinking`, MTP where noted.
 | gemma4-26b-a4b (vLLM BF16) | 53.4 | 287.1 | **528.2** |
 | gemma4-26b-q8 (GGUF, llama-server) | 65.5 | 153.9 | 135.8 |
 | gemma4-12b-q4 (GGUF, llama-server) | 36.1 | 108.9 | 94.8 |
+
+**Note:** The R9700-tuned MoE configs (2026-06-18) show -33% regression at conc=8 vs
+MI300X defaults (175 vs 261 tok/s), while serial throughput is unchanged (43 tok/s).
+The tuning was done under isolated single-request load; the configs appear suboptimal
+for concurrent inference (conc≥8) where multiple requests compete for GPU memory/cache.
+Consider reverting `VLLM_TUNED_CONFIG_FOLDER` to use MI300X defaults for concurrent workloads.
 
 Full data across all prompt sizes: `bench/CLAUDE.md` and `bench/baselines/`.
 

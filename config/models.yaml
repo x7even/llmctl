@@ -48,8 +48,8 @@ models:
         --shm-size=32g
         --network=host
         -v /mnt/models/llm:/models:ro
-        -v $LLMSTACK_DIR/.vllm-cache:/root/.cache/vllm
-        -v $LLMSTACK_DIR/.triton-cache:/root/.triton/cache
+        -v /home/xin/ai/llmstack/.vllm-cache:/root/.cache/vllm
+        -v /home/xin/ai/llmstack/.triton-cache:/root/.triton/cache
         -e HSA_ENABLE_SDMA=0
         -e TORCH_BLAS_PREFER_HIPBLASLT=1
         --entrypoint=""
@@ -133,8 +133,8 @@ models:
         --shm-size=32g
         --network=host
         -v /mnt/models/llm:/models:ro
-        -v $LLMSTACK_DIR/.vllm-cache:/root/.cache/vllm
-        -v $LLMSTACK_DIR/.triton-cache:/root/.triton/cache
+        -v /home/xin/ai/llmstack/.vllm-cache:/root/.cache/vllm
+        -v /home/xin/ai/llmstack/.triton-cache:/root/.triton/cache
         -e HSA_ENABLE_SDMA=0
         -e TORCH_BLAS_PREFER_HIPBLASLT=1
         --entrypoint=""
@@ -180,8 +180,8 @@ models:
         --shm-size=32g
         --network=host
         -v /mnt/models/llm:/models:ro
-        -v $LLMSTACK_DIR/.vllm-cache:/root/.cache/vllm
-        -v $LLMSTACK_DIR/.triton-cache:/root/.triton/cache
+        -v /home/xin/ai/llmstack/.vllm-cache:/root/.cache/vllm
+        -v /home/xin/ai/llmstack/.triton-cache:/root/.triton/cache
         -e HSA_ENABLE_SDMA=0
         -e TORCH_BLAS_PREFER_HIPBLASLT=1
         --entrypoint=""
@@ -218,7 +218,7 @@ models:
   #          Uses AMD official image — Qwen3_5MoeForConditionalGeneration requires 0.22.1+
   qwen3.6-35b-code:
     name: "Qwen3.6-35B-A3B-FP8 (code)"
-    ttl: 600
+    ttl: 0
     checkEndpoint: /health
     concurrencyLimit: 64
     aliases:
@@ -237,10 +237,12 @@ models:
         --shm-size=32g
         --network=host
         -v /mnt/models/llm:/models:ro
-        -v $LLMSTACK_DIR/.vllm-cache:/root/.cache/vllm
-        -v $LLMSTACK_DIR/.triton-cache:/root/.triton/cache
+        -v /home/xin/ai/llmstack/.vllm-cache:/root/.cache/vllm
+        -v /home/xin/ai/llmstack/.triton-cache:/root/.triton/cache
+        -v /home/xin/ai/llmstack/vllm-tuned-configs:/vllm-tuned-configs:ro
         -e HSA_ENABLE_SDMA=0
         -e TORCH_BLAS_PREFER_HIPBLASLT=1
+        -e VLLM_TUNED_CONFIG_FOLDER=/vllm-tuned-configs
         --entrypoint=""
         docker.io/vllm/vllm-openai-rocm:latest
         vllm serve /models/Qwen3.6-35B-A3B-FP8
@@ -274,7 +276,7 @@ models:
   #   ~400 tok/s decode (medium-256) with no think block overhead
   qwen3.6-35b-fast:
     name: "Qwen3.6-35B-A3B-FP8 (fast)"
-    ttl: 600
+    ttl: 0
     checkEndpoint: /health
     concurrencyLimit: 64
     aliases:
@@ -292,11 +294,13 @@ models:
         --shm-size=32g
         --network=host
         -v /mnt/models/llm:/models:ro
-        -v $LLMSTACK_DIR/config/templates:/templates:ro
-        -v $LLMSTACK_DIR/.vllm-cache:/root/.cache/vllm
-        -v $LLMSTACK_DIR/.triton-cache:/root/.triton/cache
+        -v /home/xin/ai/llmstack/config/templates:/templates:ro
+        -v /home/xin/ai/llmstack/.vllm-cache:/root/.cache/vllm
+        -v /home/xin/ai/llmstack/.triton-cache:/root/.triton/cache
+        -v /home/xin/ai/llmstack/vllm-tuned-configs:/vllm-tuned-configs:ro
         -e HSA_ENABLE_SDMA=0
         -e TORCH_BLAS_PREFER_HIPBLASLT=1
+        -e VLLM_TUNED_CONFIG_FOLDER=/vllm-tuned-configs
         --entrypoint=""
         docker.io/vllm/vllm-openai-rocm:latest
         vllm serve /models/Qwen3.6-35B-A3B-FP8
@@ -332,7 +336,7 @@ models:
   #          Do not use for short queries — full 262K ctx profile is more efficient
   qwen3.6-35b-512k:
     name: "Qwen3.6-35B-A3B-FP8 (512K context)"
-    ttl: 600
+    ttl: 0
     checkEndpoint: /health
     concurrencyLimit: 16
     aliases:
@@ -350,11 +354,13 @@ models:
         --shm-size=32g
         --network=host
         -v /mnt/models/llm:/models:ro
-        -v $LLMSTACK_DIR/.vllm-cache:/root/.cache/vllm
-        -v $LLMSTACK_DIR/.triton-cache:/root/.triton/cache
+        -v /home/xin/ai/llmstack/.vllm-cache:/root/.cache/vllm
+        -v /home/xin/ai/llmstack/.triton-cache:/root/.triton/cache
+        -v /home/xin/ai/llmstack/vllm-tuned-configs:/vllm-tuned-configs:ro
         -e HSA_ENABLE_SDMA=0
         -e VLLM_ALLOW_LONG_MAX_MODEL_LEN=1
         -e TORCH_BLAS_PREFER_HIPBLASLT=1
+        -e VLLM_TUNED_CONFIG_FOLDER=/vllm-tuned-configs
         --entrypoint=""
         docker.io/vllm/vllm-openai-rocm:latest
         vllm serve /models/Qwen3.6-35B-A3B-FP8
@@ -591,8 +597,8 @@ models:
         --shm-size=32g
         --network=host
         -v /mnt/models/llm:/models:ro
-        -v $LLMSTACK_DIR/.vllm-cache:/root/.cache/vllm
-        -v $LLMSTACK_DIR/.triton-cache:/root/.triton/cache
+        -v /home/xin/ai/llmstack/.vllm-cache:/root/.cache/vllm
+        -v /home/xin/ai/llmstack/.triton-cache:/root/.triton/cache
         -e HSA_ENABLE_SDMA=0
         -e TORCH_BLAS_PREFER_HIPBLASLT=1
         --entrypoint=""
