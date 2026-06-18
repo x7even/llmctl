@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # smoke.sh — Phase 1 verification for llmstack
 # Run after: llmctl up
-# Usage: ./tests/smoke.sh [--skip-gguf]   (--skip-gguf skips the 73 GB 122B model)
+# Usage: ./tests/smoke.sh [--skip-gguf]   (--skip-gguf skips the GGUF backend)
 set -euo pipefail
 
 PORT=8080
@@ -76,9 +76,9 @@ fi
 
 # ── 3. vLLM backend ─────────────────────────────────────────────────────────
 echo ""
-echo "3/5  vLLM backend: qwen3-coder-30b-fp8"
-echo "     Loading model — first cold-start takes 2–5 min ..."
-RESP=$(chat "qwen3-coder-30b-fp8" "Reply with exactly one word: ready" 5 600)
+echo "3/5  vLLM backend: qwen3.6-35b-code"
+echo "     Loading model — warm start 2–3 min, first cold-start 18–20 min ..."
+RESP=$(chat "qwen3.6-35b-code" "Reply with exactly one word: ready" 5 600)
 if echo "${RESP}" | grep -q '"content"' 2>/dev/null; then
     CONTENT=$(echo "${RESP}" | extract_content)
     pass "vLLM responded: ${CONTENT}"
@@ -100,9 +100,9 @@ if [[ "${SKIP_GGUF}" -eq 1 ]]; then
     echo "4/5  GGUF backend: SKIPPED (--skip-gguf)"
 else
     echo ""
-    echo "4/5  llama.cpp backend: qwen3.5-122b-a10b-q4"
-    echo "     Loading 73 GB model — cold-start ~90 s from page cache ..."
-    RESP=$(chat "qwen3.5-122b-a10b-q4" "Reply with exactly one word: ready" 5 600)
+    echo "4/5  llama.cpp backend: qwen3.6-35b-q4ks"
+    echo "     Loading model — cold-start ~5 s (GGUF) ..."
+    RESP=$(chat "qwen3.6-35b-q4ks" "Reply with exactly one word: ready" 5 600)
     if echo "${RESP}" | grep -q '"content"' 2>/dev/null; then
         CONTENT=$(echo "${RESP}" | extract_content)
         pass "llama-server responded: ${CONTENT}"

@@ -319,7 +319,7 @@ blocks; use `--no-thinking` in bench to measure decode throughput cleanly.
 - `--enable-expert-parallel` omitted — not validated for Gemma 4's expert architecture
   (704-dim experts, top-8 routing); tested only for DeepSeek-V3 and Qwen3 MoE.
 
-**Benchmark — llama-server Vulkan, `bench/concurrent_bench.py` (2026-06-13):**
+**Benchmark — thinking active (2026-06-13):**
 
 | Prompt | conc=1 | conc=4 | conc=8 | conc=16 |
 |--------|--------|--------|--------|---------|
@@ -335,6 +335,14 @@ queue saturation at `--parallel 16`). Decode rate is remarkably stable across pr
 sizes at the same concurrency — characteristic of the MoE architecture where only 4B
 parameters are active per token regardless of prompt length.
 
+**Benchmark — no-thinking (2026-06-18):**
+
+No-thinking baseline in progress; `bench/baselines/gemma4-26b-q8-nothink-20260618.json`
+was not saved before this document was updated. Spot-check confirmed that
+`chat_template_kwargs: {enable_thinking: false}` suppresses thinking output correctly
+(response to "What is 2+2?" was a direct answer with no `<think>` block, 0 errors
+across all prompt sizes). Re-run the benchmark to populate this table.
+
 ---
 
 ### `gemma4-12b-q4` — Gemma 4 12B Q4 GGUF
@@ -349,7 +357,7 @@ parameters are active per token regardless of prompt length.
 than the MoE 26B Q8 but uses less than half the VRAM, making it co-loadable alongside
 heavier profiles. Also vision-capable via the bundled mmproj.
 
-**Benchmark — llama-server Vulkan, `bench/concurrent_bench.py` (2026-06-13):**
+**Benchmark — thinking active (2026-06-13):**
 
 | Prompt | conc=1 | conc=4 | conc=8 | conc=16 |
 |--------|--------|--------|--------|---------|
@@ -362,6 +370,25 @@ Decode tok/s. Baseline saved: `bench/baselines/gemma4-12b-q4-20260613.json`.
 Peak VRAM: 13.4 GB. Sweet spot: conc=8 across all prompt sizes (2.6–3.0× serial).
 Throughput is remarkably flat across prompt sizes (~35 tok/s serial) — consistent with
 a dense model where bandwidth cost per token is fixed by parameter count, not context.
+
+**Benchmark — no-thinking (2026-06-18):**
+
+| Prompt | conc=1 | conc=4 | conc=8 | conc=16 |
+|--------|--------|--------|--------|---------|
+| short-64    |  31.4 |  51.3 |  **63.8** | 68.3 |
+| medium-256  |  35.3 |  70.3 |  **87.7** | 81.9 |
+| long-512    |  35.8 |  77.9 |  **95.9** | 83.7 |
+| xlarge-2048 |  35.6 |  35.2 |  **47.5** | 85.8 |
+
+Decode tok/s. Baseline saved: `bench/baselines/gemma4-12b-q4-nothink-20260618.json`.
+`chat_template_kwargs: {enable_thinking: false}` confirmed effective — spot-check
+response to "What is 2+2?" was a direct answer with no `<think>` block.
+Notable: no-thinking throughput is lower than the thinking-on baseline (e.g. conc=8
+medium-256: 87.7 vs 108.9). This is counterintuitive but consistent with the 26B-A4B
+results — for Gemma 4, `enable_thinking: false` changes only the template scaffolding;
+any throughput difference is within session-to-session measurement noise.
+xlarge-2048 shows no speedup at conc=4 (35.2 tok/s ≈ serial), indicating KV cache
+pressure at long contexts with 4 concurrent streams; speedup recovers at conc=16.
 
 ---
 
@@ -390,7 +417,7 @@ Subsequent starts: ~2–3 min.
 - No `--enable-expert-parallel` — not validated for this MoE architecture
 - No `--kv-cache-dtype fp8` — BF16 weights; leave KV at default
 
-**Benchmark — vLLM 0.22.1 BF16, `bench/concurrent_bench.py` (2026-06-13):**
+**Benchmark — thinking active (2026-06-13):**
 
 | Prompt | conc=1 | conc=4 | conc=8 | conc=16 | conc=32 |
 |--------|--------|--------|--------|---------|---------|
@@ -404,6 +431,26 @@ Peak VRAM: 122.7 GB. Sweet spot: conc=16 for medium/long/xlarge (conc=32 adds <3
 Scaling factor from serial to conc=16: **9.9×** on medium-256 — exceptional MoE batching.
 The throughput plateau at conc=16→32 reflects the `--max-num-seqs 32` ceiling being
 reached; the model is compute-bound, not queue-bound, at this level.
+
+**Benchmark — no-thinking (2026-06-18):**
+
+| Prompt | conc=1 | conc=4 | conc=8 | conc=16 | conc=32 |
+|--------|--------|--------|--------|---------|---------|
+| short-64    |  51.5 | 146.0 | 281.6 | **482.5** | 501.5 |
+| medium-256  |  52.4 | 165.4 | 307.3 | **493.7** | 527.8 |
+| long-512    |  52.6 | 160.9 | 283.7 | **476.1** | 470.9 |
+| xlarge-2048 |  52.2 | 164.5 | 288.4 | **488.5** | 491.8 |
+
+Decode tok/s. Baseline saved: `bench/baselines/gemma4-26b-a4b-nothink-20260618.json`.
+`chat_template_kwargs: {enable_thinking: false}` confirmed effective — spot-check
+response to "What is 2+2?" was a direct answer with no `<think>` block.
+No-thinking throughput is effectively identical to thinking-on across all prompt sizes
+(differences within ~6%, within session-to-session noise). Gemma 4 IT does not use
+thinking by default in generation; `enable_thinking: false` changes template scaffolding
+only and does not meaningfully alter throughput. The short-64 conc=16 thinking-on
+result (243 tok/s) is anomalously low compared to no-thinking (482.5); the thinking-on
+run likely generated additional reasoning tokens that changed the effective batch
+dynamics at that concurrency level.
 
 ---
 

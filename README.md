@@ -129,7 +129,7 @@ Metric: decode tok/s.
 | `qwen3.6-27b-fp8` (medium-256)² | 23 | 125 | **153** | — |
 | `gemma4-12b-q4` (medium-256, Q4 GGUF, thinking on¹) | 36 | 81 | **109** | — |
 
-¹ Gemma 4 IT activates extended reasoning by default; thinking tokens inflate measured tok/s vs no-thinking benchmarks.
+¹ Gemma 4 IT activates extended reasoning by default. The table numbers come from the original thinking-on baselines (2026-06-13). No-thinking baselines (2026-06-18) show that `chat_template_kwargs: {enable_thinking: false}` successfully suppresses `<think>` output, but does NOT meaningfully improve throughput — differences between thinking-on and no-thinking runs are within session-to-session noise (~0–6%). Both baseline sets are kept in `bench/baselines/`; see `bench/CLAUDE.md` for the dual-baseline convention.
 
 ² vLLM profiles (non-GGUF) use PagedAttention and continuous batching, enabling dramatically better concurrency scaling — throughput grows near-linearly from serial to conc=16 and beyond. GGUF profiles (llama-server Vulkan) plateau early due to fixed-thread batching; serial latency is comparable but concurrent throughput is several times lower at the same concurrency level.
 

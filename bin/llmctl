@@ -87,6 +87,8 @@ def _list_profiles():
     text = CONFIG_FILE.read_text()
     profiles = []
     in_models = False
+    in_aliases = False
+    current = None
     for line in text.splitlines():
         stripped = line.strip()
         if stripped == "models:":
@@ -96,7 +98,23 @@ def _list_profiles():
             # Top-level model keys are indented exactly 2 spaces
             m = re.match(r"^  ([a-zA-Z0-9._-]+):\s*$", line)
             if m:
-                profiles.append(m.group(1))
+                current = {"id": m.group(1), "aliases": []}
+                profiles.append(current)
+                in_aliases = False
+                continue
+            if current is not None:
+                # 4-space-indented keys inside a profile
+                if re.match(r"^    aliases:\s*$", line):
+                    in_aliases = True
+                    continue
+                elif re.match(r"^    [a-zA-Z0-9_-]+:", line):
+                    in_aliases = False
+                    continue
+                # 6-space-indented alias list items
+                if in_aliases:
+                    alias_m = re.match(r"^      - (.+)$", line)
+                    if alias_m:
+                        current["aliases"].append(alias_m.group(1).strip())
     return profiles
 
 
@@ -224,8 +242,9 @@ def cmd_list(_args):
     active = _active_models()
     print(f"Profiles ({len(profiles)})  [* = loaded]:")
     for p in profiles:
-        mark = " *" if p in active else ""
-        print(f"  {p}{mark}")
+        mark = " *" if p["id"] in active else ""
+        alias_str = f"  (aliases: {', '.join(p['aliases'])})" if p["aliases"] else ""
+        print(f"  {p['id']}{mark}{alias_str}")
 
 
 def cmd_unload(_args):
@@ -302,11 +321,12 @@ def cmd_pick(_args):
     if not profiles:
         print("No profiles in config/models.yaml")
         return
+    ids = [p["id"] for p in profiles]
     # Try fzf first
     try:
         r = subprocess.run(
             ["fzf", "--prompt", "Load model › ", "--height", "40%", "--reverse"],
-            input="\n".join(profiles),
+            input="\n".join(ids),
             capture_output=True,
             text=True,
         )
@@ -319,13 +339,13 @@ def cmd_pick(_args):
         pass
     # Numbered fallback
     print("Available profiles:")
-    for i, p in enumerate(profiles, 1):
+    for i, p in enumerate(ids, 1):
         print(f"  {i:2d}) {p}")
     try:
         choice = input("Select [number]: ").strip()
         idx = int(choice) - 1
-        if 0 <= idx < len(profiles):
-            cmd_swap([profiles[idx]])
+        if 0 <= idx < len(ids):
+            cmd_swap([ids[idx]])
         else:
             print("Invalid choice")
     except (ValueError, EOFError):
