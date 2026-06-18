@@ -1,10 +1,19 @@
 #!/usr/bin/env python3
 """
-Configure config/models.yaml for your GPU count.
+Configure config/models.yaml for your machine.
+
+Does two things:
+  1. Replaces __LLMSTACK_DIR__ with the absolute path to this repo.
+     (llama-swap v223+ runs cmd without a shell, so env vars like $LLMSTACK_DIR
+     are not expanded — configure writes the real path at setup time instead.)
+  2. Patches --tensor-parallel-size and --tensor-split to match your GPU count.
 
 Detects ROCm GPU count automatically, or use --gpu-count to override.
-Patches --tensor-parallel-size and --tensor-split in all profiles.
 Writes a backup (.bak) before modifying.
+
+Run this once after cloning — the repo ships with __LLMSTACK_DIR__ placeholders
+in models.yaml (since llama-swap v223+ runs cmd without a shell and can't expand
+environment variables). Configure writes the absolute path for your machine.
 
 Usage:
     scripts/configure                 # auto-detect, apply changes
@@ -43,7 +52,11 @@ def detect_gpu_count() -> int | None:
         return None
 
 
-def patch(text: str, n: int) -> str:
+def patch(text: str, n: int, llmstack_dir: str) -> str:
+    # Substitute repo-root placeholder (llama-swap v223 runs cmd without a shell,
+    # so $LLMSTACK_DIR can't be used; configure replaces __LLMSTACK_DIR__ instead)
+    text = text.replace("__LLMSTACK_DIR__", llmstack_dir)
+
     # vLLM: --tensor-parallel-size N
     text = re.sub(
         r"(--tensor-parallel-size\s+)\d+",
@@ -118,16 +131,18 @@ def main() -> None:
         print(f"Config not found: {path}", file=sys.stderr)
         sys.exit(1)
 
+    llmstack_dir = str(Path(args.config).parent.parent.resolve())
+
     original = path.read_text()
-    patched = patch(original, n)
+    patched = patch(original, n, llmstack_dir)
 
     if original == patched:
-        print(f"No changes needed — already configured for {n} GPU(s).")
+        print(f"No changes needed — already configured for {n} GPU(s) at {llmstack_dir}.")
         check_vram_warnings(n)
         return
 
     if args.dry_run:
-        print(f"--- dry run: would configure for {n} GPU(s) ---")
+        print(f"--- dry run: would configure for {n} GPU(s), dir={llmstack_dir} ---")
         print(patched)
         check_vram_warnings(n)
         return
@@ -135,7 +150,7 @@ def main() -> None:
     backup = Path(str(path) + ".bak")
     shutil.copy(path, backup)
     path.write_text(patched)
-    print(f"Configured for {n} GPU(s). Backup saved to {backup.name}")
+    print(f"Configured for {n} GPU(s) at {llmstack_dir}. Backup saved to {backup.name}")
     check_vram_warnings(n)
 
 

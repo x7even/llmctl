@@ -108,9 +108,12 @@ vllm serve /models/...
 --cudagraph-capture-sizes 1 2 4 8 16 32
 
 # 3. Persistent cache volumes — without these, torch.compile re-runs every start (~14 min)
--v /home/xin/ai/llmstack/.vllm-cache:/root/.cache/vllm
--v /home/xin/ai/llmstack/.triton-cache:/root/.triton/cache
+-v __LLMSTACK_DIR__/.vllm-cache:/root/.cache/vllm
+-v __LLMSTACK_DIR__/.triton-cache:/root/.triton/cache
 ```
+
+`__LLMSTACK_DIR__` is a placeholder. Run `scripts/configure` to replace it with the
+repo's absolute path before first use (llama-swap v223+ executes cmd without a shell).
 
 If you add a new vLLM profile and omit any of these, the first startup will take 18+ minutes
 or fail with `unrecognized arguments`.
@@ -154,7 +157,7 @@ At startup, vLLM will show two types of FP8 config messages:
 ```
 Using configuration from /vllm-tuned-configs/E=64,N=512,device_name=AMD_Radeon_R9700,dtype=fp8_w8a8,block_shape=[128,128].json
 ```
-This file lives in `vllm-tuned-configs/` and is mounted via `-v /home/xin/ai/llmstack/vllm-tuned-configs:/vllm-tuned-configs:ro`
+This file lives in `vllm-tuned-configs/` and is mounted via `-v __LLMSTACK_DIR__/vllm-tuned-configs:/vllm-tuned-configs:ro`
 with `-e VLLM_TUNED_CONFIG_FOLDER=/vllm-tuned-configs` set in the env.
 
 **Dense attention/FFN layers (not yet tuned — expected warning):**

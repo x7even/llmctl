@@ -48,8 +48,8 @@ models:
         --shm-size=32g
         --network=host
         -v /mnt/models/llm:/models:ro
-        -v /home/xin/ai/llmstack/.vllm-cache:/root/.cache/vllm
-        -v /home/xin/ai/llmstack/.triton-cache:/root/.triton/cache
+        -v __LLMSTACK_DIR__/.vllm-cache:/root/.cache/vllm
+        -v __LLMSTACK_DIR__/.triton-cache:/root/.triton/cache
         -e HSA_ENABLE_SDMA=0
         -e TORCH_BLAS_PREFER_HIPBLASLT=1
         --entrypoint=""
@@ -133,8 +133,8 @@ models:
         --shm-size=32g
         --network=host
         -v /mnt/models/llm:/models:ro
-        -v /home/xin/ai/llmstack/.vllm-cache:/root/.cache/vllm
-        -v /home/xin/ai/llmstack/.triton-cache:/root/.triton/cache
+        -v __LLMSTACK_DIR__/.vllm-cache:/root/.cache/vllm
+        -v __LLMSTACK_DIR__/.triton-cache:/root/.triton/cache
         -e HSA_ENABLE_SDMA=0
         -e TORCH_BLAS_PREFER_HIPBLASLT=1
         --entrypoint=""
@@ -180,8 +180,8 @@ models:
         --shm-size=32g
         --network=host
         -v /mnt/models/llm:/models:ro
-        -v /home/xin/ai/llmstack/.vllm-cache:/root/.cache/vllm
-        -v /home/xin/ai/llmstack/.triton-cache:/root/.triton/cache
+        -v __LLMSTACK_DIR__/.vllm-cache:/root/.cache/vllm
+        -v __LLMSTACK_DIR__/.triton-cache:/root/.triton/cache
         -e HSA_ENABLE_SDMA=0
         -e TORCH_BLAS_PREFER_HIPBLASLT=1
         --entrypoint=""
@@ -237,8 +237,8 @@ models:
         --shm-size=32g
         --network=host
         -v /mnt/models/llm:/models:ro
-        -v /home/xin/ai/llmstack/.vllm-cache:/root/.cache/vllm
-        -v /home/xin/ai/llmstack/.triton-cache:/root/.triton/cache
+        -v __LLMSTACK_DIR__/.vllm-cache:/root/.cache/vllm
+        -v __LLMSTACK_DIR__/.triton-cache:/root/.triton/cache
         -e HSA_ENABLE_SDMA=0
         -e TORCH_BLAS_PREFER_HIPBLASLT=1
         --entrypoint=""
@@ -292,9 +292,9 @@ models:
         --shm-size=32g
         --network=host
         -v /mnt/models/llm:/models:ro
-        -v /home/xin/ai/llmstack/config/templates:/templates:ro
-        -v /home/xin/ai/llmstack/.vllm-cache:/root/.cache/vllm
-        -v /home/xin/ai/llmstack/.triton-cache:/root/.triton/cache
+        -v __LLMSTACK_DIR__/config/templates:/templates:ro
+        -v __LLMSTACK_DIR__/.vllm-cache:/root/.cache/vllm
+        -v __LLMSTACK_DIR__/.triton-cache:/root/.triton/cache
         -e HSA_ENABLE_SDMA=0
         -e TORCH_BLAS_PREFER_HIPBLASLT=1
         --entrypoint=""
@@ -350,8 +350,8 @@ models:
         --shm-size=32g
         --network=host
         -v /mnt/models/llm:/models:ro
-        -v /home/xin/ai/llmstack/.vllm-cache:/root/.cache/vllm
-        -v /home/xin/ai/llmstack/.triton-cache:/root/.triton/cache
+        -v __LLMSTACK_DIR__/.vllm-cache:/root/.cache/vllm
+        -v __LLMSTACK_DIR__/.triton-cache:/root/.triton/cache
         -e HSA_ENABLE_SDMA=0
         -e VLLM_ALLOW_LONG_MAX_MODEL_LEN=1
         -e TORCH_BLAS_PREFER_HIPBLASLT=1
@@ -591,8 +591,8 @@ models:
         --shm-size=32g
         --network=host
         -v /mnt/models/llm:/models:ro
-        -v /home/xin/ai/llmstack/.vllm-cache:/root/.cache/vllm
-        -v /home/xin/ai/llmstack/.triton-cache:/root/.triton/cache
+        -v __LLMSTACK_DIR__/.vllm-cache:/root/.cache/vllm
+        -v __LLMSTACK_DIR__/.triton-cache:/root/.triton/cache
         -e HSA_ENABLE_SDMA=0
         -e TORCH_BLAS_PREFER_HIPBLASLT=1
         --entrypoint=""

@@ -61,8 +61,8 @@ With 6 explicit sizes = 13 s capture, with negligible throughput loss
 ### 3. Persistent cache volume mounts
 
 ```yaml
--v /home/xin/ai/llmstack/.vllm-cache:/root/.cache/vllm
--v /home/xin/ai/llmstack/.triton-cache:/root/.triton/cache
+-v __LLMSTACK_DIR__/.vllm-cache:/root/.cache/vllm
+-v __LLMSTACK_DIR__/.triton-cache:/root/.triton/cache
 ```
 
 These cache the Inductor torch.compile output (~14 min per TP rank on first boot).
@@ -73,9 +73,10 @@ mkdir -p .vllm-cache .triton-cache
 ```
 They are created automatically by `llmctl up` if missing.
 
-**Note**: llama-swap v223+ runs cmd without a shell — `$LLMSTACK_DIR` is NOT expanded.
-Use the hardcoded absolute path. Do NOT use `${LLMSTACK_DIR:-$HOME/ai/llmstack}` or `$LLMSTACK_DIR`
-in cmd strings, only `${MODEL_ID}` and `${PORT}` are substituted by llama-swap itself.
+**Note**: llama-swap v223+ runs cmd without a shell — environment variables are NOT expanded.
+Use `__LLMSTACK_DIR__` as a placeholder in cmd strings; `scripts/configure` replaces it
+with the actual absolute path at setup time. Only `${MODEL_ID}` and `${PORT}` are
+substituted by llama-swap itself at runtime.
 
 ---
 
@@ -142,8 +143,8 @@ Use llama-server (Vulkan) for all GGUF files. Use vLLM for safetensors only.
             --shm-size 16g \
             -p 9200:8000 \
             -v /mnt/models/llm:/models:ro \
-            -v /home/xin/ai/llmstack/.vllm-cache:/root/.cache/vllm \
-            -v /home/xin/ai/llmstack/.triton-cache:/root/.triton/cache \
+            -v __LLMSTACK_DIR__/.vllm-cache:/root/.cache/vllm \
+            -v __LLMSTACK_DIR__/.triton-cache:/root/.triton/cache \
             docker.io/vllm/vllm-openai-rocm:latest \
             vllm serve /models/<model-dir> \
               --served-model-name <profile-id> \
