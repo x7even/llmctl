@@ -337,11 +337,20 @@ parameters are active per token regardless of prompt length.
 
 **Benchmark — no-thinking (2026-06-18):**
 
-No-thinking baseline in progress; `bench/baselines/gemma4-26b-q8-nothink-20260618.json`
-was not saved before this document was updated. Spot-check confirmed that
-`chat_template_kwargs: {enable_thinking: false}` suppresses thinking output correctly
-(response to "What is 2+2?" was a direct answer with no `<think>` block, 0 errors
-across all prompt sizes). Re-run the benchmark to populate this table.
+| Prompt | conc=1 | conc=4 | conc=8 | conc=16 |
+|--------|--------|--------|--------|---------|
+| short-64    |  51.6 |  68.4 |   85.0 | **112.6** |
+| medium-256  |  63.5 |  99.1 | **126.8** | 127.5 |
+| long-512    |  66.5 | 107.6 | **129.5** | 119.9 |
+| xlarge-2048 |  67.4 |  62.2 |   70.2 | **119.0** |
+
+Decode tok/s. Baseline saved: `bench/baselines/gemma4-26b-q8-nothink-20260618.json`.
+Thinking suppression confirmed: `chat_template_kwargs: {enable_thinking: false}` works
+correctly — direct answers, no thinking tokens in content. Numbers appear ~10–18% lower
+than the thinking-on baseline at conc=4–8; this is a measurement artifact: thinking tokens
+inflate the completion token count in the thinking-on run, making its measured tok/s
+artificially higher. Both baseline sets are kept; see `bench/CLAUDE.md` for the
+dual-baseline convention.
 
 ---
 

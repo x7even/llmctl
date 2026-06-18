@@ -49,7 +49,7 @@ PROXY_LOG_FILE = STATE_DIR / "llmproxy.log"
 PROXY_PORT = 9000
 PROXY_BIN = STACK_DIR / "bin" / "llmproxy"
 
-LLAMA_SWAP_VERSION = "208"
+LLAMA_SWAP_VERSION = "223"
 LLAMA_SWAP_BIN = Path.home() / ".local" / "bin" / "llama-swap"
 LLAMA_SWAP_DOWNLOAD = (
     f"https://github.com/mostlygeek/llama-swap/releases/download/"
@@ -170,6 +170,7 @@ def cmd_up(_args):
             stdout=log,
             stderr=log,
             start_new_session=True,
+            env={**os.environ, "LLMSTACK_DIR": str(STACK_DIR)},
         )
     PID_FILE.write_text(str(proc.pid))
     print(f"llama-swap starting (pid {proc.pid}) on :{LLAMA_SWAP_PORT} ...")
