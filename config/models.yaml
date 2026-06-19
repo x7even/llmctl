@@ -213,7 +213,7 @@ models:
   # MTP:     speculative decoding via bundled mtp.safetensors draft head
   #          Mathematically lossless — main model verifies all tokens
   #          Benchmarked: +25% serial (110→77 tok/s vs no-MTP), +52% at conc=8
-  # Context: 262144 tokens native (hybrid linear+full attention — 75% O(n) layers)
+  # Context: 131072 tokens (BF16 KV — no FP8 calibration, fast cold start ~2-3 min)
   # Note:    thinking ON by default; --reasoning-parser strips <think> from content
   #          Uses AMD official image — Qwen3_5MoeForConditionalGeneration requires 0.22.1+
   qwen3.6-35b-code:
@@ -252,7 +252,7 @@ models:
         --enable-expert-parallel
         --max-num-seqs 32
         --max-num-batched-tokens 32768
-        --kv-cache-dtype fp8
+        --max-model-len 131072
         --gpu-memory-utilization 0.92
         --enable-prefix-caching
         --enable-chunked-prefill
