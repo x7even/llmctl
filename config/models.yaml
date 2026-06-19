@@ -614,6 +614,61 @@ models:
         --cudagraph-capture-sizes 1 2 4 8 16 32
     cmdStop: podman stop llmstack-vllm-${MODEL_ID}
 
+  # ─── vLLM: Gemma 4 26B-A4B FP8-Dynamic — long-context agent serving ─────
+  # Best for: long-context coding sessions where O(N) attention is the bottleneck
+  # Architecture: MoE (26B total / 128 experts / top_k=8 ≈ 4B active per token)
+  #   Layer types: 25 sliding_attention (window=1024) + 5 full_attention (every 6th)
+  #   At 20K context, reads only ~21% of KV vs a full-attention model of the same
+  #   size — the 25 sliding layers always cost 1024 tokens regardless of ctx length
+  # Backend: vLLM 0.22.1 via AMD official image (ROCm 7.2)
+  # VRAM:    ~26 GB FP8 across 4 GPUs (~6.5 GB each); ~100 GB free for KV cache
+  # Source:  RedHatAI/gemma-4-26B-A4B-it-FP8-Dynamic (weights+activations FP8)
+  # Note:    No --reasoning-parser (no thinking mode); --tool-call-parser gemma4
+  #          No --enable-expert-parallel (not confirmed supported for Gemma 4 MoE)
+  gemma4-26b-fp8:
+    name: "Gemma 4 26B-A4B (FP8, vLLM)"
+    ttl: 600
+    checkEndpoint: /health
+    concurrencyLimit: 32
+    aliases:
+      - gemma4-fp8
+      - gemma4-fast-vllm
+    cmd: |
+      podman run --replace --rm
+        --name llmstack-vllm-${MODEL_ID}
+        --device=/dev/kfd
+        --device=/dev/dri
+        --group-add keep-groups
+        --security-opt seccomp=unconfined
+        --security-opt apparmor=unconfined
+        --ipc=private
+        --shm-size=32g
+        --network=host
+        -v /mnt/models/llm:/models:ro
+        -v __LLMSTACK_DIR__/.vllm-cache:/root/.cache/vllm
+        -v __LLMSTACK_DIR__/.triton-cache:/root/.triton/cache
+        -e HSA_ENABLE_SDMA=0
+        -e TORCH_BLAS_PREFER_HIPBLASLT=1
+        --entrypoint=""
+        docker.io/vllm/vllm-openai-rocm:latest
+        vllm serve /models/RedHatAI/gemma-4-26B-A4B-it-FP8-Dynamic
+        --host 127.0.0.1
+        --port ${PORT}
+        --served-model-name gemma4-26b-fp8
+        --dtype auto
+        --tensor-parallel-size 4
+        --max-num-seqs 32
+        --max-num-batched-tokens 32768
+        --kv-cache-dtype fp8
+        --gpu-memory-utilization 0.92
+        --enable-prefix-caching
+        --enable-chunked-prefill
+        --trust-remote-code
+        --enable-auto-tool-choice
+        --tool-call-parser gemma4
+        --cudagraph-capture-sizes 1 2 4 8 16 32
+    cmdStop: podman stop llmstack-vllm-${MODEL_ID}
+
 # ── Template for adding new models ──────────────────────────────────────────
 #
 # # vLLM (safetensors / FP8 / AWQ):
