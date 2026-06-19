@@ -132,18 +132,22 @@ qwen3.6-35b-code.json                      ← ambiguous
 **MTP effect:** Multi-Token Prediction boosts tok/s mainly at conc ≥ 4. At conc=1,
 MTP overhead can slightly reduce serial tok/s if the draft hit rate is low.
 
-**Expected baselines for `qwen3.6-35b-code` (medium-256, vLLM 0.22.1, no-thinking, MTP):**
+**Expected baselines for `qwen3.6-35b-code` (medium-256, vLLM 0.22.1, no-thinking, MTP, 32 req/level):**
 
 | conc | tok/s | TTFT (ms) |
 |------|-------|----------|
-| 1    | 43    | ~150 |
-| 2    | 77    | ~200 |
-| 4    | 145   | ~400 |
-| 8    | 261   | ~1300 |
-| 16   | 481   | ~3500 |
+| 1    | 52    | ~200 |
+| 2    | 94    | ~250 |
+| 4    | 155   | ~500 |
+| 8    | 259   | ~1500 |
+| 16   | 478   | ~3500 |
 
 If conc=8 drops below ~200 tok/s, something is wrong — check VRAM, container
 restart, or whether CUDA graph capture ran correctly.
+
+**Important:** conc=8 and conc=16 numbers are only meaningful with `--requests 32`
+(the default). Using `--requests-per-level 3` with `--sweep` never fills the
+concurrency slots and shows false plateaus at conc≥4.
 
 ---
 

@@ -11,7 +11,7 @@ Usage:
   llmctl pick              interactive fzf/menu model picker
   llmctl logs [profile]    tail logs (llama-swap log, or a model container)
   llmctl bench [profile]   run concurrent benchmark against a profile
-  llmctl proxy-up          start llmproxy shim on :8081 (OpenCode workaround)
+  llmctl proxy-up          start llmproxy shim on :9000 (OpenCode workaround)
   llmctl proxy-down        stop llmproxy shim
   llmctl proxy-status      show llmproxy state
 
