@@ -621,12 +621,13 @@ models:
   #   At 20K context, reads only ~21% of KV vs a full-attention model of the same
   #   size — the 25 sliding layers always cost 1024 tokens regardless of ctx length
   # Backend: vLLM 0.22.1 via AMD official image (ROCm 7.2)
-  # VRAM:    ~26 GB FP8 across 4 GPUs (~6.5 GB each); ~100 GB free for KV cache
+  # VRAM:    ~26 GB FP8 weights + BF16 KV cache across 4 GPUs
   # Source:  RedHatAI/gemma-4-26B-A4B-it-FP8-Dynamic (weights+activations FP8)
-  # Note:    No --reasoning-parser (no thinking mode); --tool-call-parser gemma4
+  # Note:    No --kv-cache-dtype fp8 (BF16 KV avoids calibration; ~2x VRAM per KV token)
+  #          No --reasoning-parser (no thinking mode); --tool-call-parser gemma4
   #          No --enable-expert-parallel (not confirmed supported for Gemma 4 MoE)
   gemma4-26b-fp8:
-    name: "Gemma 4 26B-A4B (FP8, vLLM)"
+    name: "Gemma 4 26B-A4B (FP8 weights, BF16 KV)"
     ttl: 600
     checkEndpoint: /health
     concurrencyLimit: 32
@@ -659,7 +660,7 @@ models:
         --tensor-parallel-size 4
         --max-num-seqs 32
         --max-num-batched-tokens 32768
-        --kv-cache-dtype fp8
+        --max-model-len 262144
         --gpu-memory-utilization 0.92
         --enable-prefix-caching
         --enable-chunked-prefill
