@@ -19,6 +19,7 @@ vllm:avg_generation_throughput_toks_per_s{model_name="qwen3.6-35b-code"} 387.5
 vllm:time_to_first_token_seconds_sum{model_name="qwen3.6-35b-code"} 8.4
 vllm:time_to_first_token_seconds_count{model_name="qwen3.6-35b-code"} 10.0
 vllm:generation_tokens_total{model_name="qwen3.6-35b-code"} 123456.0
+vllm:prompt_tokens_total{model_name="qwen3.6-35b-code"} 88000.0
 `
 
 func pf(f float64) *float64 { return &f }
@@ -275,6 +276,9 @@ func TestFetchVLLM_metrics(t *testing.T) {
 	wantTTFT := 8.4 / 10.0
 	if diff := *m.TTFT - wantTTFT; diff < -1e-9 || diff > 1e-9 {
 		t.Errorf("TTFT: want %f, got %f", wantTTFT, *m.TTFT)
+	}
+	if m.PromptTotal == nil || *m.PromptTotal != 88000.0 {
+		t.Errorf("PromptTotal: want 88000.0, got %v", m.PromptTotal)
 	}
 }
 

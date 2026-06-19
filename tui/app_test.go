@@ -106,8 +106,8 @@ func TestTab_cyclesAllPanels(t *testing.T) {
 func TestShiftTab_cyclesReverse(t *testing.T) {
 	a := newTestApp()
 	a = update(a, skey(tea.KeyShiftTab))
-	if a.focused != paneLogs {
-		t.Errorf("shift-tab from inference: want paneLogs(%d), got %d", paneLogs, a.focused)
+	if a.focused != paneTokens {
+		t.Errorf("shift-tab from inference: want paneTokens(%d), got %d", paneTokens, a.focused)
 	}
 }
 
@@ -400,5 +400,103 @@ func TestQuit_returnsCmd(t *testing.T) {
 	_, cmd := a.Update(key('q'))
 	if cmd == nil {
 		t.Error("q: want quit cmd, got nil")
+	}
+}
+
+// ── Token sparkline ───────────────────────────────────────────────────────────
+
+func TestRingBufferPushValues(t *testing.T) {
+	var rb RingBuffer
+	for i := 0; i < 10; i++ {
+		rb.Push(float64(i))
+	}
+	got := rb.Values()
+	if len(got) != 10 {
+		t.Fatalf("want 10 values, got %d", len(got))
+	}
+	if got[0] != 0 || got[9] != 9 {
+		t.Errorf("values out of order: %v", got)
+	}
+}
+
+func TestRenderTokensEmpty(t *testing.T) {
+	a := newApp("http://localhost:8080", time.Second, "", "")
+	a.w, a.h = 120, 40
+	_ = a.renderTokens(80) // must not panic
+}
+
+func TestApplyData_prefillRate(t *testing.T) {
+	a := newTestApp()
+	pt1 := 5000.0
+	t1 := time.Now()
+
+	a.prevPrompt = &pt1
+	a.prevGenTime = t1
+	a.prevModelID = "model-x"
+
+	pt2 := 5800.0
+	gen := 1000.0
+	data := AppData{
+		Active:    &ActiveModel{ID: "model-x", Port: 9100},
+		Metrics:   &VLLMMetrics{PromptTotal: &pt2, GenTotal: &gen},
+		FetchedAt: t1.Add(time.Second),
+	}
+	a.applyData(data)
+
+	if a.prefillRate == nil {
+		t.Fatal("want prefillRate set, got nil")
+	}
+	// (5800 - 5000) / 1.0 = 800
+	if *a.prefillRate < 795 || *a.prefillRate > 805 {
+		t.Errorf("prefillRate: want ~800, got %f", *a.prefillRate)
+	}
+}
+
+func TestApplyData_prefillRateResetOnModelSwitch(t *testing.T) {
+	a := newTestApp()
+	pt := 1000.0
+	a.prevPrompt = &pt
+	a.prevGenTime = time.Now().Add(-time.Second)
+	a.prevModelID = "old-model"
+
+	pt2 := 2000.0
+	gen := 500.0
+	data := AppData{
+		Active:    &ActiveModel{ID: "new-model", Port: 9100},
+		Metrics:   &VLLMMetrics{PromptTotal: &pt2, GenTotal: &gen},
+		FetchedAt: time.Now(),
+	}
+	a.applyData(data)
+
+	if a.prefillRate != nil {
+		t.Errorf("prefillRate: want nil after model switch, got %f", *a.prefillRate)
+	}
+}
+
+func TestApplyDataUpdatesTokenHist(t *testing.T) {
+	a := newTestApp()
+	gen1 := 100.0
+	d1 := AppData{
+		Active:    &ActiveModel{ID: "m", Port: 9100},
+		Metrics:   &VLLMMetrics{GenTotal: &gen1},
+		FetchedAt: time.Now(),
+	}
+	a.applyData(d1)
+	if a.tokHist.count != 1 {
+		t.Fatalf("expected 1 sample, got %d", a.tokHist.count)
+	}
+
+	gen2 := 200.0
+	d2 := AppData{
+		Active:    &ActiveModel{ID: "m", Port: 9100},
+		Metrics:   &VLLMMetrics{GenTotal: &gen2},
+		FetchedAt: d1.FetchedAt.Add(time.Second),
+	}
+	a.applyData(d2)
+	if a.tokHist.count != 2 {
+		t.Fatalf("expected 2 samples, got %d", a.tokHist.count)
+	}
+	if a.peakTokPerS < 99 {
+		t.Errorf("expected peak ~100, got %.1f", a.peakTokPerS)
 	}
 }

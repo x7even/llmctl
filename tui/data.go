@@ -25,6 +25,7 @@ type VLLMMetrics struct {
 	PrefixHitRate *float64 // nil = unavailable; 0–1 fraction
 	TokPerS       *float64
 	GenTotal      *float64
+	PromptTotal   *float64 // vllm:prompt_tokens_total counter
 	TTFT          *float64 // nil = no data yet
 }
 
@@ -158,7 +159,11 @@ func fetchVLLM(port int) *VLLMMetrics {
 		PrefixHitRate: parseMetric(txt, "vllm:gpu_prefix_cache_hit_rate"),
 		TokPerS:       parseMetric(txt, "vllm:avg_generation_throughput_toks_per_s"),
 		GenTotal:      parseMetric(txt, "vllm:generation_tokens_total"),
-		TTFT:          ttft,
+		PromptTotal: firstNonNil(
+			parseMetric(txt, "vllm:prompt_tokens_total"),
+			parseMetric(txt, "vllm:prompt_tokens"),
+		),
+		TTFT: ttft,
 	}
 }
 
@@ -167,6 +172,15 @@ func derefF(p *float64) float64 {
 		return 0
 	}
 	return *p
+}
+
+func firstNonNil(ptrs ...*float64) *float64 {
+	for _, p := range ptrs {
+		if p != nil {
+			return p
+		}
+	}
+	return nil
 }
 
 // ── rocm-smi ──────────────────────────────────────────────────────────────────

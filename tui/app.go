@@ -23,10 +23,11 @@ const (
 	paneModels
 	paneConfig
 	paneLogs
+	paneTokens
 	paneCount
 )
 
-var panelNames = [paneCount]string{"Inference", "GPU", "Models", "Config", "Logs"}
+var panelNames = [paneCount]string{"Inference", "GPU", "Models", "Config", "Logs", "Tokens"}
 
 // ── Poll intervals ─────────────────────────────────────────────────────────────
 
@@ -104,6 +105,16 @@ type app struct {
 	prevGenTime time.Time
 	prevModelID string
 	decodeRate  *float64
+
+	// Token throughput history
+	tokHist     RingBuffer
+	peakTokPerS float64
+
+	// Prefill (encode) throughput history
+	prefillHist     RingBuffer
+	prevPrompt      *float64
+	prefillRate     *float64
+	peakPrefillPerS float64
 
 	// Models panel
 	cursor    int
@@ -286,6 +297,8 @@ func (a *app) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		a.focused = paneConfig
 	case "5":
 		a.focused = paneLogs
+	case "6":
+		a.focused = paneTokens
 
 	case "p":
 		a.intervalIdx = (a.intervalIdx + 1) % len(pollIntervals)
@@ -379,8 +392,11 @@ func (a *app) applyData(data AppData) {
 	if currID != a.prevModelID {
 		a.prevGen = nil
 		a.decodeRate = nil
+		a.prevPrompt = nil
+		a.prefillRate = nil
 		a.prevModelID = currID
 	}
+	prevTime := a.prevGenTime
 	if data.Metrics != nil && data.Metrics.GenTotal != nil {
 		gen := *data.Metrics.GenTotal
 		if a.prevGen != nil && !a.prevGenTime.IsZero() {
@@ -399,7 +415,40 @@ func (a *app) applyData(data AppData) {
 			a.decodeRate = nil
 		}
 	}
+
+	if data.Metrics != nil && data.Metrics.PromptTotal != nil {
+		pt := *data.Metrics.PromptTotal
+		if a.prevPrompt != nil && !prevTime.IsZero() {
+			elapsed := data.FetchedAt.Sub(prevTime).Seconds()
+			if elapsed > 0.1 {
+				r := (pt - *a.prevPrompt) / elapsed
+				a.prefillRate = &r
+			}
+		}
+		a.prevPrompt = &pt
+	} else {
+		a.prefillRate = nil
+	}
+
 	a.data = data
+
+	rate := 0.0
+	if a.decodeRate != nil {
+		rate = *a.decodeRate
+	}
+	a.tokHist.Push(rate)
+	if rate > a.peakTokPerS {
+		a.peakTokPerS = rate
+	}
+
+	prefillVal := 0.0
+	if a.prefillRate != nil {
+		prefillVal = *a.prefillRate
+	}
+	a.prefillHist.Push(prefillVal)
+	if prefillVal > a.peakPrefillPerS {
+		a.peakPrefillPerS = prefillVal
+	}
 
 	// Keep model cursor on the loaded model unless user is navigating
 	if !a.swapping && data.Active != nil {
@@ -413,7 +462,6 @@ func (a *app) applyData(data AppData) {
 }
 
 func (a *app) applyLog(lines []string) {
-	a.data.Profiles = a.data.Profiles // no-op, just avoids lint
 	if lines == nil {
 		return
 	}
@@ -459,7 +507,7 @@ func (a *app) sizeViewports() {
 		a.logVP.Height = a.h - 4
 		return
 	}
-	h1, h2, h3 := rowHeights(a.h)
+	h1, h2, h3, _ := rowHeights(a.h)
 	leftW, rightW := colWidths(a.w)
 
 	a.cfgVP.Width = rightW - 4
@@ -470,10 +518,11 @@ func (a *app) sizeViewports() {
 	_ = leftW
 }
 
-func rowHeights(total int) (h1, h2, h3 int) {
+func rowHeights(total int) (h1, h2, h3, h4 int) {
 	h1 = clamp(total*25/100, 6, 12)
 	h2 = clamp(total*30/100, 8, 16)
-	h3 = total - h1 - h2 - 1 // 1 for status bar
+	h4 = 11
+	h3 = total - h1 - h2 - h4 - 1 // 1 for status bar
 	if h3 < 5 {
 		h3 = 5
 	}
@@ -521,6 +570,8 @@ func (a *app) viewFull() string {
 		content = a.cfgVP.View()
 	case paneLogs:
 		content = a.logVP.View()
+	case paneTokens:
+		content = a.renderTokens(a.w - 4)
 	}
 	header := fmt.Sprintf("%s [fullscreen — esc to exit]", panelNames[a.focused])
 	body := lipgloss.NewStyle().Foreground(clrFocused).Bold(true).Render(header) +
@@ -535,7 +586,7 @@ func (a *app) viewFull() string {
 }
 
 func (a *app) viewGrid() string {
-	h1, h2, h3 := rowHeights(a.h)
+	h1, h2, h3, h4 := rowHeights(a.h)
 	leftW, rightW := colWidths(a.w)
 
 	// Row 1: Inference (60%) + GPU (40%)
@@ -552,11 +603,14 @@ func (a *app) viewGrid() string {
 		a.panel(paneConfig, rightW, h2, a.cfgVP.View()),
 	)
 
+	// Row 4: Token throughput sparkline (full width, between models/config and logs)
+	row4 := a.panel(paneTokens, a.w, h4, a.renderTokens(a.w-4))
+
 	// Row 3: Logs
 	row3 := a.panel(paneLogs, a.w, h3, a.logVP.View())
 
 	return lipgloss.JoinVertical(lipgloss.Left,
-		row1, row2, row3, a.renderStatus(),
+		row1, row2, row4, row3, a.renderStatus(),
 	)
 }
 
@@ -611,6 +665,40 @@ func (a *app) renderInference() string {
 	}
 
 	m := a.data.Metrics
+
+	concLimit := 0
+	if a.reg != nil && a.data.Active != nil {
+		concLimit = a.reg.Models[a.data.Active.ID].ConcurrencyLimit
+	}
+
+	running := int(m.Running)
+	waiting := int(m.Waiting)
+
+	var queueStr string
+	switch {
+	case waiting == 0:
+		queueStr = stDim.Render("Q:0")
+	case waiting <= 2:
+		queueStr = stYellow.Render(fmt.Sprintf("Q:%d", waiting))
+	default:
+		queueStr = stRed.Render(fmt.Sprintf("Q:%d", waiting))
+	}
+
+	if concLimit > 0 {
+		barW := 20
+		filled := running * barW / concLimit
+		if filled > barW {
+			filled = barW
+		}
+		bar := stGreen.Render(strings.Repeat("█", filled)) +
+			stDim.Render(strings.Repeat("░", barW-filled))
+		frac := stBold.Render(fmt.Sprintf("%d/%d", running, concLimit))
+		sb.WriteString(fmt.Sprintf("  [%s] %s  %s\n", bar, frac, queueStr))
+	} else {
+		sb.WriteString(fmt.Sprintf("  Running: %s  %s\n",
+			stBold.Render(fmt.Sprintf("%d", running)), queueStr))
+	}
+
 	kvStr := "—"
 	if m.KVCache != nil {
 		kvStr = fmt.Sprintf("%.1f%%", *m.KVCache*100)
@@ -618,7 +706,6 @@ func (a *app) renderInference() string {
 	pfxStr := stDim.Render("—")
 	if m.PrefixHitRate != nil {
 		pct := *m.PrefixHitRate * 100
-		// higher hit rate is better — invert threshold direction
 		var st lipgloss.Style
 		switch {
 		case pct >= 70:
@@ -630,8 +717,7 @@ func (a *app) renderInference() string {
 		}
 		pfxStr = st.Render(fmt.Sprintf("%.1f%%", pct))
 	}
-	sb.WriteString(fmt.Sprintf("  Running: %.0f  Waiting: %.0f  KV: %s  PfxHit: %s\n",
-		m.Running, m.Waiting, kvStr, pfxStr))
+	sb.WriteString(fmt.Sprintf("  KV: %s  PfxHit: %s\n", kvStr, pfxStr))
 
 	decStr := "—"
 	if a.decodeRate != nil {
@@ -729,6 +815,88 @@ func (a *app) renderModels() string {
 		sb.WriteString("\n")
 	}
 	return strings.TrimRight(sb.String(), "\n")
+}
+
+const sparkIndent = 10
+
+var prefillGradient = buildGradient([]colorStop{
+	{0, 60, 0, 120},
+	{30, 0, 80, 220},
+	{65, 0, 200, 200},
+	{100, 0, 230, 100},
+})
+
+func (a *app) renderTokens(w int) string {
+	sparkW := max(8, w-sparkIndent)
+	blank := strings.Repeat(" ", sparkIndent)
+
+	var sb strings.Builder
+
+	// Decode (generation) track — 3 rows
+	decVmax := a.peakTokPerS
+	if decVmax < 50 {
+		decVmax = 50
+	}
+	decRows := renderMultilineSparkline(a.tokHist.Values(), sparkW, 3, 0, decVmax, tokGradient, decVmax)
+
+	decLabel := stDim.Render(fmt.Sprintf("%-*s", sparkIndent, "decode"))
+	sb.WriteString(decLabel + decRows[0] + "\n")
+	sb.WriteString(blank + decRows[1] + "\n")
+	sb.WriteString(blank + decRows[2] + "\n")
+
+	currStr := "—"
+	if a.decodeRate != nil {
+		currStr = fmt.Sprintf("%.0f", *a.decodeRate)
+	}
+	peakStr := "—"
+	if a.peakTokPerS > 0 {
+		peakStr = fmt.Sprintf("%.0f", a.peakTokPerS)
+	}
+	genStr := "—"
+	if a.data.Metrics != nil && a.data.Metrics.GenTotal != nil {
+		genStr = fmt.Sprintf("%.0f", *a.data.Metrics.GenTotal)
+	}
+	runStr := "—"
+	if a.data.Metrics != nil {
+		runStr = fmt.Sprintf("%.0f", a.data.Metrics.Running)
+	}
+	sb.WriteString(fmt.Sprintf("  cur: %s tok/s  peak: %s tok/s  requests: %s  total gen: %s\n",
+		stBold.Render(currStr),
+		stGreen.Render(peakStr),
+		runStr,
+		stDim.Render(genStr),
+	))
+
+	// Prefill (encode) track — 2 rows (shorter than decode)
+	pfVmax := a.peakPrefillPerS
+	if pfVmax < 200 {
+		pfVmax = 200
+	}
+	pfRows := renderMultilineSparkline(a.prefillHist.Values(), sparkW, 2, 0, pfVmax, prefillGradient, pfVmax)
+
+	pfLabel := stDim.Render(fmt.Sprintf("%-*s", sparkIndent, "prefill"))
+	sb.WriteString(pfLabel + pfRows[0] + "\n")
+	sb.WriteString(blank + pfRows[1] + "\n")
+
+	pfCurStr := "—"
+	if a.prefillRate != nil {
+		pfCurStr = fmt.Sprintf("%.0f", *a.prefillRate)
+	}
+	pfPeakStr := "—"
+	if a.peakPrefillPerS > 0 {
+		pfPeakStr = fmt.Sprintf("%.0f", a.peakPrefillPerS)
+	}
+	ptStr := "—"
+	if a.data.Metrics != nil && a.data.Metrics.PromptTotal != nil {
+		ptStr = fmt.Sprintf("%.0f", *a.data.Metrics.PromptTotal)
+	}
+	sb.WriteString(fmt.Sprintf("  cur: %s tok/s  peak: %s tok/s  total prompt: %s",
+		stBold.Render(pfCurStr),
+		lipgloss.NewStyle().Foreground(lipgloss.Color("#00c8c8")).Render(pfPeakStr),
+		stDim.Render(ptStr),
+	))
+
+	return sb.String()
 }
 
 func (a *app) renderStatus() string {
