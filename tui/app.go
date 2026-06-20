@@ -500,28 +500,25 @@ func (a *app) sizeViewports() {
 		return
 	}
 	if a.fullscreen {
-		// Full terminal minus border (2) and status bar (1)
-		a.cfgVP.Width = a.w - 4
-		a.cfgVP.Height = a.h - 4
-		a.logVP.Width = a.w - 4
-		a.logVP.Height = a.h - 4
+		a.cfgVP.Width = a.w - 1
+		a.cfgVP.Height = a.h - 2
+		a.logVP.Width = a.w - 1
+		a.logVP.Height = a.h - 2
 		return
 	}
-	h1, h2, h3, _ := rowHeights(a.h)
-	leftW, rightW := colWidths(a.w)
+	_, h2, h3, _ := rowHeights(a.h)
+	_, rightW := colWidths(a.w)
 
-	a.cfgVP.Width = rightW - 4
-	a.cfgVP.Height = h2 - 4
-	a.logVP.Width = a.w - 4
-	a.logVP.Height = h3 - 4
-	_ = h1
-	_ = leftW
+	a.cfgVP.Width = rightW - 1
+	a.cfgVP.Height = h2 - 1
+	a.logVP.Width = a.w - 1
+	a.logVP.Height = h3 - 1
 }
 
 func rowHeights(total int) (h1, h2, h3, h4 int) {
-	h1 = clamp(total*25/100, 6, 12)
-	h2 = clamp(total*30/100, 8, 16)
-	h4 = 11
+	h1 = clamp(total*15/100, 6, 9)
+	h2 = clamp(total*28/100, 8, 14)
+	h4 = 9
 	h3 = total - h1 - h2 - h4 - 1 // 1 for status bar
 	if h3 < 5 {
 		h3 = 5
@@ -531,7 +528,7 @@ func rowHeights(total int) (h1, h2, h3, h4 int) {
 
 func colWidths(total int) (left, right int) {
 	left = clamp(total*30/100, 20, 40)
-	right = total - left
+	right = total - left - 1 // -1 for column gap
 	return
 }
 
@@ -571,16 +568,14 @@ func (a *app) viewFull() string {
 	case paneLogs:
 		content = a.logVP.View()
 	case paneTokens:
-		content = a.renderTokens(a.w - 4)
+		content = a.renderTokens(a.w - 1)
 	}
-	header := fmt.Sprintf("%s [fullscreen — esc to exit]", panelNames[a.focused])
-	body := lipgloss.NewStyle().Foreground(clrFocused).Bold(true).Render(header) +
-		"\n" + stDim.Render(strings.Repeat("─", max(0, a.w-4))) + "\n" + content
+	titleStr := panelNames[a.focused] + " [fullscreen — esc]"
+	body := panelHeader(titleStr, a.w, clrFocused, true) + "\n" + content
 	pane := lipgloss.NewStyle().
-		Border(lipgloss.RoundedBorder()).
-		BorderForeground(clrFocused).
-		Width(a.w - 2).
-		Height(a.h - 3).
+		Width(a.w).
+		Height(a.h - 1).
+		MaxHeight(a.h - 1).
 		Render(body)
 	return pane + "\n" + a.renderStatus()
 }
@@ -589,22 +584,27 @@ func (a *app) viewGrid() string {
 	h1, h2, h3, h4 := rowHeights(a.h)
 	leftW, rightW := colWidths(a.w)
 
-	// Row 1: Inference (60%) + GPU (40%)
+	gap1 := lipgloss.NewStyle().Width(1).Height(h1).Render("")
+	gap2 := lipgloss.NewStyle().Width(1).Height(h2).Render("")
+
+	// Row 1: Inference (60%) + gap + GPU (remaining)
 	iW := a.w * 6 / 10
-	gW := a.w - iW
+	gW := a.w - iW - 1
 	row1 := lipgloss.JoinHorizontal(lipgloss.Top,
 		a.panel(paneInference, iW, h1, a.renderInference()),
+		gap1,
 		a.panel(paneGPU, gW, h1, a.renderGPU()),
 	)
 
-	// Row 2: Models (30%) + Config (70%)
+	// Row 2: Models (30%) + gap + Config (remaining)
 	row2 := lipgloss.JoinHorizontal(lipgloss.Top,
 		a.panel(paneModels, leftW, h2, a.renderModels()),
+		gap2,
 		a.panel(paneConfig, rightW, h2, a.cfgVP.View()),
 	)
 
-	// Row 4: Token throughput sparkline (full width, between models/config and logs)
-	row4 := a.panel(paneTokens, a.w, h4, a.renderTokens(a.w-4))
+	// Row 4: Token throughput sparkline (full width)
+	row4 := a.panel(paneTokens, a.w, h4, a.renderTokens(a.w-1))
 
 	// Row 3: Logs
 	row3 := a.panel(paneLogs, a.w, h3, a.logVP.View())
@@ -614,28 +614,27 @@ func (a *app) viewGrid() string {
 	)
 }
 
-// panel wraps content in a rounded border, highlighted when focused.
-// The panel name appears as the first content line.
+// panelHeader builds a "Name ─────" header rule of exactly w columns.
+func panelHeader(name string, w int, fg lipgloss.Color, bold bool) string {
+	titleSt := lipgloss.NewStyle().Foreground(fg).Bold(bold)
+	title := titleSt.Render(name)
+	ruleLen := max(0, w-lipgloss.Width(title)-1)
+	return title + " " + lipgloss.NewStyle().Foreground(fg).Render(strings.Repeat("─", ruleLen))
+}
+
+// panel renders a section with a "Name ───────" header line, highlighted when focused.
 func (a *app) panel(id panelID, w, h int, content string) string {
 	focused := a.focused == id
-	borderClr := clrDim
-	titleStyle := stDim
+	fg := clrDim
 	if focused {
-		borderClr = clrFocused
-		titleStyle = lipgloss.NewStyle().Foreground(clrFocused).Bold(true)
+		fg = clrFocused
 	}
-	// Subtract border (2) from inner dimensions
-	inner := fmt.Sprintf("%s\n%s\n%s",
-		titleStyle.Render(panelNames[id]),
-		stDim.Render(strings.Repeat("─", max(0, w-4))),
-		content,
-	)
+	header := panelHeader(panelNames[id], w, fg, focused)
 	return lipgloss.NewStyle().
-		Border(lipgloss.RoundedBorder()).
-		BorderForeground(borderClr).
-		Width(w - 2).
-		Height(h - 2).
-		Render(inner)
+		Width(w).
+		Height(h).
+		MaxHeight(h).
+		Render(header + "\n" + content)
 }
 
 func max(a, b int) int {
@@ -650,17 +649,17 @@ func max(a, b int) int {
 func (a *app) renderInference() string {
 	var sb strings.Builder
 	if a.data.Active == nil {
-		sb.WriteString(stDim.Render("  No model loaded\n"))
-		sb.WriteString(stDim.Render("  Running: —  Waiting: —  KV: —\n"))
-		sb.WriteString(stDim.Render("  Decode: —  TTFT: —"))
+		sb.WriteString(stDim.Render(" No model loaded") + "\n")
+		sb.WriteString(stDim.Render(" Running: —  Waiting: —  KV: —") + "\n")
+		sb.WriteString(stDim.Render(" Decode: —  TTFT: —"))
 		return sb.String()
 	}
 	ac := a.data.Active
-	sb.WriteString(stActive.Render(fmt.Sprintf("  %s  (:%d)  [● ACTIVE]\n", ac.ID, ac.Port)))
+	sb.WriteString(stActive.Render(fmt.Sprintf(" %s  (:%d)  [● ACTIVE]", ac.ID, ac.Port)) + "\n")
 
 	if a.data.Metrics == nil {
-		sb.WriteString(stDim.Render("  Running: —  Waiting: —  KV: —\n"))
-		sb.WriteString(stDim.Render("  Decode: —  TTFT: —"))
+		sb.WriteString(stDim.Render(" Running: —  Waiting: —  KV: —") + "\n")
+		sb.WriteString(stDim.Render(" Decode: —  TTFT: —"))
 		return sb.String()
 	}
 
@@ -693,9 +692,9 @@ func (a *app) renderInference() string {
 		bar := stGreen.Render(strings.Repeat("█", filled)) +
 			stDim.Render(strings.Repeat("░", barW-filled))
 		frac := stBold.Render(fmt.Sprintf("%d/%d", running, concLimit))
-		sb.WriteString(fmt.Sprintf("  [%s] %s  %s\n", bar, frac, queueStr))
+		sb.WriteString(fmt.Sprintf(" [%s] %s  %s\n", bar, frac, queueStr))
 	} else {
-		sb.WriteString(fmt.Sprintf("  Running: %s  %s\n",
+		sb.WriteString(fmt.Sprintf(" Running: %s  %s\n",
 			stBold.Render(fmt.Sprintf("%d", running)), queueStr))
 	}
 
@@ -717,7 +716,7 @@ func (a *app) renderInference() string {
 		}
 		pfxStr = st.Render(fmt.Sprintf("%.1f%%", pct))
 	}
-	sb.WriteString(fmt.Sprintf("  KV: %s  PfxHit: %s\n", kvStr, pfxStr))
+	sb.WriteString(fmt.Sprintf(" KV: %s  PfxHit: %s\n", kvStr, pfxStr))
 
 	decStr := "—"
 	if a.decodeRate != nil {
@@ -731,25 +730,25 @@ func (a *app) renderInference() string {
 		t := *m.TTFT
 		ttftStr = thStyle(t, 1, 3).Render(fmt.Sprintf("%.2fs", t))
 	}
-	sb.WriteString(fmt.Sprintf("  Decode: %s  TTFT: %s", decStr, ttftStr))
+	sb.WriteString(fmt.Sprintf(" Decode: %s  TTFT: %s", decStr, ttftStr))
 
 	if !a.data.FetchedAt.IsZero() {
 		ago := int(time.Since(a.data.FetchedAt).Seconds())
-		sb.WriteString(stDim.Render(fmt.Sprintf("\n  refreshed %ds ago", ago)))
+		sb.WriteString(stDim.Render(fmt.Sprintf("\n refreshed %ds ago", ago)))
 	}
 	return sb.String()
 }
 
 func (a *app) renderGPU() string {
 	if !a.data.ROCMAvail {
-		return stDim.Render("  rocm-smi unavailable")
+		return stDim.Render(" rocm-smi unavailable")
 	}
 	if len(a.data.GPUs) == 0 {
-		return stDim.Render("  No GPU data")
+		return stDim.Render(" No GPU data")
 	}
 	var sb strings.Builder
-	sb.WriteString(stDim.Render(fmt.Sprintf("  %-3s  %-16s  %-5s  %-5s  %s\n",
-		"GPU", "VRAM used/tot GB", "VRAM%", "Use%", "Temp")))
+	sb.WriteString(stDim.Render(fmt.Sprintf(" %-2s  %-11s  %-4s  %-4s  %s",
+		"#", "VRAM/Tot GB", "VRM%", "Use%", "Temp")) + "\n")
 	for _, g := range a.data.GPUs {
 		used := float64(g.VRAMUsed) / 1e9
 		total := float64(g.VRAMTotal) / 1e9
@@ -757,7 +756,7 @@ func (a *app) renderGPU() string {
 		if total > 0 {
 			vp = used / total * 100
 		}
-		sb.WriteString(fmt.Sprintf("  %-3d  %4.1f / %5.1f     %s   %s  %s\n",
+		sb.WriteString(fmt.Sprintf(" %-2d  %4.1f/%4.1fG   %s  %s  %s\n",
 			g.Index, used, total,
 			thStyle(vp, 50, 80).Render(fmt.Sprintf("%3.0f%%", vp)),
 			thStyle(g.UsePercent, 50, 80).Render(fmt.Sprintf("%3.0f%%", g.UsePercent)),
@@ -860,7 +859,7 @@ func (a *app) renderTokens(w int) string {
 	if a.data.Metrics != nil {
 		runStr = fmt.Sprintf("%.0f", a.data.Metrics.Running)
 	}
-	sb.WriteString(fmt.Sprintf("  cur: %s tok/s  peak: %s tok/s  requests: %s  total gen: %s\n",
+	sb.WriteString(fmt.Sprintf(" cur: %s tok/s  peak: %s tok/s  req: %s  gen: %s\n",
 		stBold.Render(currStr),
 		stGreen.Render(peakStr),
 		runStr,
@@ -890,7 +889,7 @@ func (a *app) renderTokens(w int) string {
 	if a.data.Metrics != nil && a.data.Metrics.PromptTotal != nil {
 		ptStr = fmt.Sprintf("%.0f", *a.data.Metrics.PromptTotal)
 	}
-	sb.WriteString(fmt.Sprintf("  cur: %s tok/s  peak: %s tok/s  total prompt: %s",
+	sb.WriteString(fmt.Sprintf(" cur: %s tok/s  peak: %s tok/s  prompt: %s",
 		stBold.Render(pfCurStr),
 		lipgloss.NewStyle().Foreground(lipgloss.Color("#00c8c8")).Render(pfPeakStr),
 		stDim.Render(ptStr),
@@ -903,7 +902,7 @@ func (a *app) renderStatus() string {
 	d := pollIntervals[a.intervalIdx]
 	dStr := d.String()
 	hint := fmt.Sprintf(
-		" [tab] panel  [f] fullscreen  [↑↓/jk] nav  [s/↵] swap  [u] unload  [p] poll:%s  [r] reload  [q] quit ",
+		" tab panel  f full  ↑↓/jk nav  s/↵ swap  u unload  p poll:%s  r reload  q quit ",
 		dStr,
 	)
 	return lipgloss.NewStyle().
