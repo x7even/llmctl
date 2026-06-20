@@ -48,8 +48,8 @@ models:
         --shm-size=32g
         --network=host
         -v /mnt/models/llm:/models:ro
-        -v __LLMSTACK_DIR__/.vllm-cache:/root/.cache/vllm
-        -v __LLMSTACK_DIR__/.triton-cache:/root/.triton/cache
+        -v /home/xin/ai/llmstack/.vllm-cache:/root/.cache/vllm
+        -v /home/xin/ai/llmstack/.triton-cache:/root/.triton/cache
         -e HSA_ENABLE_SDMA=0
         -e TORCH_BLAS_PREFER_HIPBLASLT=1
         --entrypoint=""
@@ -70,6 +70,113 @@ models:
         --reasoning-parser qwen3
         --enable-auto-tool-choice
         --tool-call-parser qwen3_xml
+        --cudagraph-capture-sizes 1 2 4 8 16 32
+    cmdStop: podman stop llmstack-vllm-${MODEL_ID}
+
+  # ─── vLLM: Qwen3.6-27B FP8 (code-optimised, MTP) ───────────────────────
+  # Best for: code generation, agent tool calls, refactoring
+  #           Highest SWE-bench in Qwen3.6 family (77.2 vs 35B-A3B 73.4)
+  #           Dense 27B — all parameters active per token (vs 3B active for 35B MoE)
+  # VRAM:    ~29 GB weights + ~85 GB BF16 KV pool across 4 GPUs
+  # MTP:     Enabled via bundled mtp.safetensors — speculative 2 tokens ahead
+  # Context: 131072 tokens (BF16 KV — no FP8 calibration, cold start ~5 min)
+  qwen3.6-27b-code:
+    name: "Qwen3.6-27B FP8 (code, MTP)"
+    ttl: 0
+    checkEndpoint: /health
+    concurrencyLimit: 64
+    aliases:
+      - 27b-code
+    cmd: |
+      podman run --replace --rm
+        --name llmstack-vllm-${MODEL_ID}
+        --device=/dev/kfd
+        --device=/dev/dri
+        --group-add keep-groups
+        --security-opt seccomp=unconfined
+        --security-opt apparmor=unconfined
+        --ipc=private
+        --shm-size=32g
+        --network=host
+        -v /mnt/models/llm:/models:ro
+        -v __LLMSTACK_DIR__/.vllm-cache:/root/.cache/vllm
+        -v __LLMSTACK_DIR__/.triton-cache:/root/.triton/cache
+        -e HSA_ENABLE_SDMA=0
+        -e TORCH_BLAS_PREFER_HIPBLASLT=1
+        --entrypoint=""
+        docker.io/vllm/vllm-openai-rocm:latest
+        vllm serve /models/Qwen3.6-27B-FP8
+        --host 127.0.0.1
+        --port ${PORT}
+        --served-model-name qwen3.6-27b-code
+        --dtype auto
+        --tensor-parallel-size 4
+        --max-model-len 131072
+        --max-num-seqs 32
+        --max-num-batched-tokens 32768
+        --gpu-memory-utilization 0.95
+        --enable-prefix-caching
+        --enable-chunked-prefill
+        --trust-remote-code
+        --reasoning-parser qwen3
+        --enable-auto-tool-choice
+        --tool-call-parser qwen3_xml
+        --speculative-config '{"method": "mtp", "num_speculative_tokens": 2}'
+        --cudagraph-capture-sizes 1 2 4 8 16 32
+    cmdStop: podman stop llmstack-vllm-${MODEL_ID}
+
+  # ─── vLLM: Qwen3.6-27B BF16 (code-optimised, full precision) ───────────
+  # Best for: highest quality code generation — full BF16 precision, zero quantization error
+  #           Same SWE-bench architecture as -fp8 but no W8A8 approximation in dense layers
+  #           Useful when FP8 kernel sub-optimality is suspected of affecting quality
+  # VRAM:    ~54 GB weights + ~67 GB BF16 KV pool across 4 GPUs
+  # Decode:  ~half tok/s vs FP8 variant (reads 2× weight bytes per step)
+  #          No "sub-optimal FP8 kernel" warnings — BF16 GEMMs are fully tuned on ROCm/RDNA4
+  # Context: 131072 tokens (BF16 KV, cold start ~5 min)
+  # Weights: /mnt/models/llm/Qwen3.6-27B  (hf download Qwen/Qwen3.6-27B)
+  qwen3.6-27b-code-f16:
+    name: "Qwen3.6-27B BF16 (code, full precision)"
+    ttl: 0
+    checkEndpoint: /health
+    concurrencyLimit: 32
+    aliases:
+      - 27b-f16
+      - 27b-bf16
+    cmd: |
+      podman run --replace --rm
+        --name llmstack-vllm-${MODEL_ID}
+        --device=/dev/kfd
+        --device=/dev/dri
+        --group-add keep-groups
+        --security-opt seccomp=unconfined
+        --security-opt apparmor=unconfined
+        --ipc=private
+        --shm-size=32g
+        --network=host
+        -v /mnt/models/llm:/models:ro
+        -v __LLMSTACK_DIR__/.vllm-cache:/root/.cache/vllm
+        -v __LLMSTACK_DIR__/.triton-cache:/root/.triton/cache
+        -e HSA_ENABLE_SDMA=0
+        -e TORCH_BLAS_PREFER_HIPBLASLT=1
+        --entrypoint=""
+        docker.io/vllm/vllm-openai-rocm:latest
+        vllm serve /models/Qwen3.6-27B
+        --host 127.0.0.1
+        --port ${PORT}
+        --served-model-name qwen3.6-27b-code-f16
+        --dtype auto
+        --tensor-parallel-size 4
+        --max-model-len 131072
+        --max-num-seqs 32
+        --max-num-batched-tokens 32768
+        --gpu-memory-utilization 0.92
+        --enable-prefix-caching
+        --enable-chunked-prefill
+        --trust-remote-code
+        --reasoning-parser qwen3
+        --enable-auto-tool-choice
+        --tool-call-parser qwen3_xml
+        --speculative-config '{"method": "mtp", "num_speculative_tokens": 2}'
         --cudagraph-capture-sizes 1 2 4 8 16 32
     cmdStop: podman stop llmstack-vllm-${MODEL_ID}
 
@@ -133,8 +240,8 @@ models:
         --shm-size=32g
         --network=host
         -v /mnt/models/llm:/models:ro
-        -v __LLMSTACK_DIR__/.vllm-cache:/root/.cache/vllm
-        -v __LLMSTACK_DIR__/.triton-cache:/root/.triton/cache
+        -v /home/xin/ai/llmstack/.vllm-cache:/root/.cache/vllm
+        -v /home/xin/ai/llmstack/.triton-cache:/root/.triton/cache
         -e HSA_ENABLE_SDMA=0
         -e TORCH_BLAS_PREFER_HIPBLASLT=1
         --entrypoint=""
@@ -180,8 +287,8 @@ models:
         --shm-size=32g
         --network=host
         -v /mnt/models/llm:/models:ro
-        -v __LLMSTACK_DIR__/.vllm-cache:/root/.cache/vllm
-        -v __LLMSTACK_DIR__/.triton-cache:/root/.triton/cache
+        -v /home/xin/ai/llmstack/.vllm-cache:/root/.cache/vllm
+        -v /home/xin/ai/llmstack/.triton-cache:/root/.triton/cache
         -e HSA_ENABLE_SDMA=0
         -e TORCH_BLAS_PREFER_HIPBLASLT=1
         --entrypoint=""
@@ -237,8 +344,8 @@ models:
         --shm-size=32g
         --network=host
         -v /mnt/models/llm:/models:ro
-        -v __LLMSTACK_DIR__/.vllm-cache:/root/.cache/vllm
-        -v __LLMSTACK_DIR__/.triton-cache:/root/.triton/cache
+        -v /home/xin/ai/llmstack/.vllm-cache:/root/.cache/vllm
+        -v /home/xin/ai/llmstack/.triton-cache:/root/.triton/cache
         -e HSA_ENABLE_SDMA=0
         -e TORCH_BLAS_PREFER_HIPBLASLT=1
         --entrypoint=""
@@ -292,9 +399,9 @@ models:
         --shm-size=32g
         --network=host
         -v /mnt/models/llm:/models:ro
-        -v __LLMSTACK_DIR__/config/templates:/templates:ro
-        -v __LLMSTACK_DIR__/.vllm-cache:/root/.cache/vllm
-        -v __LLMSTACK_DIR__/.triton-cache:/root/.triton/cache
+        -v /home/xin/ai/llmstack/config/templates:/templates:ro
+        -v /home/xin/ai/llmstack/.vllm-cache:/root/.cache/vllm
+        -v /home/xin/ai/llmstack/.triton-cache:/root/.triton/cache
         -e HSA_ENABLE_SDMA=0
         -e TORCH_BLAS_PREFER_HIPBLASLT=1
         --entrypoint=""
@@ -350,8 +457,8 @@ models:
         --shm-size=32g
         --network=host
         -v /mnt/models/llm:/models:ro
-        -v __LLMSTACK_DIR__/.vllm-cache:/root/.cache/vllm
-        -v __LLMSTACK_DIR__/.triton-cache:/root/.triton/cache
+        -v /home/xin/ai/llmstack/.vllm-cache:/root/.cache/vllm
+        -v /home/xin/ai/llmstack/.triton-cache:/root/.triton/cache
         -e HSA_ENABLE_SDMA=0
         -e VLLM_ALLOW_LONG_MAX_MODEL_LEN=1
         -e TORCH_BLAS_PREFER_HIPBLASLT=1
@@ -591,8 +698,8 @@ models:
         --shm-size=32g
         --network=host
         -v /mnt/models/llm:/models:ro
-        -v __LLMSTACK_DIR__/.vllm-cache:/root/.cache/vllm
-        -v __LLMSTACK_DIR__/.triton-cache:/root/.triton/cache
+        -v /home/xin/ai/llmstack/.vllm-cache:/root/.cache/vllm
+        -v /home/xin/ai/llmstack/.triton-cache:/root/.triton/cache
         -e HSA_ENABLE_SDMA=0
         -e TORCH_BLAS_PREFER_HIPBLASLT=1
         --entrypoint=""
@@ -646,8 +753,8 @@ models:
         --shm-size=32g
         --network=host
         -v /mnt/models/llm:/models:ro
-        -v __LLMSTACK_DIR__/.vllm-cache:/root/.cache/vllm
-        -v __LLMSTACK_DIR__/.triton-cache:/root/.triton/cache
+        -v /home/xin/ai/llmstack/.vllm-cache:/root/.cache/vllm
+        -v /home/xin/ai/llmstack/.triton-cache:/root/.triton/cache
         -e HSA_ENABLE_SDMA=0
         -e TORCH_BLAS_PREFER_HIPBLASLT=1
         --entrypoint=""
