@@ -1,5 +1,11 @@
 # Coding Benchmark: qwen3.6-27b-code vs Claude sonnet-4-6
 
+> **Superseded — see correction below.** This benchmark used `max_tokens=512`, which truncated
+> the local model's verbose implementations (`lru_cache`, `command_pattern`) giving unfair 3/10
+> scores. A corrected 3-way run (FP8 vs BF16 vs Claude, max_tokens=1024) is in
+> `bench/qwen-27b-bf16-vs-fp8-2026-06-20.md`. Corrected results: FP8 9.64, BF16 9.38,
+> Claude 8.88 — the local FP8 model leads when the token budget is adequate.
+
 **Date:** 2026-06-20  
 **Hardware:** 4× AMD Radeon AI PRO R9700 (128 GB VRAM total), ROCm 7.2  
 **Local model:** `qwen3.6-27b-code` — 27B dense FP8, MTP enabled, vLLM 0.22.1  
