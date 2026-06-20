@@ -95,7 +95,13 @@ def _strip_args_from_line(line: str, arg_buf: dict) -> tuple:
     try:
         data = json.loads(payload)
     except json.JSONDecodeError:
-        return line, False, ""
+        # Trailing garbage (e.g. "}.") on finish_reason chunks — recover with raw_decode.
+        try:
+            data, _ = json.JSONDecoder().raw_decode(payload)
+            line = "data: " + json.dumps(data, separators=(",", ":"))
+            _dbg(f"LINE_REPAIRED trailing garbage in: {payload[-8:]!r}")
+        except json.JSONDecodeError:
+            return line, False, ""
 
     chunk_id = data.get("id") or ""
     has_finish = any(c.get("finish_reason") for c in data.get("choices", []))
@@ -146,6 +152,11 @@ def _arg_correction_lines(arg_buf: dict, chunk_id: str) -> list:
     lines = []
     for idx, raw in arg_buf.items():
         repaired = _repair_args(raw)
+        if not repaired:
+            # Empty args (vLLM sent "arguments":"" or unrepaired garbage) — skip.
+            # Emitting an empty-string correction would cause JSON.parse("") on the client.
+            _dbg(f"ARGS_SKIP_EMPTY idx={idx} raw={raw!r}")
+            continue
         payload = {
             "id": chunk_id,
             "object": "chat.completion.chunk",
@@ -297,9 +308,12 @@ class _Handler(http.server.BaseHTTPRequestHandler):
                         pending.clear()
 
                     # Step 4: Before finish_reason, emit complete repaired arguments.
+                    # Each correction is followed by \n\n so it forms a separate SSE event.
+                    # Without the blank line, @ai-sdk concatenates all corrections + finish
+                    # into one multi-data event and fails to JSON.parse the concatenation.
                     if is_finish and arg_buf:
                         for corr in _arg_correction_lines(arg_buf, last_chunk_id):
-                            self.wfile.write((corr + "\n").encode())
+                            self.wfile.write((corr + "\n\n").encode())
                             self.wfile.flush()
                         arg_buf.clear()
 
@@ -310,7 +324,7 @@ class _Handler(http.server.BaseHTTPRequestHandler):
                         # Safety flush: emit any remaining args before [DONE].
                         if arg_buf:
                             for corr in _arg_correction_lines(arg_buf, last_chunk_id):
-                                self.wfile.write((corr + "\n").encode())
+                                self.wfile.write((corr + "\n\n").encode())
                                 self.wfile.flush()
                             arg_buf.clear()
                         self.wfile.write((line + "\n").encode())
@@ -332,7 +346,7 @@ class _Handler(http.server.BaseHTTPRequestHandler):
             # End of stream: flush any remaining buffered items.
             if arg_buf:
                 for corr in _arg_correction_lines(arg_buf, last_chunk_id):
-                    self.wfile.write((corr + "\n").encode())
+                    self.wfile.write((corr + "\n\n").encode())
                     self.wfile.flush()
             if pending:
                 for flushed in _flush_buffered(pending, tool_names):

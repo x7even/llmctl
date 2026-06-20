@@ -132,6 +132,28 @@ def test_strip_finish_chunk_detected():
     assert out is not None  # finish chunk is meaningful
 
 
+def test_strip_finish_chunk_trailing_garbage():
+    """Finish chunk with trailing '.' (vLLM bug) — raw_decode recovers is_finish."""
+    raw_line = _finish_chunk() + "."   # simulate vLLM trailing garbage
+    arg_buf = {}
+    out, is_finish, cid = _strip_args_from_line(raw_line, arg_buf)
+    assert is_finish is True, "is_finish must be detected even with trailing garbage"
+    assert out is not None
+    # re-encoded line should be clean JSON
+    assert out.endswith("}") or out.endswith("}]}")  # no trailing .
+
+
+def test_correction_skips_empty_args():
+    """Empty accumulated args (vLLM sends arguments:'') must not produce a correction."""
+    arg_buf = {0: "", 1: '{"filePath":"/tmp/x"}'}
+    lines = _arg_correction_lines(arg_buf, "cmpl-x")
+    assert len(lines) == 1, "Should emit correction only for non-empty args"
+    data = json.loads(lines[0][6:])
+    tc = data["choices"][0]["delta"]["tool_calls"][0]
+    assert tc["index"] == 1  # only idx=1 emitted
+    assert json.loads(tc["function"]["arguments"]) == {"filePath": "/tmp/x"}
+
+
 def test_strip_no_double_emit():
     """
     Exact-once invariant: accumulate args across multiple chunks, then verify
