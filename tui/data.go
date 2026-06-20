@@ -19,14 +19,15 @@ type ActiveModel struct {
 }
 
 type VLLMMetrics struct {
-	Running       float64
-	Waiting       float64
-	KVCache       *float64 // nil = unavailable
-	PrefixHitRate *float64 // nil = unavailable; 0–1 fraction
-	TokPerS       *float64
-	GenTotal      *float64
-	PromptTotal   *float64 // vllm:prompt_tokens_total counter
-	TTFT          *float64 // nil = no data yet
+	Running        float64
+	Waiting        float64
+	KVCache        *float64 // nil = unavailable
+	PrefixHitRate  *float64 // nil = unavailable; 0–1 fraction
+	TokPerS        *float64
+	GenTotal       *float64
+	PromptTotal    *float64 // vllm:prompt_tokens_total counter
+	TTFT           *float64 // avg time-to-first-token (sum/count); nil = no data
+	AvgPrefillTime *float64 // avg GPU prefill phase duration per request; nil = no data
 }
 
 type GPUInfo struct {
@@ -152,6 +153,13 @@ func fetchVLLM(port int) *VLLMMetrics {
 		v := *s / *c
 		ttft = &v
 	}
+	pfs := parseMetric(txt, "vllm:request_prefill_time_seconds_sum")
+	pfc := parseMetric(txt, "vllm:request_prefill_time_seconds_count")
+	var avgPrefill *float64
+	if pfs != nil && pfc != nil && *pfc > 0 {
+		v := *pfs / *pfc
+		avgPrefill = &v
+	}
 	return &VLLMMetrics{
 		Running:       derefF(parseMetric(txt, "vllm:num_requests_running")),
 		Waiting:       derefF(parseMetric(txt, "vllm:num_requests_waiting")),
@@ -163,7 +171,8 @@ func fetchVLLM(port int) *VLLMMetrics {
 			parseMetric(txt, "vllm:prompt_tokens_total"),
 			parseMetric(txt, "vllm:prompt_tokens"),
 		),
-		TTFT: ttft,
+		TTFT:           ttft,
+		AvgPrefillTime: avgPrefill,
 	}
 }
 

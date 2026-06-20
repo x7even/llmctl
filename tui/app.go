@@ -516,7 +516,7 @@ func (a *app) sizeViewports() {
 }
 
 func rowHeights(total int) (h1, h2, h3, h4 int) {
-	h1 = clamp(total*15/100, 6, 9)
+	h1 = clamp(total*15/100, 7, 10)
 	h2 = clamp(total*28/100, 8, 14)
 	h4 = 9
 	h3 = total - h1 - h2 - h4 - 1 // 1 for status bar
@@ -651,7 +651,8 @@ func (a *app) renderInference() string {
 	if a.data.Active == nil {
 		sb.WriteString(stDim.Render(" No model loaded") + "\n")
 		sb.WriteString(stDim.Render(" Running: —  Waiting: —  KV: —") + "\n")
-		sb.WriteString(stDim.Render(" Decode: —  TTFT: —"))
+		sb.WriteString(stDim.Render(" Decode: —  PP: —") + "\n")
+		sb.WriteString(stDim.Render(" TTFT: —  pfill: —"))
 		return sb.String()
 	}
 	ac := a.data.Active
@@ -659,7 +660,8 @@ func (a *app) renderInference() string {
 
 	if a.data.Metrics == nil {
 		sb.WriteString(stDim.Render(" Running: —  Waiting: —  KV: —") + "\n")
-		sb.WriteString(stDim.Render(" Decode: —  TTFT: —"))
+		sb.WriteString(stDim.Render(" Decode: —  PP: —") + "\n")
+		sb.WriteString(stDim.Render(" TTFT: —  pfill: —"))
 		return sb.String()
 	}
 
@@ -724,17 +726,28 @@ func (a *app) renderInference() string {
 	} else if m.TokPerS != nil {
 		decStr = fmt.Sprintf("%.0f tok/s", *m.TokPerS)
 	}
+	ppStr := "—"
+	if a.prefillRate != nil {
+		ppStr = fmt.Sprintf("%.0f tok/s", *a.prefillRate)
+	}
+	sb.WriteString(fmt.Sprintf(" Decode: %s  PP: %s\n",
+		stBold.Render(decStr), stBold.Render(ppStr)))
 
 	ttftStr := stDim.Render("—")
 	if m.TTFT != nil {
 		t := *m.TTFT
 		ttftStr = thStyle(t, 1, 3).Render(fmt.Sprintf("%.2fs", t))
 	}
-	sb.WriteString(fmt.Sprintf(" Decode: %s  TTFT: %s", decStr, ttftStr))
+	pfillStr := stDim.Render("—")
+	if m.AvgPrefillTime != nil {
+		t := *m.AvgPrefillTime
+		pfillStr = thStyle(t, 1, 3).Render(fmt.Sprintf("%.2fs", t))
+	}
+	sb.WriteString(fmt.Sprintf(" TTFT: %s  pfill: %s", ttftStr, pfillStr))
 
 	if !a.data.FetchedAt.IsZero() {
 		ago := int(time.Since(a.data.FetchedAt).Seconds())
-		sb.WriteString(stDim.Render(fmt.Sprintf("\n refreshed %ds ago", ago)))
+		sb.WriteString("\n" + stDim.Render(fmt.Sprintf(" refreshed %ds ago", ago)))
 	}
 	return sb.String()
 }
