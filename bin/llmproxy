@@ -3,13 +3,18 @@
 #
 # Workaround proxy: fixes vLLM streaming tool_call chunks for @ai-sdk/openai-compatible.
 #
-# Root cause: vLLM sends {"function": {"name": null}} in follow-on SSE chunks and
+# Bug 1 — null name: vLLM sends {"function": {"name": null}} in follow-on SSE chunks and
 # sometimes omits the name entirely for parallel tool calls (index > 0).
-# @ai-sdk validates typeof name === 'string' on every chunk — null and undefined
-# both fail.
+# @ai-sdk validates typeof name === 'string' on every chunk — null and undefined both fail.
+# Fix: buffer chunks per unknown tool_call index until the real name arrives, then flush.
 #
-# Strategy: buffer chunks per unknown tool_call index until the real name arrives
-# (or a sibling index provides a fallback), then flush with name restored.
+# Bug 2 — trailing-garbage arguments: model occasionally emits extra chars after the valid
+# JSON close in function.arguments (e.g. {"key":"val"}}. ).  @ai-sdk assembles all fragments
+# and parses once at the end — any trailing garbage causes a JSONParseError.
+# Fix: buffer ALL function.arguments fragments (suppressing intermediate argument-only chunks),
+# repair with raw_decode, and emit one complete corrected chunk before finish_reason.
+# Note: only trailing-garbage is repaired. Truncated/unterminated JSON is logged and passed
+# through unchanged — those cases are no worse than today.
 #
 # Remove once vLLM fixes null-name serialisation upstream.
 # Track: https://github.com/vllm-project/vllm/issues — search "tool_call name null streaming"
@@ -49,29 +54,110 @@ def _parse_tool_calls(line: str):
     return data, tcs
 
 
-def _apply_names(data: dict, tool_names: dict) -> tuple[str, bool]:
-    """Patch null names in data using tool_names. Returns (line, patched)."""
-    patched = False
+def _repair_args(raw: str) -> str:
+    """
+    Strip trailing garbage after valid JSON in tool-call arguments.
+    Example: {"key": "val"}}. → {"key": "val"}
+    Uses raw_decode which returns (object, end_index) where end_index marks where valid JSON
+    ends. Any trailing non-whitespace after that index is treated as garbage.
+    Truncated/unterminated JSON (raw_decode raises) is returned unchanged.
+    """
+    raw = raw.strip()
+    if not raw:
+        return raw
+    try:
+        _, end = json.JSONDecoder().raw_decode(raw)
+        trailing = raw[end:].strip()
+        if not trailing:
+            return raw  # already valid
+        repaired = raw[:end]
+        _dbg(f"ARGS_REPAIRED trailing={trailing!r}")
+        return repaired
+    except json.JSONDecodeError as e:
+        _dbg(f"ARGS_UNREPAIRED err={e} raw={raw!r}")
+        return raw  # truncated/malformed — return as-is, no worse than before
+
+
+def _strip_args_from_line(line: str, arg_buf: dict) -> tuple:
+    """
+    Strip function.arguments from all tool-call entries in this line, accumulating into
+    arg_buf[index]. Returns (line_to_emit_or_None, is_finish_reason, chunk_id_str).
+
+    line_to_emit is None when the line has no meaningful content after stripping (i.e. it
+    was an arguments-only chunk with nothing else worth sending). Arguments are NEVER leaked
+    through — they only reach the client via _arg_correction_lines() before finish_reason.
+    """
+    if not line.startswith("data: "):
+        return line, False, ""
+    payload = line[6:].strip()
+    if payload == "[DONE]":
+        return line, False, ""
+    try:
+        data = json.loads(payload)
+    except json.JSONDecodeError:
+        return line, False, ""
+
+    chunk_id = data.get("id") or ""
+    has_finish = any(c.get("finish_reason") for c in data.get("choices", []))
+
+    # Strip arguments unconditionally from every tool-call function entry.
+    args_stripped = False
     for choice in data.get("choices", []):
         for tc in choice.get("delta", {}).get("tool_calls", []):
             fn = tc.get("function")
-            if not isinstance(fn, dict):
-                continue
-            idx = tc.get("index", 0)
-            name = fn.get("name")
-            if name is not None:
-                tool_names[idx] = name
-                _dbg(f"NAME_SET idx={idx} name={name!r}")
-            elif "name" in fn:
-                if idx in tool_names:
-                    fn["name"] = tool_names[idx]
-                    _dbg(f"NAME_RESTORED idx={idx} name={tool_names[idx]!r}")
-                    patched = True
-                else:
-                    # No name for this index yet — caller handles buffering
-                    _dbg(f"NAME_UNKNOWN idx={idx}")
-                    return None, False   # signal: needs buffering
-    return ("data: " + json.dumps(data, separators=(",", ":"))) if patched else ("data: " + json.dumps(data, separators=(",", ":"))), True
+            if isinstance(fn, dict) and "arguments" in fn:
+                idx = tc.get("index", 0)
+                arg_buf[idx] = arg_buf.get(idx, "") + fn.pop("arguments")
+                args_stripped = True
+
+    if not args_stripped:
+        return line, has_finish, chunk_id
+
+    # Determine whether anything meaningful remains after stripping.
+    meaningful = has_finish
+    if not meaningful:
+        for choice in data.get("choices", []):
+            delta = choice.get("delta", {})
+            if delta.get("content") or delta.get("role"):
+                meaningful = True
+                break
+            for tc in delta.get("tool_calls", []):
+                if tc.get("id") or tc.get("type"):
+                    meaningful = True
+                    break
+                fn = tc.get("function", {})
+                if fn.get("name"):
+                    meaningful = True
+                    break
+
+    if not meaningful:
+        # Suppress: was an arguments-only chunk.
+        return None, has_finish, chunk_id
+
+    return "data: " + json.dumps(data, separators=(",", ":")), has_finish, chunk_id
+
+
+def _arg_correction_lines(arg_buf: dict, chunk_id: str) -> list:
+    """
+    Build SSE lines emitting the complete repaired arguments for each buffered tool call.
+    Emitted once, right before the finish_reason chunk, so the client assembles exactly the
+    repaired string with no duplicates.
+    """
+    lines = []
+    for idx, raw in arg_buf.items():
+        repaired = _repair_args(raw)
+        payload = {
+            "id": chunk_id,
+            "object": "chat.completion.chunk",
+            "choices": [{
+                "index": 0,
+                "delta": {"tool_calls": [{"index": idx, "function": {"arguments": repaired}}]},
+                "finish_reason": None,
+            }],
+        }
+        lines.append("data: " + json.dumps(payload, separators=(",", ":")))
+        _dbg(f"ARGS_EMIT idx={idx} len={len(repaired)} repaired={repaired[:80]!r}")
+    return lines
 
 
 def _process_line(line: str, tool_names: dict) -> str | None:
@@ -176,6 +262,8 @@ class _Handler(http.server.BaseHTTPRequestHandler):
         if streaming:
             tool_names: dict = {}
             pending: list = []   # buffered lines awaiting a name for unknown indices
+            arg_buf: dict = {}   # accumulated arguments per tool-call index (never leaked)
+            last_chunk_id: str = ""
             buf = b""
             while True:
                 chunk = resp.read(256)
@@ -186,43 +274,75 @@ class _Handler(http.server.BaseHTTPRequestHandler):
                     raw_line, buf = buf.split(b"\n", 1)
                     line = raw_line.decode("utf-8", errors="replace").rstrip("\r")
 
-                    # First scan for any name-sets in this line to unblock pending
-                    _, tcs = _parse_tool_calls(line)
-                    for tc in tcs:
-                        fn = tc.get("function")
-                        if isinstance(fn, dict):
-                            name = fn.get("name")
-                            if name is not None:
-                                tool_names[tc.get("index", 0)] = name
+                    # Step 1: Strip args from line (accumulate into arg_buf).
+                    line, is_finish, cid = _strip_args_from_line(line, arg_buf)
+                    if cid:
+                        last_chunk_id = cid
 
-                    # Flush any previously buffered lines that now have names
+                    # Step 2: Scan (stripped) line for name-sets to unblock pending.
+                    if line is not None:
+                        _, tcs = _parse_tool_calls(line)
+                        for tc in tcs:
+                            fn = tc.get("function")
+                            if isinstance(fn, dict):
+                                name = fn.get("name")
+                                if name is not None:
+                                    tool_names[tc.get("index", 0)] = name
+
+                    # Step 3: Flush name-buffer before emitting corrections or finish.
                     if pending:
                         for flushed in _flush_buffered(pending, tool_names):
                             self.wfile.write((flushed + "\n").encode())
                             self.wfile.flush()
                         pending.clear()
 
-                    result = _process_line(line, tool_names)
-                    if result is None:
-                        # Name still unknown — buffer it, but cap buffer size
-                        pending.append(line)
-                        if len(pending) >= LOOKAHEAD:
-                            for flushed in _flush_buffered(pending, tool_names):
-                                self.wfile.write((flushed + "\n").encode())
-                                self.wfile.flush()
-                            pending.clear()
-                    else:
-                        self.wfile.write((result + "\n").encode())
-                        self.wfile.flush()
+                    # Step 4: Before finish_reason, emit complete repaired arguments.
+                    if is_finish and arg_buf:
+                        for corr in _arg_correction_lines(arg_buf, last_chunk_id):
+                            self.wfile.write((corr + "\n").encode())
+                            self.wfile.flush()
+                        arg_buf.clear()
 
-            # Flush any remaining buffered lines at end of stream
+                    # Step 5: Emit/buffer the (stripped) line through name-fix logic.
+                    if line is None:
+                        pass  # suppressed: was an arguments-only chunk
+                    elif line.strip() == "data: [DONE]":
+                        # Safety flush: emit any remaining args before [DONE].
+                        if arg_buf:
+                            for corr in _arg_correction_lines(arg_buf, last_chunk_id):
+                                self.wfile.write((corr + "\n").encode())
+                                self.wfile.flush()
+                            arg_buf.clear()
+                        self.wfile.write((line + "\n").encode())
+                        self.wfile.flush()
+                    else:
+                        result = _process_line(line, tool_names)
+                        if result is None:
+                            # Name still unknown — buffer it, but cap buffer size
+                            pending.append(line)
+                            if len(pending) >= LOOKAHEAD:
+                                for flushed in _flush_buffered(pending, tool_names):
+                                    self.wfile.write((flushed + "\n").encode())
+                                    self.wfile.flush()
+                                pending.clear()
+                        else:
+                            self.wfile.write((result + "\n").encode())
+                            self.wfile.flush()
+
+            # End of stream: flush any remaining buffered items.
+            if arg_buf:
+                for corr in _arg_correction_lines(arg_buf, last_chunk_id):
+                    self.wfile.write((corr + "\n").encode())
+                    self.wfile.flush()
             if pending:
                 for flushed in _flush_buffered(pending, tool_names):
                     self.wfile.write((flushed + "\n").encode())
                     self.wfile.flush()
             if buf:
                 line = buf.decode("utf-8", errors="replace").rstrip("\r")
-                self.wfile.write((_process_line(line, tool_names) or line + "\n").encode())
+                stripped_line, _, _ = _strip_args_from_line(line, arg_buf)
+                emit = stripped_line if stripped_line is not None else line
+                self.wfile.write((_process_line(emit, tool_names) or emit + "\n").encode())
                 self.wfile.flush()
         else:
             self.wfile.write(resp.read())
