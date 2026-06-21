@@ -160,13 +160,17 @@ Using configuration from /vllm-tuned-configs/E=64,N=512,device_name=AMD_Radeon_R
 This file lives in `vllm-tuned-configs/` and is mounted via `-v __LLMSTACK_DIR__/vllm-tuned-configs:/vllm-tuned-configs:ro`
 with `-e VLLM_TUNED_CONFIG_FOLDER=/vllm-tuned-configs` set in the env.
 
-**Dense attention/FFN layers (not yet tuned — expected warning):**
+**Dense attention/FFN layers (not tuned — expected warning):**
 ```
 Using default W8A8 Block FP8 kernel config. Performance might be sub-optimal!
-Config file not found at .../N=3072,K=2048,device_name=AMD_Radeon_R9700,dtype=fp8_w8a8,block_shape=[128,128].json
+Config file not found at .../N=4096,K=5120,device_name=AMD_Radeon_R9700,dtype=fp8_w8a8,block_shape=[128,128].json
 ```
-The `N=3072,K=2048` config (shared attention GEMM layers) has not been tuned for R9700.
-This warning is expected and acceptable — it falls back to MI300X defaults.
+The 5 dense GEMM shapes have not been tuned for R9700. This warning is expected and acceptable.
+The MI300X defaults are intentionally kept: a synthetic Triton tile sweep was attempted
+(scripts/tune-dense-fp8) and produced a -50% regression under real inference. Isolated
+do_bench tuning finds tile configs that win on random tensors but underperform under full
+model inference (memory pressure, interleaved ops, cache effects). Do not add R9700 dense
+configs unless tuned under actual vLLM inference load.
 
 If startup shows "Config file not found for device_name=AMD_Radeon_R9700" for the MoE config
 (E=64,N=512), the VLLM_TUNED_CONFIG_FOLDER env var or the volume mount is broken.
