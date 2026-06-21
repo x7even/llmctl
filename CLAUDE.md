@@ -241,8 +241,7 @@ All measured on 4× R9700, vLLM 0.22.1, `--no-thinking`, MTP where noted.
 
 | Profile | serial | conc=8 | conc=16 |
 |---------|--------|--------|---------|
-| qwen3.6-35b-code (MTP, no tuned MoE config) | 43 | 261 | 481 |
-| qwen3.6-35b-code (MTP, R9700 tuned MoE config) | 43 | 175 | — |
+| qwen3.6-35b-code (MTP, MI300X defaults) | 43 | 261 | 481 |
 | qwen3.6-35b-awq | 92 | 250 | — |
 | qwen3.6-35b-fp8 no-MTP | 69 | 222 | — |
 | qwen3.6-27b-fp8 | 23 | 153 | — |
@@ -252,11 +251,9 @@ All measured on 4× R9700, vLLM 0.22.1, `--no-thinking`, MTP where noted.
 | gemma4-26b-q8 (GGUF, llama-server) | 65.5 | 153.9 | 135.8 |
 | gemma4-12b-q4 (GGUF, llama-server) | 36.1 | 108.9 | 94.8 |
 
-**Note:** The R9700-tuned MoE configs (2026-06-18) show -33% regression at conc=8 vs
-MI300X defaults (175 vs 261 tok/s), while serial throughput is unchanged (43 tok/s).
-The tuning was done under isolated single-request load; the configs appear suboptimal
-for concurrent inference (conc≥8) where multiple requests compete for GPU memory/cache.
-Consider reverting `VLLM_TUNED_CONFIG_FOLDER` to use MI300X defaults for concurrent workloads.
+**Note:** R9700-tuned MoE configs (-33% at conc=8) were reverted; all 35b profiles now
+use MI300X defaults which outperform at concurrent load. The 261 tok/s figure above was
+measured before MTP was added — a fresh conc=8 baseline for 35b-code is pending.
 
 Full data across all prompt sizes: `bench/CLAUDE.md` and `bench/baselines/`.
 
