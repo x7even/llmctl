@@ -319,7 +319,8 @@ models:
   # VRAM:    ~35 GB across 4 GPUs + ~3 GB MTP draft head overhead (~9.5 GB each)
   # MTP:     speculative decoding via bundled mtp.safetensors draft head
   #          Mathematically lossless — main model verifies all tokens
-  #          Benchmarked: +25% serial (110→77 tok/s vs no-MTP), +52% at conc=8
+  #          Pre-MTP baseline (no-thinking): serial=43, conc=8=261, conc=16=481 tok/s
+  #          Fresh MTP conc=8 baseline pending
   # Context: 131072 tokens (BF16 KV — no FP8 calibration, fast cold start ~2-3 min)
   # Note:    thinking ON by default; --reasoning-parser strips <think> from content
   #          Uses AMD official image — Qwen3_5MoeForConditionalGeneration requires 0.22.1+
@@ -377,8 +378,8 @@ models:
   #   Custom template config/templates/qwen3.6-no-think.jinja inverts the default
   #   so thinking=off unless client explicitly passes enable_thinking=true
   # VRAM:    ~35 GB across 4 GPUs (~8.75 GB each) — full 0.97 utilisation
-  # Benchmarked (thinking off): similar to baseline FP8 but faster TTFT; at conc=8
-  #   ~400 tok/s decode (medium-256) with no think block overhead
+  # Benchmark (thinking off, no-MTP, medium-256): serial=69, conc=8=222 tok/s
+  #   (no-MTP vs the code profile's MTP — throughput reflects the FP8 no-MTP baseline)
   qwen3.6-35b-fast:
     name: "Qwen3.6-35B-A3B-FP8 (fast)"
     ttl: 0
