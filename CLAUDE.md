@@ -218,7 +218,8 @@ See `tui/CLAUDE.md` for architecture and coding conventions.
 | `qwen3.6-35b-fast` | vLLM | ~35 GB | 3B (MoE) | Thinking OFF by default |
 | `qwen3.6-35b-512k` | vLLM + MTP + YaRN | ~35 GB | 3B (MoE) | 512K ctx via RoPE scaling |
 | `qwen3.6-35b-awq` | vLLM AWQ | ~20 GB | 3B (MoE) | Int4; no expert-parallel |
-| `qwen3.6-27b-fp8` | vLLM | ~29 GB | 27B (dense) | Highest SWE-bench (77.2) |
+| `qwen3.6-27b-fp8` | vLLM | ~29 GB | 27B (dense) | Highest SWE-bench (77.2); no MTP |
+| `qwen3.6-27b-code` ✓ | vLLM + MTP | ~29 GB | 27B (dense) | MTP; 131K ctx; 381 tok/s @ conc=8 |
 | `qwen3.6-27b-q4km` | llama-server | ~17 GB | 27B (dense) | GGUF; low VRAM |
 | `qwen3.6-35b-q4ks` | llama-server | ~20 GB | 3B (MoE) | GGUF; fast cold start |
 | `qwen3-coder-30b-fp8` | vLLM | ~30 GB | 3B (MoE) | Legacy baseline only |
@@ -245,6 +246,7 @@ All measured on 4× R9700, vLLM 0.22.1, `--no-thinking`, MTP where noted.
 | qwen3.6-35b-awq | 92 | 250 | — |
 | qwen3.6-35b-fp8 no-MTP | 69 | 222 | — |
 | qwen3.6-27b-fp8 | 23 | 153 | — |
+| qwen3.6-27b-code (MTP, 131K ctx) | 67 | 381 | 629 |
 | qwen3-coder-30b-fp8 | 39 | 158 | — |
 | gemma4-26b-a4b (vLLM BF16) | 53.4 | 287.1 | **528.2** |
 | gemma4-26b-q8 (GGUF, llama-server) | 65.5 | 153.9 | 135.8 |

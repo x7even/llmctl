@@ -197,6 +197,48 @@ parameters per forward pass. This makes it slower but more accurate:
 |---|---|---|---|
 | decode tok/s | 23 | 125 | **153** |
 
+No MTP. For the MTP-enabled variant with higher throughput see `qwen3.6-27b-code` below.
+
+---
+
+### `qwen3.6-27b-code` — dense 27B with MTP
+
+**Aliases:** `27b-code`
+
+**Use for:** High-quality code generation where throughput at concurrent load matters;
+same SWE-bench accuracy as `qwen3.6-27b-fp8` (77.2) with significantly higher tok/s
+at conc≥4 due to Multi-Token Prediction.
+
+**Key differences from `qwen3.6-27b-fp8`:**
+- MTP enabled (`--speculative-config '{"method": "mtp", "num_speculative_tokens": 2}'`) —
+  major throughput uplift at conc≥4 where batch verification amortises draft cost.
+- 131,072 token context (vs shorter in the fp8 profile).
+- BF16 KV cache (no `--kv-cache-dtype fp8`) — slightly higher VRAM per token but avoids
+  per-start FP8 KV calibration (~16 min).
+- `--gpu-memory-utilization 0.95`, `--max-num-seqs 32`.
+
+**Benchmark (vLLM 0.22.1, no-thinking, MTP enabled, 2026-06-21):**
+
+| Prompt | serial | conc=2 | conc=4 | conc=8 | conc=16 |
+|--------|--------|--------|--------|--------|---------|
+| short-64    | 65 | 89  | 122 | **303** | 500 |
+| medium-256  | 67 | 115 | 214 | **381** | 629 |
+| long-512    | 74 | 128 | 240 | **412** | 677 |
+| xlarge-2048 | 71 | 127 | 243 | **444** | 720 |
+
+Decode tok/s. Baseline: `bench/baselines/qwen3.6-27b-code-notunableop-20260621.json`.
+p90 latency at conc=8: ~3.7 s (medium), ~7.8 s (long), ~37 s (xlarge).
+
+**MTP impact vs no-MTP (medium-256):**
+
+| | conc=1 | conc=4 | conc=8 | conc=16 |
+|--|--------|--------|--------|---------|
+| qwen3.6-27b-fp8 (no MTP, 2026-05-09) | 26 | 125 | 153 | — |
+| qwen3.6-27b-code (MTP, 2026-06-21)   | 66 | 214 | **381** | 629 |
+
+The ~2.5× gain at conc=8 is primarily MTP — the profiles also differ in context length
+and KV dtype, but MTP is the dominant factor at high concurrency.
+
 ---
 
 ### `qwen3.6-27b-q4km` — dense 27B Q4_K_M GGUF
