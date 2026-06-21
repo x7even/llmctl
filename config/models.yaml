@@ -52,8 +52,6 @@ models:
         -v /home/xin/ai/llmstack/.triton-cache:/root/.triton/cache
         -e HSA_ENABLE_SDMA=0
         -e TORCH_BLAS_PREFER_HIPBLASLT=1
-        -e PYTORCH_TUNABLEOP_ENABLED=1
-        -e PYTORCH_TUNABLEOP_FILENAME=/root/.cache/vllm/tunableop-${MODEL_ID}.csv
         --entrypoint=""
         docker.io/vllm/vllm-openai-rocm:latest
         vllm serve /models/Qwen3.6-27B-FP8
@@ -105,8 +103,6 @@ models:
         -v /home/xin/ai/llmstack/.triton-cache:/root/.triton/cache
         -e HSA_ENABLE_SDMA=0
         -e TORCH_BLAS_PREFER_HIPBLASLT=1
-        -e PYTORCH_TUNABLEOP_ENABLED=1
-        -e PYTORCH_TUNABLEOP_FILENAME=/root/.cache/vllm/tunableop-${MODEL_ID}.csv
         --entrypoint=""
         docker.io/vllm/vllm-openai-rocm:latest
         vllm serve /models/Qwen3.6-27B-FP8
@@ -162,8 +158,6 @@ models:
         -v /home/xin/ai/llmstack/.triton-cache:/root/.triton/cache
         -e HSA_ENABLE_SDMA=0
         -e TORCH_BLAS_PREFER_HIPBLASLT=1
-        -e PYTORCH_TUNABLEOP_ENABLED=1
-        -e PYTORCH_TUNABLEOP_FILENAME=/root/.cache/vllm/tunableop-${MODEL_ID}.csv
         --entrypoint=""
         docker.io/vllm/vllm-openai-rocm:latest
         vllm serve /models/Qwen3.6-27B
@@ -250,8 +244,6 @@ models:
         -v /home/xin/ai/llmstack/.triton-cache:/root/.triton/cache
         -e HSA_ENABLE_SDMA=0
         -e TORCH_BLAS_PREFER_HIPBLASLT=1
-        -e PYTORCH_TUNABLEOP_ENABLED=1
-        -e PYTORCH_TUNABLEOP_FILENAME=/root/.cache/vllm/tunableop-${MODEL_ID}.csv
         --entrypoint=""
         docker.io/vllm/vllm-openai-rocm:latest
         vllm serve /models/Qwen3-Coder-30B-A3B-Instruct-FP8
@@ -299,8 +291,6 @@ models:
         -v /home/xin/ai/llmstack/.triton-cache:/root/.triton/cache
         -e HSA_ENABLE_SDMA=0
         -e TORCH_BLAS_PREFER_HIPBLASLT=1
-        -e PYTORCH_TUNABLEOP_ENABLED=1
-        -e PYTORCH_TUNABLEOP_FILENAME=/root/.cache/vllm/tunableop-${MODEL_ID}.csv
         --entrypoint=""
         docker.io/vllm/vllm-openai-rocm:latest
         vllm serve /models/QuantTrio/Qwen3.6-35B-A3B-AWQ
@@ -358,8 +348,6 @@ models:
         -v /home/xin/ai/llmstack/.triton-cache:/root/.triton/cache
         -e HSA_ENABLE_SDMA=0
         -e TORCH_BLAS_PREFER_HIPBLASLT=1
-        -e PYTORCH_TUNABLEOP_ENABLED=1
-        -e PYTORCH_TUNABLEOP_FILENAME=/root/.cache/vllm/tunableop-${MODEL_ID}.csv
         --entrypoint=""
         docker.io/vllm/vllm-openai-rocm:latest
         vllm serve /models/Qwen3.6-35B-A3B-FP8
@@ -416,8 +404,6 @@ models:
         -v /home/xin/ai/llmstack/.triton-cache:/root/.triton/cache
         -e HSA_ENABLE_SDMA=0
         -e TORCH_BLAS_PREFER_HIPBLASLT=1
-        -e PYTORCH_TUNABLEOP_ENABLED=1
-        -e PYTORCH_TUNABLEOP_FILENAME=/root/.cache/vllm/tunableop-${MODEL_ID}.csv
         --entrypoint=""
         docker.io/vllm/vllm-openai-rocm:latest
         vllm serve /models/Qwen3.6-35B-A3B-FP8
@@ -476,8 +462,6 @@ models:
         -e HSA_ENABLE_SDMA=0
         -e VLLM_ALLOW_LONG_MAX_MODEL_LEN=1
         -e TORCH_BLAS_PREFER_HIPBLASLT=1
-        -e PYTORCH_TUNABLEOP_ENABLED=1
-        -e PYTORCH_TUNABLEOP_FILENAME=/root/.cache/vllm/tunableop-${MODEL_ID}.csv
         --entrypoint=""
         docker.io/vllm/vllm-openai-rocm:latest
         vllm serve /models/Qwen3.6-35B-A3B-FP8
@@ -718,8 +702,6 @@ models:
         -v /home/xin/ai/llmstack/.triton-cache:/root/.triton/cache
         -e HSA_ENABLE_SDMA=0
         -e TORCH_BLAS_PREFER_HIPBLASLT=1
-        -e PYTORCH_TUNABLEOP_ENABLED=1
-        -e PYTORCH_TUNABLEOP_FILENAME=/root/.cache/vllm/tunableop-${MODEL_ID}.csv
         --entrypoint=""
         docker.io/vllm/vllm-openai-rocm:latest
         vllm serve /models/google/gemma-4-26B-A4B-it
@@ -775,8 +757,6 @@ models:
         -v /home/xin/ai/llmstack/.triton-cache:/root/.triton/cache
         -e HSA_ENABLE_SDMA=0
         -e TORCH_BLAS_PREFER_HIPBLASLT=1
-        -e PYTORCH_TUNABLEOP_ENABLED=1
-        -e PYTORCH_TUNABLEOP_FILENAME=/root/.cache/vllm/tunableop-${MODEL_ID}.csv
         --entrypoint=""
         docker.io/vllm/vllm-openai-rocm:latest
         vllm serve /models/RedHatAI/gemma-4-26B-A4B-it-FP8-Dynamic

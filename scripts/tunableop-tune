@@ -1,0 +1,108 @@
+#!/usr/bin/env bash
+# Offline TunableOp tuning pass for qwen3.6-27b-code.
+#
+# Runs vLLM with PYTORCH_TUNABLEOP_TUNING=1 (online tuning enabled) outside
+# llama-swap so there is no health-check timeout. All GEMM shapes encountered
+# during CUDA graph capture are benchmarked and the winning algorithm is saved
+# to .vllm-cache/tunableop-qwen3.6-27b-code{0..3}.csv.
+#
+# Expected runtime: 30-90 minutes depending on how many shapes are cached
+# already. If the CSV files are empty (fresh) expect ~60 min. If partially
+# populated (e.g., 10 shapes from a prior partial run) it will be faster.
+#
+# After this script completes, stop the container and restart the model
+# normally via llmctl swap — subsequent starts use TUNING=0 and load the
+# cached CSV for instant warm-up.
+#
+# Usage:
+#   llmctl unload            # free GPU memory first
+#   scripts/tunableop-tune   # run this script (blocks until startup complete)
+#   llmctl swap qwen3.6-27b-code   # normal production use
+
+set -euo pipefail
+
+LLMSTACK_DIR="$(cd "$(dirname "$0")/.." && pwd)"
+CONTAINER_NAME="llmstack-tunableop-tune-27b"
+PORT=9199   # dedicated port, not conflicting with llama-swap
+
+echo "=== TunableOp offline tuning pass for qwen3.6-27b-code ==="
+echo "    LLMSTACK_DIR: $LLMSTACK_DIR"
+echo "    Cache files: $LLMSTACK_DIR/.vllm-cache/tunableop-qwen3.6-27b-code{0..3}.csv"
+echo "    Expected runtime: 30-90 minutes"
+echo ""
+echo "Starting container (will block until Application startup complete) ..."
+
+# Run in background so we can tail logs
+podman run --rm \
+    --name "$CONTAINER_NAME" \
+    --device=/dev/kfd \
+    --device=/dev/dri \
+    --group-add keep-groups \
+    --security-opt seccomp=unconfined \
+    --security-opt apparmor=unconfined \
+    --ipc=private \
+    --shm-size=32g \
+    --network=host \
+    -v /mnt/models/llm:/models:ro \
+    -v "$LLMSTACK_DIR/.vllm-cache:/root/.cache/vllm" \
+    -v "$LLMSTACK_DIR/.triton-cache:/root/.triton/cache" \
+    -e HSA_ENABLE_SDMA=0 \
+    -e TORCH_BLAS_PREFER_HIPBLASLT=1 \
+    -e PYTORCH_TUNABLEOP_ENABLED=1 \
+    -e PYTORCH_TUNABLEOP_TUNING=1 \
+    -e PYTORCH_TUNABLEOP_FILENAME=/root/.cache/vllm/tunableop-qwen3.6-27b-code.csv \
+    --entrypoint="" \
+    docker.io/vllm/vllm-openai-rocm:latest \
+    vllm serve /models/Qwen3.6-27B-FP8 \
+        --host 127.0.0.1 \
+        --port "$PORT" \
+        --served-model-name qwen3.6-27b-code \
+        --dtype auto \
+        --tensor-parallel-size 4 \
+        --max-model-len 131072 \
+        --max-num-seqs 32 \
+        --max-num-batched-tokens 32768 \
+        --gpu-memory-utilization 0.95 \
+        --enable-prefix-caching \
+        --enable-chunked-prefill \
+        --trust-remote-code \
+        --reasoning-parser qwen3 \
+        --enable-auto-tool-choice \
+        --tool-call-parser qwen3_xml \
+        --speculative-config '{"method": "mtp", "num_speculative_tokens": 2}' \
+        --cudagraph-capture-sizes 1 2 4 8 16 32 &
+CONTAINER_PID=$!
+
+echo "Container PID: $CONTAINER_PID"
+echo "Tailing logs (Ctrl-C to stop watching, container keeps running) ..."
+echo ""
+
+# Wait for startup complete, polling container logs
+START=$(date +%s)
+while true; do
+    RUNNING=$(podman ps --format "{{.Names}}" 2>/dev/null || true)
+    if ! echo "$RUNNING" | grep -q "$CONTAINER_NAME"; then
+        echo ""
+        echo "ERROR: Container exited before startup complete."
+        exit 1
+    fi
+    LOGS=$(podman logs "$CONTAINER_NAME" 2>&1 || true)
+    if echo "$LOGS" | grep -q "Application startup complete"; then
+        END=$(date +%s)
+        ELAPSED=$(( END - START ))
+        echo ""
+        echo "=== Tuning complete after ${ELAPSED}s ==="
+        echo "Stopping container ..."
+        podman stop "$CONTAINER_NAME" 2>/dev/null || true
+        echo ""
+        echo "CSV files written:"
+        ls -lh "$LLMSTACK_DIR/.vllm-cache/tunableop-qwen3.6-27b-code"*.csv 2>/dev/null || echo "  (none found)"
+        echo ""
+        echo "Row counts (header=5, data rows = total-5):"
+        wc -l "$LLMSTACK_DIR/.vllm-cache/tunableop-qwen3.6-27b-code"*.csv 2>/dev/null || true
+        echo ""
+        echo "Done. Run 'llmctl swap qwen3.6-27b-code' to load with full TunableOp cache."
+        exit 0
+    fi
+    sleep 10
+done
