@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"os/exec"
 	"strings"
 	"time"
 
@@ -78,6 +79,7 @@ type msgData        AppData
 type msgLog         []string
 type msgSwapDone    struct{ profile string; err error }
 type msgUnloadDone  struct{ err error }
+type msgStartupPhase struct{ phase string }
 
 // ── App ────────────────────────────────────────────────────────────────────────
 
@@ -117,12 +119,15 @@ type app struct {
 	peakPrefillPerS float64
 
 	// Models panel
-	cursor    int
-	swapping  bool
-	swapFor   string
-	swapMsg   string
-	swapMsgAt time.Time
-	spin      spinner.Model
+	cursor      int
+	confirming  bool
+	pendingSwap string
+	swapping    bool
+	swapFor     string
+	swapMsg     string
+	swapMsgAt   time.Time
+	startupPhase string
+	spin        spinner.Model
 
 	// Scrollable panels
 	cfgVP viewport.Model
@@ -210,6 +215,43 @@ func (a *app) cmdUnload() tea.Cmd {
 	}
 }
 
+func cmdPollStartupPhase(profile string) tea.Cmd {
+	return func() tea.Msg {
+		time.Sleep(3 * time.Second)
+		return msgStartupPhase{phase: detectStartupPhase(profile)}
+	}
+}
+
+func detectStartupPhase(profile string) string {
+	for _, prefix := range []string{"llmstack-vllm-", "llmstack-llama-"} {
+		out, err := exec.Command("podman", "logs", "--tail", "40", prefix+profile).CombinedOutput()
+		if err != nil {
+			continue
+		}
+		return parseStartupPhase(string(out))
+	}
+	return "Starting container…"
+}
+
+func parseStartupPhase(logs string) string {
+	switch {
+	case strings.Contains(logs, "Application startup complete"):
+		return "Ready"
+	case strings.Contains(logs, "CUDA graph") || strings.Contains(logs, "cudagraph") || strings.Contains(logs, "graph capture"):
+		return "Capturing CUDA graphs (~15s)"
+	case strings.Contains(logs, "shm_broadcast") || strings.Contains(logs, "KV cache quantization") || strings.Contains(logs, "memory profiling"):
+		return "Memory profiling / FP8 KV calibration (~8–14 min)"
+	case strings.Contains(logs, "torch.compile") || strings.Contains(logs, "Inductor") || strings.Contains(logs, "compile"):
+		return "Compiling kernels (cached after 1st run)"
+	case strings.Contains(logs, "Loading safetensors") || strings.Contains(logs, "Loading weights") || strings.Contains(logs, "load_weights"):
+		return "Loading model weights…"
+	case strings.Contains(logs, "vllm serve") || strings.Contains(logs, "llama-server"):
+		return "Initialising engine…"
+	default:
+		return "Starting container…"
+	}
+}
+
 func (a *app) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	switch msg := msg.(type) {
 
@@ -232,8 +274,16 @@ func (a *app) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		a.applyLog([]string(msg))
 		return a, nil
 
+	case msgStartupPhase:
+		if a.swapping {
+			a.startupPhase = msg.phase
+			return a, cmdPollStartupPhase(a.swapFor)
+		}
+		return a, nil
+
 	case msgSwapDone:
 		a.swapping = false
+		a.startupPhase = ""
 		if msg.err != nil {
 			a.swapMsg = fmt.Sprintf("✗ %v", msg.err)
 		} else {
@@ -274,7 +324,10 @@ func (a *app) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		a.sizeViewports()
 
 	case "esc":
-		if a.fullscreen {
+		if a.confirming {
+			a.confirming = false
+			a.pendingSwap = ""
+		} else if a.fullscreen {
 			a.fullscreen = false
 			a.sizeViewports()
 		}
@@ -360,18 +413,40 @@ func (a *app) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 
 	case "enter", "s":
 		if a.focused == paneModels && !a.swapping {
+			if a.confirming {
+				// second enter = confirm
+				a.confirming = false
+				a.swapping = true
+				a.swapFor = a.pendingSwap
+				a.swapMsg = ""
+				a.startupPhase = "Starting container…"
+				return a, tea.Batch(a.cmdSwap(a.pendingSwap), a.spin.Tick, cmdPollStartupPhase(a.pendingSwap))
+			}
 			profiles := a.profiles()
 			if a.cursor >= 0 && a.cursor < len(profiles) {
-				target := profiles[a.cursor]
-				a.swapping = true
-				a.swapFor = target
-				a.swapMsg = ""
-				return a, tea.Batch(a.cmdSwap(target), a.spin.Tick)
+				a.confirming = true
+				a.pendingSwap = profiles[a.cursor]
 			}
 		}
 
+	case "y", "Y":
+		if a.confirming && !a.swapping {
+			a.confirming = false
+			a.swapping = true
+			a.swapFor = a.pendingSwap
+			a.swapMsg = ""
+			a.startupPhase = "Starting container…"
+			return a, tea.Batch(a.cmdSwap(a.pendingSwap), a.spin.Tick, cmdPollStartupPhase(a.pendingSwap))
+		}
+
+	case "n", "N":
+		if a.confirming {
+			a.confirming = false
+			a.pendingSwap = ""
+		}
+
 	case "u":
-		if !a.swapping && a.data.Active != nil {
+		if !a.swapping && !a.confirming && a.data.Active != nil {
 			a.swapping = true
 			a.swapFor = ""
 			a.swapMsg = ""
@@ -784,12 +859,18 @@ func (a *app) renderModels() string {
 	var sb strings.Builder
 
 	// Status line at top
-	if a.swapping {
+	if a.confirming {
+		sb.WriteString(stYellow.Render(fmt.Sprintf("Swap to %s? [y/↵ confirm  n/esc cancel]", a.pendingSwap)) + "\n")
+	} else if a.swapping {
 		action := fmt.Sprintf("Loading %s…", a.swapFor)
 		if a.swapFor == "" {
 			action = "Unloading…"
 		}
-		sb.WriteString(a.spin.View() + " " + action + "\n")
+		phase := ""
+		if a.startupPhase != "" && a.swapFor != "" {
+			phase = "  " + stDim.Render(a.startupPhase)
+		}
+		sb.WriteString(a.spin.View() + " " + action + phase + "\n")
 	} else if a.swapMsg != "" && time.Since(a.swapMsgAt) < 5*time.Second {
 		if strings.HasPrefix(a.swapMsg, "✓") {
 			sb.WriteString(stGreen.Render(a.swapMsg) + "\n")
@@ -915,7 +996,7 @@ func (a *app) renderStatus() string {
 	d := pollIntervals[a.intervalIdx]
 	dStr := d.String()
 	hint := fmt.Sprintf(
-		" tab panel  f full  ↑↓/jk nav  s/↵ swap  u unload  p poll:%s  r reload  q quit ",
+		" tab panel  f full  ↑↓/jk nav  s/↵ swap  y confirm  esc cancel  u unload  p poll:%s  r reload  q quit ",
 		dStr,
 	)
 	return lipgloss.NewStyle().
