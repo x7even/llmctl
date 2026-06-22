@@ -120,6 +120,7 @@ type app struct {
 
 	// Models panel
 	cursor       int
+	modelsScroll int
 	confirming   bool
 	pendingSwap  string
 	swapping     bool
@@ -387,6 +388,7 @@ func (a *app) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		case paneModels:
 			if a.cursor > 0 {
 				a.cursor--
+				a.clampModelsScroll()
 				a.refreshConfigView()
 			}
 		case paneConfig:
@@ -401,6 +403,7 @@ func (a *app) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			profiles := a.profiles()
 			if a.cursor < len(profiles)-1 {
 				a.cursor++
+				a.clampModelsScroll()
 				a.refreshConfigView()
 			}
 		case paneConfig:
@@ -545,11 +548,12 @@ func (a *app) applyData(data AppData) {
 		a.peakPrefillPerS = prefillVal
 	}
 
-	// Keep model cursor on the loaded model unless user is navigating
-	if !a.swapping && data.Active != nil {
+	// Snap cursor to active model only when the active model changes
+	if currID != a.prevModelID && data.Active != nil {
 		for i, p := range a.profiles() {
 			if p == data.Active.ID {
 				a.cursor = i
+				a.modelsScroll = 0
 				break
 			}
 		}
@@ -625,6 +629,27 @@ func colWidths(total int) (left, right int) {
 	left = clamp(total*30/100, 20, 40)
 	right = total - left - 1 // -1 for column gap
 	return
+}
+
+// modelsVisible returns the number of model list rows visible in the panel.
+// h2 includes the panel header (1 line) and a status line (1 line).
+func (a *app) modelsVisible() int {
+	_, h2, _, _ := rowHeights(a.h)
+	v := h2 - 2 // header + status line
+	if v < 1 {
+		v = 1
+	}
+	return v
+}
+
+// clampModelsScroll adjusts modelsScroll so the cursor stays in view.
+func (a *app) clampModelsScroll() {
+	vis := a.modelsVisible()
+	if a.cursor < a.modelsScroll {
+		a.modelsScroll = a.cursor
+	} else if a.cursor >= a.modelsScroll+vis {
+		a.modelsScroll = a.cursor - vis + 1
+	}
 }
 
 func clamp(v, lo, hi int) int {
@@ -912,7 +937,18 @@ func (a *app) renderModels() string {
 		activeID = a.data.Active.ID
 	}
 
-	for i, p := range profiles {
+	vis := a.modelsVisible()
+	end := a.modelsScroll + vis
+	if end > len(profiles) {
+		end = len(profiles)
+	}
+
+	if a.modelsScroll > 0 {
+		sb.WriteString(stDim.Render("  ↑ more") + "\n")
+	}
+
+	for i, p := range profiles[a.modelsScroll:end] {
+		i += a.modelsScroll
 		sel := i == a.cursor
 		loaded := p == activeID
 		prefix := "  "
@@ -935,6 +971,11 @@ func (a *app) renderModels() string {
 		}
 		sb.WriteString("\n")
 	}
+
+	if end < len(profiles) {
+		sb.WriteString(stDim.Render("  ↓ more") + "\n")
+	}
+
 	return strings.TrimRight(sb.String(), "\n")
 }
 
