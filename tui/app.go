@@ -119,15 +119,16 @@ type app struct {
 	peakPrefillPerS float64
 
 	// Models panel
-	cursor      int
-	confirming  bool
-	pendingSwap string
-	swapping    bool
-	swapFor     string
-	swapMsg     string
-	swapMsgAt   time.Time
+	cursor       int
+	confirming   bool
+	pendingSwap  string
+	swapping     bool
+	swapFor      string
+	swapMsg      string
+	swapMsgAt    time.Time
 	startupPhase string
-	spin        spinner.Model
+	pollingPhase bool
+	spin         spinner.Model
 
 	// Scrollable panels
 	cfgVP viewport.Model
@@ -268,6 +269,19 @@ func (a *app) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 	case msgData:
 		a.applyData(AppData(msg))
+		// If model is active but metrics not yet available, poll startup phase
+		if a.data.Active != nil && a.data.Metrics == nil && !a.pollingPhase && !a.swapping {
+			a.pollingPhase = true
+			if a.startupPhase == "" {
+				a.startupPhase = "Starting up…"
+			}
+			return a, cmdPollStartupPhase(a.data.Active.ID)
+		}
+		// Metrics arrived — clear startup state
+		if a.data.Metrics != nil && a.pollingPhase {
+			a.pollingPhase = false
+			a.startupPhase = ""
+		}
 		return a, nil
 
 	case msgLog:
@@ -279,6 +293,12 @@ func (a *app) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			a.startupPhase = msg.phase
 			return a, cmdPollStartupPhase(a.swapFor)
 		}
+		if a.pollingPhase && a.data.Active != nil && a.data.Metrics == nil {
+			a.startupPhase = msg.phase
+			return a, cmdPollStartupPhase(a.data.Active.ID)
+		}
+		a.pollingPhase = false
+		a.startupPhase = ""
 		return a, nil
 
 	case msgSwapDone:
@@ -731,12 +751,20 @@ func (a *app) renderInference() string {
 		return sb.String()
 	}
 	ac := a.data.Active
-	sb.WriteString(stActive.Render(fmt.Sprintf(" %s  (:%d)  [● ACTIVE]", ac.ID, ac.Port)) + "\n")
+	if a.data.Metrics == nil {
+		sb.WriteString(stYellow.Render(fmt.Sprintf(" %s  (:%d)  [⟳ LOADING]", ac.ID, ac.Port)) + "\n")
+	} else {
+		sb.WriteString(stActive.Render(fmt.Sprintf(" %s  (:%d)  [● ACTIVE]", ac.ID, ac.Port)) + "\n")
+	}
 
 	if a.data.Metrics == nil {
+		phase := a.startupPhase
+		if phase == "" {
+			phase = "Starting up…"
+		}
+		sb.WriteString(stYellow.Render(" ⟳ " + phase) + "\n")
 		sb.WriteString(stDim.Render(" Running: —  Waiting: —  KV: —") + "\n")
-		sb.WriteString(stDim.Render(" Decode: —  PP: —") + "\n")
-		sb.WriteString(stDim.Render(" TTFT: —  pfill: —"))
+		sb.WriteString(stDim.Render(" Decode: —  PP: —"))
 		return sb.String()
 	}
 
