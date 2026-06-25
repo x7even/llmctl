@@ -589,7 +589,39 @@ func (a *app) refreshConfigView() {
 		a.cfgVP.SetContent("# no profiles")
 		return
 	}
-	a.cfgVP.SetContent(a.reg.ProfileYAML(profiles[a.cursor]))
+	id := profiles[a.cursor]
+	caps := ParseCapabilities(a.reg.Models[id])
+	a.cfgVP.SetContent(renderCapsSummary(caps) + a.reg.ProfileYAML(id))
+}
+
+func renderCapsSummary(caps ModelCapabilities) string {
+	var parts []string
+
+	if caps.MTP {
+		parts = append(parts, stGreen.Render(fmt.Sprintf("MTP +%d", caps.MTPTokens)))
+	} else {
+		parts = append(parts, stDim.Render("MTP off"))
+	}
+
+	if caps.Reasoning {
+		var st lipgloss.Style
+		if caps.ThinkingDefault == "off" {
+			st = stYellow
+		} else {
+			st = stGreen
+		}
+		parts = append(parts, st.Render(fmt.Sprintf("think=%s", caps.ThinkingDefault)))
+	} else {
+		parts = append(parts, stDim.Render("no think"))
+	}
+
+	if caps.ContextLen > 0 {
+		parts = append(parts, stBold.Render(fmt.Sprintf("%dK ctx", caps.ContextLen/1024)))
+	} else {
+		parts = append(parts, stDim.Render("ctx native"))
+	}
+
+	return " " + strings.Join(parts, "  ") + "\n"
 }
 
 // ── Viewport sizing ────────────────────────────────────────────────────────────
