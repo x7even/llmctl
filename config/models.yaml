@@ -15,6 +15,16 @@
 # Backend naming convention:
 #   llmstack-vllm-<profile>   ← vLLM containers  (safetensors / FP8 / AWQ)
 #   llmstack-llama-<profile>  ← llama-server containers  (GGUF)
+#
+# Image pinning: every vLLM profile uses the same pinned tag
+#   docker.io/vllm/vllm-openai-rocm:v0.24.0
+# Never reference the moving :latest tag. Version bumps happen deliberately —
+# canary first, then update all refs at once (validation record and bench
+# results: docs/upgrade-plan-2026-07.md).
+# Rollback anchor: localhost/vllm-openai-rocm:v0.22.1-baseline stays on disk —
+# revert a profile by swapping its ref back.
+# CLIENT NOTE: vLLM 0.24.0 renames the chat reasoning field from
+# message.reasoning_content to message.reasoning — adapt clients that parse it.
 
 healthCheckTimeout: 1200  # seconds; Gemma4 first-boot Triton compile ~18 min; warm starts ~2-3 min
 startPort: 9100           # llama-swap assigns backends ports starting here
@@ -25,7 +35,7 @@ models:
   # ─── vLLM: Qwen3.6-27B FP8 (dense, code-optimised) ─────────────────────
   # Best for: code generation — highest quality in the Qwen3.6 family for code
   #           (SWE-bench 77.2 vs 35B-A3B's 73.4)
-  # Backend: vLLM 0.22.1 via AMD official image
+  # Backend: vLLM via pinned AMD official image (see header pin)
   # VRAM:    ~29 GB across 4 GPUs (~7.5 GB each) — dense model, no MoE sparsity
   # Note:    No MTP draft head; thinking ON by default
   qwen3.6-27b-fp8:
@@ -53,7 +63,7 @@ models:
         -e HSA_ENABLE_SDMA=0
         -e TORCH_BLAS_PREFER_HIPBLASLT=1
         --entrypoint=""
-        docker.io/vllm/vllm-openai-rocm:latest
+        docker.io/vllm/vllm-openai-rocm:v0.24.0
         vllm serve /models/Qwen3.6-27B-FP8
         --host 127.0.0.1
         --port ${PORT}
@@ -104,7 +114,7 @@ models:
         -e HSA_ENABLE_SDMA=0
         -e TORCH_BLAS_PREFER_HIPBLASLT=1
         --entrypoint=""
-        docker.io/vllm/vllm-openai-rocm:latest
+        docker.io/vllm/vllm-openai-rocm:v0.24.0
         vllm serve /models/Qwen3.6-27B-FP8
         --host 127.0.0.1
         --port ${PORT}
@@ -159,7 +169,7 @@ models:
         -e HSA_ENABLE_SDMA=0
         -e TORCH_BLAS_PREFER_HIPBLASLT=1
         --entrypoint=""
-        docker.io/vllm/vllm-openai-rocm:latest
+        docker.io/vllm/vllm-openai-rocm:v0.24.0
         vllm serve /models/Qwen3.6-27B
         --host 127.0.0.1
         --port ${PORT}
@@ -216,7 +226,7 @@ models:
 
   # ─── vLLM: Qwen3-Coder-30B-A3B-Instruct FP8 ────────────────────────────
   # Best for: code generation, agent tool calls, Claude Code / OpenCode serving
-  # Backend: vLLM 0.22.1 via docker.io/vllm/vllm-openai-rocm:latest (ROCm 7.2)
+  # Backend: vLLM via pinned AMD official image (see header pin)
   # VRAM:    ~30 GB spread across 4 GPUs (~7.5 GB each)
   # Model:   /mnt/models/llm/Qwen3-Coder-30B-A3B-Instruct-FP8/  (safetensors, local)
   # Note:    No bundled MTP head (no speculative decoding)
@@ -245,7 +255,7 @@ models:
         -e HSA_ENABLE_SDMA=0
         -e TORCH_BLAS_PREFER_HIPBLASLT=1
         --entrypoint=""
-        docker.io/vllm/vllm-openai-rocm:latest
+        docker.io/vllm/vllm-openai-rocm:v0.24.0
         vllm serve /models/Qwen3-Coder-30B-A3B-Instruct-FP8
         --host 127.0.0.1
         --port ${PORT}
@@ -264,7 +274,7 @@ models:
 
   # ─── vLLM: Qwen3.6-35B-A3B AWQ Int4 ────────────────────────────────────
   # Best for: benchmarking Q4 vs FP8 quality/throughput tradeoff
-  # Backend: vLLM 0.22.1 via AMD official image, AWQ quantization
+  # Backend: vLLM via pinned AMD official image (see header pin), AWQ quantization
   # VRAM:    ~20 GB across 4 GPUs (~5 GB each) — leaves headroom for large KV cache
   # Note:    No MTP head; no speculative decoding
   qwen3.6-35b-awq:
@@ -292,7 +302,7 @@ models:
         -e HSA_ENABLE_SDMA=0
         -e TORCH_BLAS_PREFER_HIPBLASLT=1
         --entrypoint=""
-        docker.io/vllm/vllm-openai-rocm:latest
+        docker.io/vllm/vllm-openai-rocm:v0.24.0
         vllm serve /models/QuantTrio/Qwen3.6-35B-A3B-AWQ
         --host 127.0.0.1
         --port ${PORT}
@@ -315,7 +325,7 @@ models:
 
   # ─── vLLM: Qwen3.6-35B-A3B FP8 — Code profile (quality-first + MTP) ────
   # Best for: Claude Code, OpenCode, agentic coding — highest quality output
-  # Backend: vLLM 0.22.1 via docker.io/vllm/vllm-openai-rocm:latest (ROCm 7.2)
+  # Backend: vLLM via pinned AMD official image (see header pin)
   # VRAM:    ~35 GB across 4 GPUs + ~3 GB MTP draft head overhead (~9.5 GB each)
   # MTP:     speculative decoding via bundled mtp.safetensors draft head
   #          Mathematically lossless — main model verifies all tokens
@@ -350,7 +360,7 @@ models:
         -e HSA_ENABLE_SDMA=0
         -e TORCH_BLAS_PREFER_HIPBLASLT=1
         --entrypoint=""
-        docker.io/vllm/vllm-openai-rocm:latest
+        docker.io/vllm/vllm-openai-rocm:v0.24.0
         vllm serve /models/Qwen3.6-35B-A3B-FP8
         --host 127.0.0.1
         --port ${PORT}
@@ -406,7 +416,7 @@ models:
         -e HSA_ENABLE_SDMA=0
         -e TORCH_BLAS_PREFER_HIPBLASLT=1
         --entrypoint=""
-        docker.io/vllm/vllm-openai-rocm:latest
+        docker.io/vllm/vllm-openai-rocm:v0.24.0
         vllm serve /models/Qwen3.6-35B-A3B-FP8
         --host 127.0.0.1
         --port ${PORT}
@@ -464,7 +474,7 @@ models:
         -e VLLM_ALLOW_LONG_MAX_MODEL_LEN=1
         -e TORCH_BLAS_PREFER_HIPBLASLT=1
         --entrypoint=""
-        docker.io/vllm/vllm-openai-rocm:latest
+        docker.io/vllm/vllm-openai-rocm:v0.24.0
         vllm serve /models/Qwen3.6-35B-A3B-FP8
         --host 127.0.0.1
         --port ${PORT}
@@ -669,7 +679,7 @@ models:
   # ─── vLLM: Gemma 4 26B-A4B BF16 — high-concurrency agent serving ────────
   # Best for: concurrent agent workloads hitting Gemma 4 in parallel
   # Architecture: MoE, 26B total / 4B active params → fast decode at high concurrency
-  # Backend: vLLM 0.22.1 via AMD official image (ROCm 7.2)
+  # Backend: vLLM via pinned AMD official image (see header pin) (ROCm 7.2)
   # VRAM:    ~52 GB BF16 ÷ 4 GPUs = ~13 GB each; ~76 GB free for KV cache
   # Note:    No --reasoning-parser (Gemma 4 IT has no thinking mode by default)
   #          No --kv-cache-dtype fp8 (BF16 model; leave KV at default bf16)
@@ -704,7 +714,7 @@ models:
         -e HSA_ENABLE_SDMA=0
         -e TORCH_BLAS_PREFER_HIPBLASLT=1
         --entrypoint=""
-        docker.io/vllm/vllm-openai-rocm:latest
+        docker.io/vllm/vllm-openai-rocm:v0.24.0
         vllm serve /models/google/gemma-4-26B-A4B-it
         --host 127.0.0.1
         --port ${PORT}
@@ -728,7 +738,7 @@ models:
   #   Layer types: 25 sliding_attention (window=1024) + 5 full_attention (every 6th)
   #   At 20K context, reads only ~21% of KV vs a full-attention model of the same
   #   size — the 25 sliding layers always cost 1024 tokens regardless of ctx length
-  # Backend: vLLM 0.22.1 via AMD official image (ROCm 7.2)
+  # Backend: vLLM via pinned AMD official image (see header pin) (ROCm 7.2)
   # VRAM:    ~26 GB FP8 weights + BF16 KV cache across 4 GPUs
   # Source:  RedHatAI/gemma-4-26B-A4B-it-FP8-Dynamic (weights+activations FP8)
   # Note:    No --kv-cache-dtype fp8 (BF16 KV avoids calibration; ~2x VRAM per KV token)
@@ -759,7 +769,7 @@ models:
         -e HSA_ENABLE_SDMA=0
         -e TORCH_BLAS_PREFER_HIPBLASLT=1
         --entrypoint=""
-        docker.io/vllm/vllm-openai-rocm:latest
+        docker.io/vllm/vllm-openai-rocm:v0.24.0
         vllm serve /models/RedHatAI/gemma-4-26B-A4B-it-FP8-Dynamic
         --host 127.0.0.1
         --port ${PORT}
@@ -824,7 +834,7 @@ models:
 #       --group-add keep-groups
 #       --network=host
 #       -v /mnt/models/llm:/models:ro
-#       localhost/llama-vulkan-bleeding:latest
+#       localhost/llmstack-llama:latest
 #       -m /models/<path-to-model>.gguf
 #       -ngl 999
 #       --tensor-split 1,1,1,1

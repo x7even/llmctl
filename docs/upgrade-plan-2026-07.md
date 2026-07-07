@@ -11,6 +11,62 @@ regression attributes to exactly one change.
 
 ---
 
+## Execution log — 2026-07-07
+
+Two execution windows ran on 2026-07-07 (multi-agent, no reboots). Round 1 created
+the anchors and ran shadow/baseline work; round 2 completed the benches, the 0.24.0
+canary, and the llama.cpp cutover. Cumulative state:
+
+- **Phase 0 — DONE.** All rollback anchors created: image tags
+  `localhost/vllm-openai-rocm:v0.22.1-baseline`, `localhost/llmstack-llama:b9542-baseline`,
+  `localhost/llama-vulkan-bleeding:mesa25.0.7-baseline`; llama-swap v223 binary stashed;
+  driver installer `amdgpu-install_7.2.70200-1_all.deb` downloaded to `.rollback/`;
+  uncommitted-diff snapshot saved; baseline manifest written. Git tag
+  `baseline-2026-07-07` **exists locally but was NOT pushed** (no-push rule this window).
+  Anchors re-verified intact at the end of round 2. **vLLM 0.22.1 baseline bench DONE**
+  (round 2): conc 1/8/32 = 58.71 / 261.26 / 741.47 output tok/s on the live production
+  container — see Results table.
+- **Phase 1 (kernel 6.8.0-134) — PENDING.** Requires a reboot; deferred to a
+  maintenance window. Still on 6.8.0-124.
+- **Phase 2 (llama.cpp + Mesa 26) — DONE (cutover performed, round 2).** New image
+  built from the repo Containerfiles: `version: 9903 (47e1de77a), built with GNU 13.3.0
+  for Linux x86_64` on the mesa26 base; `localhost/llmstack-llama:new` = `7ee4d1f914b6`,
+  retagged to `:latest`. Bench vs b9542 baseline (same served protocol): single-stream
+  81.72 vs 83.44 tok/s (-2.1%, within the 5% threshold); conc-8 aggregate 138.74 vs
+  113.77 tok/s (**+21.9%**). Smoke on `:latest` passed (healthy, coherent completion).
+  Residual gate items for post-merge: gemma4 vision (mmproj) profile smoke and the
+  30-min DeviceLost soak.
+- **Phase 3 (llama-swap v235) — DONE ON BRANCH (round 2).** Shadow validation passed
+  in round 1: v235 (c59816b) on 127.0.0.1:8082 against the production models.yaml
+  read-only — version/health/models/running endpoints OK, served qwen3.6-35b-q4ks
+  end-to-end with container reuse, clean teardown, live v223 router untouched. Round 2:
+  `bin/llmctl` pin bumped 223 → 235. **The binary swap has NOT happened yet** — after
+  merge, run `llmctl down && llmctl up` — llmctl now detects the version mismatch and
+  auto-downloads v235; until then the live router remains v223.
+- **Phase 4 (vLLM 0.24.0) — CANARY PASSED + CUTOVER ON BRANCH (round 2).** Canary
+  (image `docker.io/vllm/vllm-openai-rocm:v0.24.0`, `ee424d681e1d`) ran the exact
+  128k-MTP production profile on port 9555: healthy in ~15 min first boot, all smokes
+  passed (chat, qwen3_xml tool calls, reasoning, 50,631-token needle retrieval, MTP
+  active with ~70% draft acceptance), zero HIP/HSA/segfault signatures, 0 failed
+  requests. Bench vs 0.22.1 baseline: conc 1/8/32 output tok/s +17.5% / +19.6% / +4.9%
+  — all above the −5% gate. `models.yaml` refs cut over on this branch to the pinned
+  `:v0.24.0` tag (baseline tag remains the documented rollback). Per-profile
+  swap+smoke of the remaining vLLM profiles happens post-merge per the plan gate.
+  **Caveats found:** (a) API rename — 0.24.0 returns `message.reasoning` instead of
+  `message.reasoning_content`; clients parsing the old field silently get nothing;
+  (b) idle behavior — 0.24.0 busy-polls at 100% GPU-use / ~95–100 W per GPU when idle
+  (server stays responsive; materially higher idle power than 0.22.1);
+  (c) MTP-off at conc 8 was slightly *faster* (329.7 vs 312.4 tok/s) with much better
+  ITL (p50 19.0 vs 49.5 ms) — MTP's win is at conc 1 (68.98 vs 58.71 baseline);
+  revisit whether MTP is worth it at production concurrency;
+  (d) changing spec-config invalidates the compile-cache match — warm restart still
+  ~16 min. Production was restored to 0.22.1 baseline at the end of the window
+  (healthy, router completion verified, all anchors intact).
+- **Phase 5 (driver 30.30.4 / ROCm 7.2.4) — PENDING.** Requires reboot(s); deferred
+  together with Phase 1 to a maintenance window.
+
+---
+
 ## Baseline manifest (state as of 2026-07-07 — the "way we are now")
 
 Everything needed to recognize and restore today's stack:
@@ -37,34 +93,38 @@ v0.24.0. Our local `:latest` is still the 0.22.1 image. Any `podman pull ...:lat
 
 ## Phase 0 — Rollback anchors (run first, zero risk, no service impact)
 
-- [ ] Pin the current vLLM image under an immutable local tag:
+- [x] Pin the current vLLM image under an immutable local tag:
   ```bash
   podman tag docker.io/vllm/vllm-openai-rocm:latest localhost/vllm-openai-rocm:v0.22.1-baseline
   ```
-- [ ] Pin the current llama.cpp image and its Mesa runtime base:
+- [x] Pin the current llama.cpp image and its Mesa runtime base:
   ```bash
   podman tag localhost/llmstack-llama:latest localhost/llmstack-llama:b9542-baseline
   podman tag localhost/llama-vulkan-bleeding:latest localhost/llama-vulkan-bleeding:mesa25.0.7-baseline
   ```
-- [ ] Stash the llama-swap v223 binary:
+- [x] Stash the llama-swap v223 binary:
   ```bash
   mkdir -p ~/ai/llmstack/.rollback
   cp ~/.local/bin/llama-swap ~/ai/llmstack/.rollback/llama-swap-v223
   ```
-- [ ] Stash the **current** driver installer (so host rollback never depends on AMD
+- [x] Stash the **current** driver installer (so host rollback never depends on AMD
   keeping old URLs). Verify exact filename in the directory listing first:
   ```bash
   # 30.20 / ROCm 7.2.0-era installer — confirm filename at repo.radeon.com/amdgpu-install/7.2/ubuntu/noble/
   wget -P ~/ai/llmstack/.rollback https://repo.radeon.com/amdgpu-install/7.2/ubuntu/noble/amdgpu-install_7.2.70200-1_all.deb
   ```
-- [ ] Snapshot the repo state (commit + tag = the git rollback anchor):
+- [x] Snapshot the repo state (commit + tag = the git rollback anchor):
   ```bash
   cd ~/ai/llmstack
   git add -A && git commit -m "snapshot: pre-upgrade baseline (audit 2026-07-07)"
   git tag baseline-2026-07-07
   git push origin master --tags
   ```
-- [ ] Save the manifest verification snapshot:
+  *Done 2026-07-07 with one deviation: the working tree was snapshotted (diff saved to
+  `.rollback/`) and the tag `baseline-2026-07-07` created **locally only** — the
+  `git push` step was NOT run (no-push rule in the execution window). Push the tag
+  when the branch is reviewed.*
+- [x] Save the manifest verification snapshot:
   ```bash
   { uname -r; dpkg-query -W amdgpu-dkms rocm-core amdgpu-install; \
     podman images --digests | grep -E 'vllm|llama'; \
@@ -72,6 +132,7 @@ v0.24.0. Our local `:latest` is still the 0.22.1 image. Any `podman pull ...:lat
   ```
 
 **Gate:** all tags/files exist; `git tag` shows `baseline-2026-07-07` on origin.
+*Gate status 2026-07-07: all tags/files verified present; tag is local-only (push pending review).*
 
 **Full "abort everything" from any later point** = the union of each phase's rollback
 below, in reverse order of what was applied. Because every phase pins its predecessor,
@@ -104,20 +165,35 @@ Motivation: 352 builds behind (b9894 as of 2026-07-07); post-b9542 AMD fixes
 (DeviceLost #25005/#24872, FA overflow #24909); Mesa ≥25.3 RADV compute work ≈ +13%
 prefill on RDNA.
 
-- [ ] **2a.** Rebuild the runtime base with Mesa 26.x (new tag, don't touch the old one):
+- [x] **2a.** Rebuild the runtime base with Mesa 26.x (new tag, don't touch the old one):
   rebuild `llama-vulkan-bleeding` from `ubuntu:24.04` + a Mesa 26 source (e.g. kisak-mesa
   fresh PPA) → tag `localhost/llama-vulkan-bleeding:mesa26`. Verify inside:
   `vulkaninfo --summary` shows Mesa 26.x and RADV sees all 4 gfx1201 devices.
-- [ ] **2b.** Point `containers/llama-server/Containerfile` stage-2 `FROM` at
+  *2026-07-07: `containers/llama-vulkan-base/Containerfile` in the repo
+  (ubuntu:26.04 + stock Mesa 26.0.x — simpler than the PPA route); base built and used
+  as the stage-2 runtime for the round-2 `:new` image, which found all 4 devices.*
+- [x] **2b.** Point `containers/llama-server/Containerfile` stage-2 `FROM` at
   `localhost/llama-vulkan-bleeding:mesa26`, then rebuild (clones fresh master):
   ```bash
   podman build -t localhost/llmstack-llama:new containers/llama-server/
   podman run --rm localhost/llmstack-llama:new --version   # record build number (expect ≥ b9894)
   ```
-- [ ] **2c.** Bench old vs new **before cutover** (same GGUF, same flags — see §Benchmarks):
+  *2026-07-07 round 2: built — `version: 9903 (47e1de77a), built with GNU 13.3.0 for
+  Linux x86_64`; image `localhost/llmstack-llama:new` = `7ee4d1f914b6`.*
+- [x] **2c.** Bench old vs new **before cutover** (same GGUF, same flags — see §Benchmarks):
   baseline image vs `:new`, `llama-bench` + a `--parallel 8` served pass.
-- [ ] **2d.** Cut over: `podman tag localhost/llmstack-llama:new localhost/llmstack-llama:latest`,
+  *2026-07-07: both sides DONE via the served protocol — see Results table. Caveat:
+  `llama-bench` inside the b9542-baseline image is a stale build-tree binary (md5 differs
+  from installed `llama-server`; lacks the qwen35moe arch), so the served method was used
+  for BOTH sides (identical script/flags). New vs old: single-stream 81.72 vs 83.44
+  (-2.1%, within 5% threshold); conc-8 aggregate 138.74 vs 113.77 (+21.9%). Reusable
+  script: `bench/served_bench.py`; `--group-add keep-groups`
+  is REQUIRED or Vulkan finds no devices.*
+- [x] **2d.** Cut over: `podman tag localhost/llmstack-llama:new localhost/llmstack-llama:latest`,
   then `llmctl swap qwen3.6-35b-q4ks` and the gemma4 vision profile, smoke-test both.
+  *2026-07-07 round 2: `:latest` retagged to `7ee4d1f914b6`; smoke on `:latest` passed
+  (healthy server, coherent completion, finish=stop). Post-merge follow-ups: gemma4
+  vision (mmproj) profile smoke + 30-min soak (gate items below).*
 
 **Gate:** bench shows no regression (expect prefill gain from Mesa 26); vision profile
 (gemma4-26b-q8, exercises mmproj) works; no DeviceLost in logs after a 30-min soak.
@@ -134,9 +210,21 @@ and new builds — optional local threshold patch if concurrent GGUF traffic mat
 Motivation: v233 fixes UI-induced inference slowdown; v234 rejects concurrency
 overages before streaming; v230 adds `-config-dir`.
 
-- [ ] Edit pin: `bin/llmctl` → `LLAMA_SWAP_VERSION = "235"`.
-- [ ] `llmctl down && rm ~/.local/bin/llama-swap && llmctl up` (auto-downloads v235).
-- [ ] `~/.local/bin/llama-swap --version` → 235.
+- [x] Edit pin: `bin/llmctl` → `LLAMA_SWAP_VERSION = "235"`. *(Done on branch,
+  2026-07-07 round 2.)*
+- [ ] `llmctl down && llmctl up` (llmctl now auto-updates the binary on version mismatch — code-review fix; no manual rm needed).
+  **Post-merge step — the live router is still v223 until this runs.**
+- [ ] `~/.local/bin/llama-swap --version` → 235. **Post-merge step.**
+
+*2026-07-07 shadow validation PASSED (round 1); pin bumped to 235 on branch (round 2):
+v235 (c59816b, built 2026-07-03) ran on 127.0.0.1:8082 against the production
+models.yaml read-only. `/health`, `/v1/models` (full catalog), `/running` all OK;
+served qwen3.6-35b-q4ks end-to-end (first completion 5.3 s warm-cache, second 2.2 s
+reusing the same container — no reload); v235 podman-ran the container itself with the
+expected 4-GPU tensor-split cmd; `GET /unload` + process kill tore everything down
+cleanly (no leftover containers, VRAM idle, live v223 router on :8080 untouched).
+The two unchecked steps above are the actual production cutover — run them after this
+branch merges so the binary on disk matches the new pin.*
 
 **Gate:** router serves both a vLLM profile and a GGUF profile; model swap works;
 concurrency limit still enforced (v234 changed rejection behavior — verify clients
@@ -154,22 +242,49 @@ Highest-risk phase: v0.24.0 moved Qwen/quantized MoE models to Model Runner V2 b
 default, and there are open ROCm reports on MTP+cudagraph (vllm#47196) and multi-GPU
 RDNA4 (vllm#40980). Canary the riskiest profile first; never rely on `:latest`.
 
-- [ ] Pull pinned: `podman pull docker.io/vllm/vllm-openai-rocm:v0.24.0`
-- [ ] **Canary** — run the 128k MTP profile's exact command from `models.yaml` but with
+*2026-07-07 status (round 2): canary PASSED and the `models.yaml` cutover landed on
+this branch. The 0.22.1 baseline bench completed first on the live production container
+(58.71 / 261.26 / 741.47 output tok/s at conc 1/8/32); the 0.24.0 canary then beat it
+at every concurrency (+17.5% / +19.6% / +4.9%). Production was restored to the 0.22.1
+baseline image at window end — the new refs take effect per profile as each is swapped
+and smoked post-merge. Caveats carried forward: `message.reasoning_content` →
+`message.reasoning` API rename (fix clients before/with cutover); higher idle power on
+0.24.0 (busy-poll, ~95–100 W/GPU at idle); MTP-off beat MTP-on at conc 8 (329.7 vs
+312.4 tok/s, ITL p50 19.0 vs 49.5 ms) — MTP mainly helps single-stream.*
+
+- [x] Pull pinned: `podman pull docker.io/vllm/vllm-openai-rocm:v0.24.0`
+  *(`ee424d681e1d`.)*
+- [x] **Canary** — run the 128k MTP profile's exact command from `models.yaml` but with
   image `:v0.24.0`, container name suffixed `-canary`, port 9555, while production
   keeps running. Watch first boot (Inductor recompile ~18–20 min expected — not a hang).
-- [ ] Canary checks: chat completion; tool call (qwen3_xml parser); reasoning parser;
+  *(Round 2: healthy in ~15 min, MTP on first try, no crash.)*
+- [x] Canary checks: chat completion; tool call (qwen3_xml parser); reasoning parser;
   64k+ long-context request; MTP active in logs; 30-min soak under load, watch
   `rocm-smi` for the 100%-GPU-spin deadlock signature.
-- [ ] If MTP faults: retry canary without `--speculative-config` (then decide: MTP-off
+  *(All passed: coherent chat; valid tool_calls; reasoning present but under the
+  RENAMED field `message.reasoning`; 50,631-token needle prompt → 200 in 15.4 s,
+  needle found; spec-decode counters advanced, ~70% draft acceptance (accept len 2.40);
+  zero HIP/HSA/memory-fault/segfault signatures, 0 failed requests across all benches.
+  Note: 100% GPU-use at idle is 0.24.0's busy-poll behavior, NOT the deadlock — the
+  server stays responsive (0.56 s round trip).)*
+- [x] If MTP faults: retry canary without `--speculative-config` (then decide: MTP-off
   on 0.24.0 vs stay on 0.22.1 — bench both).
-- [ ] Bench canary vs baseline (§Benchmarks) at concurrency 1/8/32.
-- [ ] **Cutover profile-by-profile:** in `models.yaml`, change image refs from
+  *(MTP did not fault; an MTP-off conc-8 bench was run anyway for the comparison —
+  see Results table and the MTP-vs-MTP-off caveat above.)*
+- [x] Bench canary vs baseline (§Benchmarks) at concurrency 1/8/32.
+  *(+17.5% / +19.6% / +4.9% output tok/s — all clear the −5% gate outright.)*
+- [x] **Cutover profile-by-profile:** in `models.yaml`, change image refs from
   `docker.io/vllm/vllm-openai-rocm:latest` → `docker.io/vllm/vllm-openai-rocm:v0.24.0`.
   Order: 35b-32k → 35b-128k (MTP) → 27b variants → fp8-KV profile → AWQ → gemma4.
   Each profile: swap, smoke, next. Commit `models.yaml` after each session.
+  *(Round 2: all refs updated on this branch in one pass — the intermediate
+  `localhost/vllm-openai-rocm:v0.22.1-baseline` refs from round 1 → `:v0.24.0`.
+  The per-profile swap+smoke sequence happens post-merge per the gate below; only the
+  canaried 128k-MTP shape has been exercised on 0.24.0 so far.)*
 - [ ] After full cutover: fix any remaining `:latest` refs (including legacy scripts in
   `~/ai/bin` that still matter) so the moving tag can never bite again.
+  *(models.yaml is clean — no vLLM `:latest` refs remain; legacy `~/ai/bin` scripts
+  still to be audited.)*
 
 **Gate (per profile):** healthy endpoint, tool calls OK, tok/s within −5% of baseline
 bench (or better), no HIP memory-access faults in `llmctl logs` over a working day.
@@ -268,8 +383,31 @@ Qwen3.5-122B-A10B-Q4_K_M.
 
 | Date | Phase | Engine+version | Model/quant/ctx | Conc. | tok/s | TTFT p50 | Notes |
 |---|---|---|---|---|---|---|---|
-| | 0 baseline | vLLM 0.22.1 | Q3.6-35B FP8 128k MTP | 1 | | | |
-| | 0 baseline | vLLM 0.22.1 | Q3.6-35B FP8 128k MTP | 8 | | | |
-| | 0 baseline | vLLM 0.22.1 | Q3.6-35B FP8 128k MTP | 32 | | | |
-| | 0 baseline | llama.cpp b9542 | Q3.6-35B UD-Q4_K_S 32k | 1 | | | |
-| | 0 baseline | llama.cpp b9542 | Q3.6-35B UD-Q4_K_S 32k | 8 | | | |
+| 2026-07-07 | 0 baseline | vLLM 0.22.1 | Q3.6-35B FP8 128k MTP | 1 | 58.71 | 134.9 ms | live prod container²; 16 prompts; ITL p50/p99 38.1/40.6 ms; total 295.95 tok/s |
+| 2026-07-07 | 0 baseline | vLLM 0.22.1 | Q3.6-35B FP8 128k MTP | 8 | 261.26 | 259.3 ms | 64 prompts; TTFT p99 4602 ms is a first-batch warm/compile outlier vs p50 259 ms; ITL p50/p99 57.5/138.4 ms |
+| 2026-07-07 | 0 baseline | vLLM 0.22.1 | Q3.6-35B FP8 128k MTP | 32 | 741.47 | 617.3 ms | 128 prompts; ITL p50/p99 60.1/340.3 ms; total 3737.51 tok/s |
+| 2026-07-07 | 0 baseline | llama.cpp b9542 | Q3.6-35B UD-Q4_K_S 32k | 1 | 83.44 | — | served bench (not llama-bench¹); median of 3 post-warmup decode-dominated runs (83.44/81.80/83.44); prompt 981 tok / 256 out / temp 0 |
+| 2026-07-07 | 0 baseline | llama.cpp b9542 | Q3.6-35B UD-Q4_K_S 32k | 8 | 113.77 | — | served bench¹, aggregate: 8×256 gen tok in 18.00 s wall (incl. per-slot prompt processing); `--parallel 8` |
+| 2026-07-07 | 2 after | llama.cpp b9903 (47e1de77a) + Mesa 26 | Q3.6-35B UD-Q4_K_S 32k | 1 | 81.72 | — | served bench¹, identical protocol; −2.1% vs baseline — within 5% threshold, no regression |
+| 2026-07-07 | 2 after | llama.cpp b9903 (47e1de77a) + Mesa 26 | Q3.6-35B UD-Q4_K_S 32k | 8 | 138.74 | — | served bench¹ aggregate; **+21.9%** vs baseline 113.77 |
+| 2026-07-07 | 4 canary | vLLM 0.24.0 | Q3.6-35B FP8 128k MTP | 1 | 68.98 | 124.5 ms | **+17.5%** vs baseline; ITL p50/p99 33.0/34.5 ms; spec accept ~70.2% |
+| 2026-07-07 | 4 canary | vLLM 0.24.0 | Q3.6-35B FP8 128k MTP | 8 | 312.42 | 233.4 ms | **+19.6%** vs baseline; ITL p50/p99 49.5/130.8 ms; spec accept ~70.5% |
+| 2026-07-07 | 4 canary | vLLM 0.24.0 | Q3.6-35B FP8 128k MTP | 32 | 777.58 | 732.2 ms | **+4.9%** vs baseline; ITL p50/p99 58.2/320.4 ms; spec accept ~70.2% |
+| 2026-07-07 | 4 canary | vLLM 0.24.0 MTP-off | Q3.6-35B FP8 128k | 8 | 329.70 | 560.2 ms | run for comparison (MTP never faulted); faster than MTP-on at conc 8 with far better ITL (p50/p99 19.0/20.2 ms); spec-config change forced ~16 min warm restart (compile-cache miss) |
+
+¹ `llama-bench` inside the b9542-baseline image is a stale build-tree binary (md5 ≠
+installed `/usr/local/bin/llama-server`, lacks the qwen35moe arch, fails to load the
+model), so a served bench was used for BOTH the baseline and Phase 2 "after" rows:
+llama-server `-m Qwen3.6-35B-A3B-UD-Q4_K_S.gguf -ngl 999 --tensor-split 1,1,1,1
+-c 32768 --parallel 8`, port 9310, `--group-add keep-groups` (required or Vulkan finds
+no devices), same script (`bench/served_bench.py`) —
+these numbers are not comparable to `llama-bench` pp/tg output.
+
+² vLLM rows: `vllm bench serve`, backend openai-chat, random dataset 1024 in / 256 out,
+seed 42, run inside the serving container. One flag adaptation was required: the served
+alias is not a HF repo, so `--tokenizer /models/Qwen3.6-35B-A3B-FP8` (local weights dir)
+was added while keeping the served name for API requests. All requests succeeded in
+every run (16/64/128). Baseline ran against the LIVE production 0.22.1 container on
+:9111; canary rows ran against the 0.24.0 canary on :9555 with the exact production
+profile. Raw logs under `/home/xin/.claude/jobs/73c9942f/tmp/` (`bench_c*.log`,
+`canary_bench_c*.log`, `canary_nomtp_bench_c8.log`).

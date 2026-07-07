@@ -147,7 +147,7 @@ The locally-built image (`localhost/llmstack-vllm:latest`) uses vLLM 0.10.2rc2 w
 transformers 5.7.0.dev0. Transformers 5.x removed `all_special_tokens_extended`, which
 causes `AttributeError` on Qwen3 models at startup. **Do not use this image.**
 
-All vLLM profiles must use: `docker.io/vllm/vllm-openai-rocm:latest` (vLLM 0.22.1, ROCm 7.2)
+All vLLM profiles must use: `docker.io/vllm/vllm-openai-rocm:v0.24.0` (vLLM 0.24.0, ROCm 7.2). Pinned tag policy: never reference the moving `:latest` tag — bump the pin here, in config/models.yaml, config/CLAUDE.md, and scripts/ together after canary validation (see docs/upgrade-plan-2026-07.md)
 
 ### FP8 kernel config — MoE experts are tuned, dense layers are not
 

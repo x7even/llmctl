@@ -1,0 +1,26 @@
+# llama-vulkan-base — Vulkan/RADV runtime base for llama.cpp images
+#
+# Replaces the ad-hoc localhost/llama-vulkan-bleeding:latest image
+# (Mesa 25.0.7, built by hand, no Containerfile in the repo). This is the
+# reproducible, repo-tracked replacement.
+#
+# Base: ubuntu:26.04, which ships Mesa 26.0.x (26.0.3 as of 2026-07) in the
+# stock archive — no PPA needed. Mesa >= 25.3 is required for solid RADV
+# support on gfx1201 (AMD Radeon AI PRO R9700, RDNA4).
+#
+# Fallback (if ubuntu:26.04 archive ever regresses below Mesa 25.3):
+# use ubuntu:24.04 + the kisak-mesa fresh PPA instead.
+#
+# Build: podman build -t localhost/llama-vulkan-bleeding:mesa26 containers/llama-vulkan-base/
+# Verify: podman run --rm --device=/dev/kfd --device=/dev/dri --group-add keep-groups \
+#           localhost/llama-vulkan-bleeding:mesa26 vulkaninfo --summary
+#         -> expect driverInfo "Mesa 26.0.x" and 4x gfx1201 RADV devices.
+#         (--group-add keep-groups is REQUIRED under rootless podman: without it
+#         the render group is dropped and RADV enumerates zero GPUs.)
+
+FROM ubuntu:26.04
+
+# libgomp1: runtime dependency of every llama.cpp build (OpenMP)
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    libvulkan1 mesa-vulkan-drivers vulkan-tools ca-certificates libgomp1 \
+    && rm -rf /var/lib/apt/lists/*

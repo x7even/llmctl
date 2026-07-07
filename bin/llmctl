@@ -49,7 +49,7 @@ PROXY_LOG_FILE = STATE_DIR / "llmproxy.log"
 PROXY_PORT = 9000
 PROXY_BIN = STACK_DIR / "bin" / "llmproxy"
 
-LLAMA_SWAP_VERSION = "223"
+LLAMA_SWAP_VERSION = "235"
 LLAMA_SWAP_BIN = Path.home() / ".local" / "bin" / "llama-swap"
 LLAMA_SWAP_DOWNLOAD = (
     f"https://github.com/mostlygeek/llama-swap/releases/download/"
@@ -125,10 +125,29 @@ def _active_models():
     return {m["id"] for m in data.get("data", [])}
 
 
+def _installed_swap_version():
+    """Version of the llama-swap binary on disk, or None if absent/unreadable."""
+    if not LLAMA_SWAP_BIN.exists():
+        return None
+    try:
+        out = subprocess.run(
+            [str(LLAMA_SWAP_BIN), "--version"],
+            capture_output=True, text=True, timeout=5,
+        ).stdout
+        m = re.search(r"version:\s*(\d+)", out)
+        return m.group(1) if m else None
+    except Exception:
+        return None
+
+
 def _ensure_binary():
-    if LLAMA_SWAP_BIN.exists():
+    installed = _installed_swap_version()
+    if installed == LLAMA_SWAP_VERSION:
         return True
-    print(f"llama-swap v{LLAMA_SWAP_VERSION} not found — downloading...")
+    if installed is not None:
+        print(f"llama-swap v{installed} installed but v{LLAMA_SWAP_VERSION} is pinned — updating...")
+    else:
+        print(f"llama-swap v{LLAMA_SWAP_VERSION} not found — downloading...")
     LLAMA_SWAP_BIN.parent.mkdir(parents=True, exist_ok=True)
     with tempfile.TemporaryDirectory() as td:
         tgz = Path(td) / "ls.tar.gz"
@@ -142,9 +161,13 @@ def _ensure_binary():
                 if os.path.basename(member.name) == "llama-swap" and member.isfile():
                     src = tf.extractfile(member)
                     if src:
-                        LLAMA_SWAP_BIN.write_bytes(src.read())
-                        LLAMA_SWAP_BIN.chmod(0o755)
-                        print(f"Installed to {LLAMA_SWAP_BIN}")
+                        # Write beside the target and rename: overwriting a
+                        # running binary in place fails with ETXTBSY.
+                        tmp_bin = LLAMA_SWAP_BIN.with_suffix(".new")
+                        tmp_bin.write_bytes(src.read())
+                        tmp_bin.chmod(0o755)
+                        os.replace(tmp_bin, LLAMA_SWAP_BIN)
+                        print(f"Installed v{LLAMA_SWAP_VERSION} to {LLAMA_SWAP_BIN}")
                         return True
     print("ERROR: llama-swap binary not found in release archive")
     return False

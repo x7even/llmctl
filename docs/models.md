@@ -17,7 +17,7 @@ No screen; GPU-only headless rig. PCIe 5.0 ×16 per slot.
 
 | Image | vLLM | ROCm | Use when |
 |---|---|---|---|
-| `docker.io/vllm/vllm-openai-rocm:latest` | 0.22.1 | 7.2 | All vLLM profiles (FP8, AWQ, safetensors) |
+| `docker.io/vllm/vllm-openai-rocm:v0.24.0` | 0.24.0 | 7.2 | All vLLM profiles (FP8, AWQ, safetensors) |
 | `localhost/llmstack-llama:latest` | llama.cpp | Vulkan | GGUF models |
 
 All vLLM profiles use `--entrypoint="" ... vllm serve` because the AMD official
@@ -64,7 +64,10 @@ output quality matters more than raw latency.
 - `--enable-expert-parallel` — MoE experts distributed across GPUs for better
   utilisation with TP=4.
 - `--reasoning-parser qwen3` — strips `<think>…</think>` from `content` and
-  exposes it in `reasoning_content`. Thinking is ON by default (Qwen3.6 native).
+  exposes it in the response's reasoning field. Thinking is ON by default (Qwen3.6 native).
+  **Field name changed in vLLM 0.24.0:** responses now carry `message.reasoning`
+  (streaming: `delta.reasoning`); vLLM ≤0.22.x used `message.reasoning_content`.
+  Clients parsing the old field silently get nothing — check both, prefer the new name.
 - `--enable-prefix-caching` — caches common prompt prefixes across requests.
   Agentic workflows with shared system prompts see 2–3× effective throughput gain.
 - `--cudagraph-capture-sizes 1 2 4 8 16 32` — explicit graph sizes instead of
@@ -470,7 +473,7 @@ pressure at long contexts with 4 concurrent streams; speedup recovers at conc=16
 
 **Aliases:** `gemma4-vllm`, `gemma4-concurrent`
 
-**Backend:** vLLM 0.22.1 (`docker.io/vllm/vllm-openai-rocm:latest`), BF16 safetensors.
+**Backend:** vLLM 0.24.0 (`docker.io/vllm/vllm-openai-rocm:v0.24.0`), BF16 safetensors.
 **Model path:** `/mnt/models/llm/google/gemma-4-26B-A4B-it`
 **VRAM:** 122.7 GB across 4 GPUs — nearly fills all 128 GB. Profile is exclusive; cannot
 co-load with any other model. The large VRAM footprint is the model weights (49 GB BF16)
@@ -533,7 +536,7 @@ dynamics at that concurrency level.
 
 **Aliases:** `gemma4-fp8`, `gemma4-fast-vllm`
 
-**Backend:** vLLM 0.22.1 (`docker.io/vllm/vllm-openai-rocm:latest`), FP8-Dynamic weights.
+**Backend:** vLLM 0.24.0 (`docker.io/vllm/vllm-openai-rocm:v0.24.0`), FP8-Dynamic weights.
 **Model path:** `/mnt/models/llm/RedHatAI/gemma-4-26B-A4B-it-FP8-Dynamic`
 **VRAM:** ~26 GB FP8 weights + BF16 KV cache across 4 GPUs.
 

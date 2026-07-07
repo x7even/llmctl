@@ -1,17 +1,24 @@
-# llama-server Vulkan backend — fresh build with qwen35moe support
+# llama-server Vulkan backend — fresh build of llama.cpp master
 #
 # Two-stage build:
-#   Stage 1: compile llama.cpp (latest) against Vulkan
-#   Stage 2: use localhost/llama-vulkan-bleeding as runtime base
-#            (already has Mesa RADV + gfx1201 support, confirmed working)
+#   Stage 1: compile llama.cpp (latest master) against Vulkan
+#   Stage 2: use localhost/llama-vulkan-bleeding:mesa26 as runtime base
+#            (ubuntu:26.04 + Mesa 26.0.x RADV, gfx1201 support;
+#            built from containers/llama-vulkan-base/Containerfile)
 #
-# The runtime base is reused so Mesa driver upgrade stays separate from
-# llama.cpp version bumps. Rebuild this image to pick up new architectures.
+# The runtime base is kept separate so Mesa driver upgrades stay decoupled
+# from llama.cpp version bumps. Each rebuild of THIS file picks up current
+# llama.cpp master — record the resulting `--version` when you cut over.
+# Upgrade/cutover history and bench results: docs/upgrade-plan-2026-07.md.
+# Rollback anchors: localhost/llmstack-llama:b9542-baseline,
+#                   localhost/llama-vulkan-bleeding:mesa25.0.7-baseline.
 #
-# Build: podman build -t localhost/llmstack-llama:latest containers/llama-server/
+# Build (base image FIRST if it doesn't exist yet):
+#   podman build -t localhost/llama-vulkan-bleeding:mesa26 containers/llama-vulkan-base/
+#   podman build -t localhost/llmstack-llama:latest containers/llama-server/
 # Expected build time: ~15–25 min on Threadripper 9970X (32-core parallel)
 
-# ── Stage 1: Build llama-server ─────────────────────────────────────────────
+# ── Stage 1: Build llama-server + llama-bench ───────────────────────────────
 FROM ubuntu:24.04 AS builder
 
 RUN apt-get update && apt-get install -y --no-install-recommends \
@@ -19,8 +26,10 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     libvulkan-dev glslang-tools libshaderc-dev glslc \
     && rm -rf /var/lib/apt/lists/*
 
-# Clone latest llama.cpp (shallow to save bandwidth)
-RUN git clone --depth 1 https://github.com/ggerganov/llama.cpp /llama.cpp
+# Blobless clone: keeps the full commit graph (llama.cpp derives its build
+# number from `git rev-list --count`, so --depth 1 would report "version: 1")
+# while downloading a fraction of a full clone.
+RUN git clone --filter=blob:none https://github.com/ggerganov/llama.cpp /llama.cpp
 
 WORKDIR /llama.cpp
 
@@ -31,12 +40,21 @@ RUN cmake -B build \
     -DLLAMA_BUILD_TESTS=OFF \
     -DLLAMA_BUILD_EXAMPLES=OFF
 
-RUN cmake --build build --parallel "$(nproc)" --target llama-server
+# llama-bench is built alongside the server so benchmarks always run the same
+# build that serves (a stale in-image llama-bench derailed the 2026-07 bench).
+RUN cmake --build build --parallel "$(nproc)" --target llama-server llama-bench
 
 # ── Stage 2: Runtime image with working RADV for gfx1201 ────────────────────
-FROM localhost/llama-vulkan-bleeding:latest
+FROM localhost/llama-vulkan-bleeding:mesa26
+
+# llama-server links against OpenMP even with static ggml libs. libgomp1 now
+# ships in the base image; this stays as a no-op safety net for base images
+# built before it moved there.
+RUN apt-get update && apt-get install -y --no-install-recommends libgomp1 \
+    && rm -rf /var/lib/apt/lists/*
 
 COPY --from=builder /llama.cpp/build/bin/llama-server /usr/local/bin/llama-server
+COPY --from=builder /llama.cpp/build/bin/llama-bench  /usr/local/bin/llama-bench
 
 WORKDIR /
 ENTRYPOINT ["/usr/local/bin/llama-server"]

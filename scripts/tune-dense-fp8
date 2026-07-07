@@ -60,7 +60,7 @@ podman run --rm \
     -v "$OUTPUT_DIR:/dense-fp8-configs" \
     -e HSA_ENABLE_SDMA=0 \
     --entrypoint="" \
-    docker.io/vllm/vllm-openai-rocm:latest \
+    docker.io/vllm/vllm-openai-rocm:v0.24.0 \
     python3 /scripts/tune-dense-fp8-kernel.py --output /dense-fp8-configs "$@"
 
 echo ""
