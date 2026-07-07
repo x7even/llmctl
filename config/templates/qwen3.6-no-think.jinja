@@ -88,7 +88,10 @@
         {{- '<|im_start|>' + message.role + '\n' + content + '<|im_end|>' + '\n' }}
     {%- elif message.role == "assistant" %}
         {%- set reasoning_content = '' %}
-        {%- if message.reasoning_content is string %}
+        {#- vLLM 0.24.0+ returns `reasoning`; older clients may echo back `reasoning_content`. Accept both. #}
+        {%- if message.reasoning is string %}
+            {%- set reasoning_content = message.reasoning %}
+        {%- elif message.reasoning_content is string %}
             {%- set reasoning_content = message.reasoning_content %}
         {%- else %}
             {%- if '</think>' in content %}
