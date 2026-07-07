@@ -82,6 +82,8 @@ llmpanel
 | `qwen3.6-35b-code` | vLLM TP=4 + MTP | ~35 GB | 262K | Claude Code, OpenCode, agentic coding — highest quality |
 | `qwen3.6-35b-fast` | vLLM TP=4 | ~35 GB | 262K | Low-latency chat; thinking disabled by default |
 | `qwen3.6-35b-512k` | vLLM TP=4 + MTP + YaRN | ~35 GB | 512K | Large codebase ingestion, long documents |
+| `qwen3.6-35b-32k` / `-64k` / `-128k` | vLLM TP=4 + MTP | ~35 GB | 32K–128K | Context-bounded variants of the code profile; smaller KV pool, faster warmup |
+| `qwen3.6-35b-128k-nomtp` | vLLM TP=4 | ~35 GB | 128K | Parallel agent fleets — beats MTP at conc≥8 with 2.6× better ITL (see docs/models.md) |
 | `qwen3.6-35b-awq` | vLLM TP=4, AWQ Int4 | ~20 GB | 262K | Quality/VRAM tradeoff; leaves headroom for large KV cache |
 | `qwen3.6-27b-fp8` | vLLM TP=4 | ~29 GB | 262K | Dense model; highest SWE-bench (77.2 vs 73.4 for MoE) |
 | `qwen3.6-27b-q4km` | llama-server Vulkan | ~17 GB | 32K | Dense Q4 GGUF; minimal VRAM footprint |

@@ -40,7 +40,7 @@ models:
   # Note:    No MTP draft head; thinking ON by default
   qwen3.6-27b-fp8:
     name: "Qwen3.6-27B-FP8 (code)"
-    ttl: 600
+    ttl: 43200
     checkEndpoint: /health
     concurrencyLimit: 64
     aliases:
@@ -196,7 +196,7 @@ models:
   # VRAM:    ~17 GB across 4 GPUs (~4.5 GB each) — leaves large KV cache headroom
   qwen3.6-27b-q4km:
     name: "Qwen3.6-27B (Q4_K_M)"
-    ttl: 600
+    ttl: 43200
     checkEndpoint: /health
     concurrencyLimit: 16
     aliases:
@@ -232,7 +232,7 @@ models:
   # Note:    No bundled MTP head (no speculative decoding)
   qwen3-coder-30b-fp8:
     name: "Qwen3-Coder-30B-A3B-Instruct-FP8"
-    ttl: 600
+    ttl: 43200
     checkEndpoint: /health
     concurrencyLimit: 64
     aliases:
@@ -279,7 +279,7 @@ models:
   # Note:    No MTP head; no speculative decoding
   qwen3.6-35b-awq:
     name: "Qwen3.6-35B-A3B-AWQ (Int4)"
-    ttl: 600
+    ttl: 43200
     checkEndpoint: /health
     concurrencyLimit: 64
     aliases:
@@ -379,6 +379,198 @@ models:
         --enable-auto-tool-choice
         --tool-call-parser qwen3_xml
         --speculative-config '{"method": "mtp", "num_speculative_tokens": 2}'
+        --cudagraph-capture-sizes 1 2 4 8 16 32
+    cmdStop: podman stop llmstack-vllm-${MODEL_ID}
+
+  # ─── vLLM: Qwen3.6-35B-A3B FP8 — 32K context (fast warmup, MCP/tool use) ────
+  # Clone of qwen3.6-35b-code at 32K — fastest warmup, for short tool-call sessions
+  qwen3.6-35b-32k:
+    name: "Qwen3.6-35B-A3B-FP8 (32K)"
+    ttl: 0
+    checkEndpoint: /health
+    concurrencyLimit: 64
+    cmd: |
+      podman run --replace --rm
+        --name llmstack-vllm-${MODEL_ID}
+        --device=/dev/kfd
+        --device=/dev/dri
+        --group-add keep-groups
+        --security-opt seccomp=unconfined
+        --security-opt apparmor=unconfined
+        --ipc=private
+        --shm-size=32g
+        --network=host
+        -v /mnt/models/llm:/models:ro
+        -v /home/xin/ai/llmstack/.vllm-cache:/root/.cache/vllm
+        -v /home/xin/ai/llmstack/.triton-cache:/root/.triton/cache
+        -e HSA_ENABLE_SDMA=0
+        -e TORCH_BLAS_PREFER_HIPBLASLT=1
+        --entrypoint=""
+        docker.io/vllm/vllm-openai-rocm:v0.24.0
+        vllm serve /models/Qwen3.6-35B-A3B-FP8
+        --host 127.0.0.1
+        --port ${PORT}
+        --served-model-name qwen3.6-35b-32k
+        --dtype auto
+        --tensor-parallel-size 4
+        --enable-expert-parallel
+        --max-num-seqs 32
+        --max-num-batched-tokens 32768
+        --max-model-len 32768
+        --gpu-memory-utilization 0.92
+        --enable-prefix-caching
+        --enable-chunked-prefill
+        --trust-remote-code
+        --reasoning-parser qwen3
+        --enable-auto-tool-choice
+        --tool-call-parser qwen3_xml
+        --speculative-config '{"method": "mtp", "num_speculative_tokens": 2}'
+        --cudagraph-capture-sizes 1 2 4 8 16 32
+    cmdStop: podman stop llmstack-vllm-${MODEL_ID}
+
+  # ─── vLLM: Qwen3.6-35B-A3B FP8 — 64K context ───────────────────────────────
+  # Clone of qwen3.6-35b-code at 64K
+  qwen3.6-35b-64k:
+    name: "Qwen3.6-35B-A3B-FP8 (64K)"
+    ttl: 0
+    checkEndpoint: /health
+    concurrencyLimit: 64
+    cmd: |
+      podman run --replace --rm
+        --name llmstack-vllm-${MODEL_ID}
+        --device=/dev/kfd
+        --device=/dev/dri
+        --group-add keep-groups
+        --security-opt seccomp=unconfined
+        --security-opt apparmor=unconfined
+        --ipc=private
+        --shm-size=32g
+        --network=host
+        -v /mnt/models/llm:/models:ro
+        -v /home/xin/ai/llmstack/.vllm-cache:/root/.cache/vllm
+        -v /home/xin/ai/llmstack/.triton-cache:/root/.triton/cache
+        -e HSA_ENABLE_SDMA=0
+        -e TORCH_BLAS_PREFER_HIPBLASLT=1
+        --entrypoint=""
+        docker.io/vllm/vllm-openai-rocm:v0.24.0
+        vllm serve /models/Qwen3.6-35B-A3B-FP8
+        --host 127.0.0.1
+        --port ${PORT}
+        --served-model-name qwen3.6-35b-64k
+        --dtype auto
+        --tensor-parallel-size 4
+        --enable-expert-parallel
+        --max-num-seqs 32
+        --max-num-batched-tokens 32768
+        --max-model-len 65536
+        --gpu-memory-utilization 0.92
+        --enable-prefix-caching
+        --enable-chunked-prefill
+        --trust-remote-code
+        --reasoning-parser qwen3
+        --enable-auto-tool-choice
+        --tool-call-parser qwen3_xml
+        --speculative-config '{"method": "mtp", "num_speculative_tokens": 2}'
+        --cudagraph-capture-sizes 1 2 4 8 16 32
+    cmdStop: podman stop llmstack-vllm-${MODEL_ID}
+
+  # ─── vLLM: Qwen3.6-35B-A3B FP8 — 128K context ──────────────────────────────
+  # Clone of qwen3.6-35b-code at 128K (same max-model-len as code, explicit alias)
+  qwen3.6-35b-128k:
+    name: "Qwen3.6-35B-A3B-FP8 (128K)"
+    ttl: 0
+    checkEndpoint: /health
+    concurrencyLimit: 64
+    cmd: |
+      podman run --replace --rm
+        --name llmstack-vllm-${MODEL_ID}
+        --device=/dev/kfd
+        --device=/dev/dri
+        --group-add keep-groups
+        --security-opt seccomp=unconfined
+        --security-opt apparmor=unconfined
+        --ipc=private
+        --shm-size=32g
+        --network=host
+        -v /mnt/models/llm:/models:ro
+        -v /home/xin/ai/llmstack/.vllm-cache:/root/.cache/vllm
+        -v /home/xin/ai/llmstack/.triton-cache:/root/.triton/cache
+        -e HSA_ENABLE_SDMA=0
+        -e TORCH_BLAS_PREFER_HIPBLASLT=1
+        --entrypoint=""
+        docker.io/vllm/vllm-openai-rocm:v0.24.0
+        vllm serve /models/Qwen3.6-35B-A3B-FP8
+        --host 127.0.0.1
+        --port ${PORT}
+        --served-model-name qwen3.6-35b-128k
+        --dtype auto
+        --tensor-parallel-size 4
+        --enable-expert-parallel
+        --max-num-seqs 32
+        --max-num-batched-tokens 32768
+        --max-model-len 131072
+        --gpu-memory-utilization 0.92
+        --enable-prefix-caching
+        --enable-chunked-prefill
+        --trust-remote-code
+        --reasoning-parser qwen3
+        --enable-auto-tool-choice
+        --tool-call-parser qwen3_xml
+        --speculative-config '{"method": "mtp", "num_speculative_tokens": 2}'
+        --cudagraph-capture-sizes 1 2 4 8 16 32
+    cmdStop: podman stop llmstack-vllm-${MODEL_ID}
+
+  # ─── vLLM: Qwen3.6-35B-A3B FP8 — 128K, no MTP (high-concurrency serving) ───
+  # Same as qwen3.6-35b-128k but WITHOUT speculative decoding. Measured on
+  # vLLM 0.24.0 (2026-07-07, this hardware): at concurrency 8 no-MTP is faster
+  # than MTP (329.7 vs 312.4 output tok/s) with far better inter-token latency
+  # (ITL p50 19.0 vs 49.5 ms). MTP wins single-stream (69.0 vs ~59 tok/s
+  # baseline). Use this profile for parallel agent fleets; use the MTP profile
+  # for single-user interactive sessions. Bench: docs/upgrade-plan-2026-07.md.
+  # Note: switching between MTP and no-MTP invalidates the vLLM compile-cache
+  # match — expect a ~16 min warm start on the first swap between them.
+  qwen3.6-35b-128k-nomtp:
+    name: "Qwen3.6-35B-A3B-FP8 (128K, no MTP — high concurrency)"
+    ttl: 0
+    checkEndpoint: /health
+    concurrencyLimit: 64
+    aliases:
+      - 35b-nomtp
+    cmd: |
+      podman run --replace --rm
+        --name llmstack-vllm-${MODEL_ID}
+        --device=/dev/kfd
+        --device=/dev/dri
+        --group-add keep-groups
+        --security-opt seccomp=unconfined
+        --security-opt apparmor=unconfined
+        --ipc=private
+        --shm-size=32g
+        --network=host
+        -v /mnt/models/llm:/models:ro
+        -v /home/xin/ai/llmstack/.vllm-cache:/root/.cache/vllm
+        -v /home/xin/ai/llmstack/.triton-cache:/root/.triton/cache
+        -e HSA_ENABLE_SDMA=0
+        -e TORCH_BLAS_PREFER_HIPBLASLT=1
+        --entrypoint=""
+        docker.io/vllm/vllm-openai-rocm:v0.24.0
+        vllm serve /models/Qwen3.6-35B-A3B-FP8
+        --host 127.0.0.1
+        --port ${PORT}
+        --served-model-name qwen3.6-35b-128k-nomtp
+        --dtype auto
+        --tensor-parallel-size 4
+        --enable-expert-parallel
+        --max-num-seqs 32
+        --max-num-batched-tokens 32768
+        --max-model-len 131072
+        --gpu-memory-utilization 0.92
+        --enable-prefix-caching
+        --enable-chunked-prefill
+        --trust-remote-code
+        --reasoning-parser qwen3
+        --enable-auto-tool-choice
+        --tool-call-parser qwen3_xml
         --cudagraph-capture-sizes 1 2 4 8 16 32
     cmdStop: podman stop llmstack-vllm-${MODEL_ID}
 
@@ -503,7 +695,7 @@ models:
   # Model:   /mnt/models/llm/unsloth/Qwen3.6-35B-A3B-GGUF/
   qwen3.6-35b-q4ks:
     name: "Qwen3.6-35B-A3B (UD-Q4_K_S)"
-    ttl: 600
+    ttl: 43200
     checkEndpoint: /health
     concurrencyLimit: 12
     aliases:
@@ -538,7 +730,7 @@ models:
   # Model:   /mnt/models/llm/lmstudio-community/Qwen3.5-122B-A10B-GGUF/  (split GGUF)
   qwen3.5-122b-a10b-q4:
     name: "Qwen3.5-122B-A10B (Q4_K_M)"
-    ttl: 600
+    ttl: 43200
     checkEndpoint: /health
     concurrencyLimit: 8
     aliases:
@@ -570,7 +762,7 @@ models:
   # Higher quality variant (~98 GB) — tighter VRAM budget, limit context
   qwen3.5-122b-a10b-q6:
     name: "Qwen3.5-122B-A10B (Q6_K)"
-    ttl: 600
+    ttl: 43200
     checkEndpoint: /health
     concurrencyLimit: 6
     unlisted: false
@@ -608,7 +800,7 @@ models:
   # Model:   /mnt/models/llm/lmstudio-community/gemma-4-26B-A4B-it-GGUF/
   gemma4-26b-q8:
     name: "Gemma 4 26B-A4B (Q8_0 + Vision)"
-    ttl: 600
+    ttl: 43200
     checkEndpoint: /health
     concurrencyLimit: 16
     aliases:
@@ -646,7 +838,7 @@ models:
   # Note:    Model not yet downloaded; path follows lmstudio-community convention
   gemma4-12b-q4:
     name: "Gemma 4 12B (Q4_K_M + Vision)"
-    ttl: 600
+    ttl: 43200
     checkEndpoint: /health
     concurrencyLimit: 16
     aliases:
@@ -691,7 +883,7 @@ models:
   #          Note: model not yet downloaded to /mnt/models/llm/google/
   gemma4-26b-a4b:
     name: "Gemma 4 26B-A4B (BF16, vLLM)"
-    ttl: 600
+    ttl: 43200
     checkEndpoint: /health
     concurrencyLimit: 32
     aliases:
@@ -746,7 +938,7 @@ models:
   #          No --enable-expert-parallel (not confirmed supported for Gemma 4 MoE)
   gemma4-26b-fp8:
     name: "Gemma 4 26B-A4B (FP8 weights, BF16 KV)"
-    ttl: 600
+    ttl: 43200
     checkEndpoint: /health
     concurrencyLimit: 32
     aliases:

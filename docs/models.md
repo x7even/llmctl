@@ -151,6 +151,26 @@ of layers only, making 512K context practical where it would OOM on a dense mode
 
 ---
 
+### `qwen3.6-35b-32k` / `-64k` / `-128k` / `-128k-nomtp` — context-bounded variants
+
+Clones of the code profile with `--max-model-len` bounded to 32K/64K/128K: a smaller
+KV pool means faster warmup and more sequence headroom for tool-call/MCP sessions
+that never approach 256K. The `-32k`/`-64k`/`-128k` variants keep MTP.
+
+**`qwen3.6-35b-128k-nomtp`** (alias `35b-nomtp`) drops speculative decoding. Measured
+on vLLM 0.24.0 (2026-07-07, 4× R9700, 1024-in/256-out, seed 42):
+
+| Profile | conc 1 tok/s | conc 8 tok/s | ITL p50 @ conc 8 |
+|---|---|---|---|
+| `-128k` (MTP) | **68.98** | 312.42 | 49.5 ms |
+| `-128k-nomtp` | ~59 | **329.70** | **19.0 ms** |
+
+Rule of thumb: **MTP for single-user interactive sessions; no-MTP for parallel agent
+fleets** (conc ≥ 8). Switching between the two invalidates the vLLM compile-cache match —
+budget ~16 min for the first swap in each direction. Full data: docs/upgrade-plan-2026-07.md.
+
+---
+
 ### `qwen3.6-35b-awq` — AWQ Int4 quantisation
 
 **Aliases:** `qwen3.6-awq`, `qwen3.6-q4`
