@@ -182,3 +182,77 @@ func TestProfileYAML_allModels(t *testing.T) {
 		}
 	}
 }
+
+// ── ParseCapabilities ────────────────────────────────────────────────────────
+
+func TestParseCapabilities_empty(t *testing.T) {
+	caps := ParseCapabilities(ModelConfig{Cmd: "podman run --port ${PORT}"})
+	if caps.MTP || caps.Reasoning || caps.ContextLen != 0 {
+		t.Errorf("empty cmd: want all zero, got %+v", caps)
+	}
+}
+
+func TestParseCapabilities_mtp(t *testing.T) {
+	cmd := `vllm serve /models/Foo --speculative-config '{"method": "mtp", "num_speculative_tokens": 2}'`
+	caps := ParseCapabilities(ModelConfig{Cmd: cmd})
+	if !caps.MTP {
+		t.Error("MTP: want true")
+	}
+	if caps.MTPTokens != 2 {
+		t.Errorf("MTPTokens: want 2, got %d", caps.MTPTokens)
+	}
+}
+
+func TestParseCapabilities_reasoning_think_on(t *testing.T) {
+	cmd := `vllm serve /models/Foo --reasoning-parser qwen3 --port 9100`
+	caps := ParseCapabilities(ModelConfig{Cmd: cmd})
+	if !caps.Reasoning {
+		t.Error("Reasoning: want true")
+	}
+	if caps.ThinkingDefault != "on" {
+		t.Errorf("ThinkingDefault: want 'on', got %q", caps.ThinkingDefault)
+	}
+}
+
+func TestParseCapabilities_reasoning_think_off(t *testing.T) {
+	cmd := `vllm serve /models/Foo --reasoning-parser qwen3 --chat-template /templates/qwen3.6-no-think.jinja`
+	caps := ParseCapabilities(ModelConfig{Cmd: cmd})
+	if !caps.Reasoning {
+		t.Error("Reasoning: want true")
+	}
+	if caps.ThinkingDefault != "off" {
+		t.Errorf("ThinkingDefault: want 'off', got %q", caps.ThinkingDefault)
+	}
+}
+
+func TestParseCapabilities_contextLen(t *testing.T) {
+	cmd := `vllm serve /models/Foo --max-model-len 131072 --port 9100`
+	caps := ParseCapabilities(ModelConfig{Cmd: cmd})
+	if caps.ContextLen != 131072 {
+		t.Errorf("ContextLen: want 131072, got %d", caps.ContextLen)
+	}
+}
+
+func TestParseCapabilities_contextLen_absent(t *testing.T) {
+	cmd := `vllm serve /models/Foo --port 9100`
+	caps := ParseCapabilities(ModelConfig{Cmd: cmd})
+	if caps.ContextLen != 0 {
+		t.Errorf("ContextLen: want 0 when absent, got %d", caps.ContextLen)
+	}
+}
+
+func TestParseCapabilities_combined(t *testing.T) {
+	cmd := `vllm serve /models/Foo --reasoning-parser qwen3 ` +
+		`--speculative-config '{"method": "mtp", "num_speculative_tokens": 3}' ` +
+		`--max-model-len 65536`
+	caps := ParseCapabilities(ModelConfig{Cmd: cmd})
+	if !caps.MTP || caps.MTPTokens != 3 {
+		t.Errorf("MTP: want true/3, got %v/%d", caps.MTP, caps.MTPTokens)
+	}
+	if !caps.Reasoning || caps.ThinkingDefault != "on" {
+		t.Errorf("Reasoning/ThinkingDefault: want true/on, got %v/%q", caps.Reasoning, caps.ThinkingDefault)
+	}
+	if caps.ContextLen != 65536 {
+		t.Errorf("ContextLen: want 65536, got %d", caps.ContextLen)
+	}
+}

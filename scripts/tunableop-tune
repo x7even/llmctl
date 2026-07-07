@@ -52,7 +52,7 @@ podman run --rm \
     -e PYTORCH_TUNABLEOP_TUNING=1 \
     -e PYTORCH_TUNABLEOP_FILENAME=/root/.cache/vllm/tunableop-qwen3.6-27b-code.csv \
     --entrypoint="" \
-    docker.io/vllm/vllm-openai-rocm:latest \
+    docker.io/vllm/vllm-openai-rocm:v0.24.0 \
     vllm serve /models/Qwen3.6-27B-FP8 \
         --host 127.0.0.1 \
         --port "$PORT" \

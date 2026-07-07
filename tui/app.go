@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"os/exec"
 	"strings"
 	"time"
 
@@ -78,6 +79,7 @@ type msgData        AppData
 type msgLog         []string
 type msgSwapDone    struct{ profile string; err error }
 type msgUnloadDone  struct{ err error }
+type msgStartupPhase struct{ phase string }
 
 // ── App ────────────────────────────────────────────────────────────────────────
 
@@ -117,12 +119,17 @@ type app struct {
 	peakPrefillPerS float64
 
 	// Models panel
-	cursor    int
-	swapping  bool
-	swapFor   string
-	swapMsg   string
-	swapMsgAt time.Time
-	spin      spinner.Model
+	cursor       int
+	modelsScroll int
+	confirming   bool
+	pendingSwap  string
+	swapping     bool
+	swapFor      string
+	swapMsg      string
+	swapMsgAt    time.Time
+	startupPhase string
+	pollingPhase bool
+	spin         spinner.Model
 
 	// Scrollable panels
 	cfgVP viewport.Model
@@ -210,6 +217,43 @@ func (a *app) cmdUnload() tea.Cmd {
 	}
 }
 
+func cmdPollStartupPhase(profile string) tea.Cmd {
+	return func() tea.Msg {
+		time.Sleep(3 * time.Second)
+		return msgStartupPhase{phase: detectStartupPhase(profile)}
+	}
+}
+
+func detectStartupPhase(profile string) string {
+	for _, prefix := range []string{"llmstack-vllm-", "llmstack-llama-"} {
+		out, err := exec.Command("podman", "logs", "--tail", "40", prefix+profile).CombinedOutput()
+		if err != nil {
+			continue
+		}
+		return parseStartupPhase(string(out))
+	}
+	return "Starting container…"
+}
+
+func parseStartupPhase(logs string) string {
+	switch {
+	case strings.Contains(logs, "Application startup complete"):
+		return "Ready"
+	case strings.Contains(logs, "CUDA graph") || strings.Contains(logs, "cudagraph") || strings.Contains(logs, "graph capture"):
+		return "Capturing CUDA graphs (~15s)"
+	case strings.Contains(logs, "shm_broadcast") || strings.Contains(logs, "KV cache quantization") || strings.Contains(logs, "memory profiling"):
+		return "Memory profiling / FP8 KV calibration (~8–14 min)"
+	case strings.Contains(logs, "torch.compile") || strings.Contains(logs, "Inductor") || strings.Contains(logs, "compile"):
+		return "Compiling kernels (cached after 1st run)"
+	case strings.Contains(logs, "Loading safetensors") || strings.Contains(logs, "Loading weights") || strings.Contains(logs, "load_weights"):
+		return "Loading model weights…"
+	case strings.Contains(logs, "vllm serve") || strings.Contains(logs, "llama-server"):
+		return "Initialising engine…"
+	default:
+		return "Starting container…"
+	}
+}
+
 func (a *app) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	switch msg := msg.(type) {
 
@@ -226,14 +270,41 @@ func (a *app) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 	case msgData:
 		a.applyData(AppData(msg))
+		// If model is active but metrics not yet available, poll startup phase
+		if a.data.Active != nil && a.data.Metrics == nil && !a.pollingPhase && !a.swapping {
+			a.pollingPhase = true
+			if a.startupPhase == "" {
+				a.startupPhase = "Starting up…"
+			}
+			return a, cmdPollStartupPhase(a.data.Active.ID)
+		}
+		// Metrics arrived — clear startup state
+		if a.data.Metrics != nil && a.pollingPhase {
+			a.pollingPhase = false
+			a.startupPhase = ""
+		}
 		return a, nil
 
 	case msgLog:
 		a.applyLog([]string(msg))
 		return a, nil
 
+	case msgStartupPhase:
+		if a.swapping {
+			a.startupPhase = msg.phase
+			return a, cmdPollStartupPhase(a.swapFor)
+		}
+		if a.pollingPhase && a.data.Active != nil && a.data.Metrics == nil {
+			a.startupPhase = msg.phase
+			return a, cmdPollStartupPhase(a.data.Active.ID)
+		}
+		a.pollingPhase = false
+		a.startupPhase = ""
+		return a, nil
+
 	case msgSwapDone:
 		a.swapping = false
+		a.startupPhase = ""
 		if msg.err != nil {
 			a.swapMsg = fmt.Sprintf("✗ %v", msg.err)
 		} else {
@@ -274,7 +345,10 @@ func (a *app) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		a.sizeViewports()
 
 	case "esc":
-		if a.fullscreen {
+		if a.confirming {
+			a.confirming = false
+			a.pendingSwap = ""
+		} else if a.fullscreen {
 			a.fullscreen = false
 			a.sizeViewports()
 		}
@@ -314,6 +388,7 @@ func (a *app) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		case paneModels:
 			if a.cursor > 0 {
 				a.cursor--
+				a.clampModelsScroll()
 				a.refreshConfigView()
 			}
 		case paneConfig:
@@ -328,6 +403,7 @@ func (a *app) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			profiles := a.profiles()
 			if a.cursor < len(profiles)-1 {
 				a.cursor++
+				a.clampModelsScroll()
 				a.refreshConfigView()
 			}
 		case paneConfig:
@@ -360,18 +436,40 @@ func (a *app) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 
 	case "enter", "s":
 		if a.focused == paneModels && !a.swapping {
+			if a.confirming {
+				// second enter = confirm
+				a.confirming = false
+				a.swapping = true
+				a.swapFor = a.pendingSwap
+				a.swapMsg = ""
+				a.startupPhase = "Starting container…"
+				return a, tea.Batch(a.cmdSwap(a.pendingSwap), a.spin.Tick, cmdPollStartupPhase(a.pendingSwap))
+			}
 			profiles := a.profiles()
 			if a.cursor >= 0 && a.cursor < len(profiles) {
-				target := profiles[a.cursor]
-				a.swapping = true
-				a.swapFor = target
-				a.swapMsg = ""
-				return a, tea.Batch(a.cmdSwap(target), a.spin.Tick)
+				a.confirming = true
+				a.pendingSwap = profiles[a.cursor]
 			}
 		}
 
+	case "y", "Y":
+		if a.confirming && !a.swapping {
+			a.confirming = false
+			a.swapping = true
+			a.swapFor = a.pendingSwap
+			a.swapMsg = ""
+			a.startupPhase = "Starting container…"
+			return a, tea.Batch(a.cmdSwap(a.pendingSwap), a.spin.Tick, cmdPollStartupPhase(a.pendingSwap))
+		}
+
+	case "n", "N":
+		if a.confirming {
+			a.confirming = false
+			a.pendingSwap = ""
+		}
+
 	case "u":
-		if !a.swapping && a.data.Active != nil {
+		if !a.swapping && !a.confirming && a.data.Active != nil {
 			a.swapping = true
 			a.swapFor = ""
 			a.swapMsg = ""
@@ -450,11 +548,12 @@ func (a *app) applyData(data AppData) {
 		a.peakPrefillPerS = prefillVal
 	}
 
-	// Keep model cursor on the loaded model unless user is navigating
-	if !a.swapping && data.Active != nil {
+	// Snap cursor to active model only when the active model changes
+	if currID != a.prevModelID && data.Active != nil {
 		for i, p := range a.profiles() {
 			if p == data.Active.ID {
 				a.cursor = i
+				a.modelsScroll = 0
 				break
 			}
 		}
@@ -490,7 +589,39 @@ func (a *app) refreshConfigView() {
 		a.cfgVP.SetContent("# no profiles")
 		return
 	}
-	a.cfgVP.SetContent(a.reg.ProfileYAML(profiles[a.cursor]))
+	id := profiles[a.cursor]
+	caps := ParseCapabilities(a.reg.Models[id])
+	a.cfgVP.SetContent(renderCapsSummary(caps) + a.reg.ProfileYAML(id))
+}
+
+func renderCapsSummary(caps ModelCapabilities) string {
+	var parts []string
+
+	if caps.MTP {
+		parts = append(parts, stGreen.Render(fmt.Sprintf("MTP +%d", caps.MTPTokens)))
+	} else {
+		parts = append(parts, stDim.Render("MTP off"))
+	}
+
+	if caps.Reasoning {
+		var st lipgloss.Style
+		if caps.ThinkingDefault == "off" {
+			st = stYellow
+		} else {
+			st = stGreen
+		}
+		parts = append(parts, st.Render(fmt.Sprintf("think=%s", caps.ThinkingDefault)))
+	} else {
+		parts = append(parts, stDim.Render("no think"))
+	}
+
+	if caps.ContextLen > 0 {
+		parts = append(parts, stBold.Render(fmt.Sprintf("%dK ctx", caps.ContextLen/1024)))
+	} else {
+		parts = append(parts, stDim.Render("ctx native"))
+	}
+
+	return " " + strings.Join(parts, "  ") + "\n"
 }
 
 // ── Viewport sizing ────────────────────────────────────────────────────────────
@@ -530,6 +661,27 @@ func colWidths(total int) (left, right int) {
 	left = clamp(total*30/100, 20, 40)
 	right = total - left - 1 // -1 for column gap
 	return
+}
+
+// modelsVisible returns the number of model list rows visible in the panel.
+// h2 includes the panel header (1 line) and a status line (1 line).
+func (a *app) modelsVisible() int {
+	_, h2, _, _ := rowHeights(a.h)
+	v := h2 - 2 // header + status line
+	if v < 1 {
+		v = 1
+	}
+	return v
+}
+
+// clampModelsScroll adjusts modelsScroll so the cursor stays in view.
+func (a *app) clampModelsScroll() {
+	vis := a.modelsVisible()
+	if a.cursor < a.modelsScroll {
+		a.modelsScroll = a.cursor
+	} else if a.cursor >= a.modelsScroll+vis {
+		a.modelsScroll = a.cursor - vis + 1
+	}
 }
 
 func clamp(v, lo, hi int) int {
@@ -656,12 +808,20 @@ func (a *app) renderInference() string {
 		return sb.String()
 	}
 	ac := a.data.Active
-	sb.WriteString(stActive.Render(fmt.Sprintf(" %s  (:%d)  [● ACTIVE]", ac.ID, ac.Port)) + "\n")
+	if a.data.Metrics == nil {
+		sb.WriteString(stYellow.Render(fmt.Sprintf(" %s  (:%d)  [⟳ LOADING]", ac.ID, ac.Port)) + "\n")
+	} else {
+		sb.WriteString(stActive.Render(fmt.Sprintf(" %s  (:%d)  [● ACTIVE]", ac.ID, ac.Port)) + "\n")
+	}
 
 	if a.data.Metrics == nil {
+		phase := a.startupPhase
+		if phase == "" {
+			phase = "Starting up…"
+		}
+		sb.WriteString(stYellow.Render(" ⟳ " + phase) + "\n")
 		sb.WriteString(stDim.Render(" Running: —  Waiting: —  KV: —") + "\n")
-		sb.WriteString(stDim.Render(" Decode: —  PP: —") + "\n")
-		sb.WriteString(stDim.Render(" TTFT: —  pfill: —"))
+		sb.WriteString(stDim.Render(" Decode: —  PP: —"))
 		return sb.String()
 	}
 
@@ -784,12 +944,18 @@ func (a *app) renderModels() string {
 	var sb strings.Builder
 
 	// Status line at top
-	if a.swapping {
+	if a.confirming {
+		sb.WriteString(stYellow.Render(fmt.Sprintf("Swap to %s? [y/↵ confirm  n/esc cancel]", a.pendingSwap)) + "\n")
+	} else if a.swapping {
 		action := fmt.Sprintf("Loading %s…", a.swapFor)
 		if a.swapFor == "" {
 			action = "Unloading…"
 		}
-		sb.WriteString(a.spin.View() + " " + action + "\n")
+		phase := ""
+		if a.startupPhase != "" && a.swapFor != "" {
+			phase = "  " + stDim.Render(a.startupPhase)
+		}
+		sb.WriteString(a.spin.View() + " " + action + phase + "\n")
 	} else if a.swapMsg != "" && time.Since(a.swapMsgAt) < 5*time.Second {
 		if strings.HasPrefix(a.swapMsg, "✓") {
 			sb.WriteString(stGreen.Render(a.swapMsg) + "\n")
@@ -803,7 +969,18 @@ func (a *app) renderModels() string {
 		activeID = a.data.Active.ID
 	}
 
-	for i, p := range profiles {
+	vis := a.modelsVisible()
+	end := a.modelsScroll + vis
+	if end > len(profiles) {
+		end = len(profiles)
+	}
+
+	if a.modelsScroll > 0 {
+		sb.WriteString(stDim.Render("  ↑ more") + "\n")
+	}
+
+	for i, p := range profiles[a.modelsScroll:end] {
+		i += a.modelsScroll
 		sel := i == a.cursor
 		loaded := p == activeID
 		prefix := "  "
@@ -826,6 +1003,11 @@ func (a *app) renderModels() string {
 		}
 		sb.WriteString("\n")
 	}
+
+	if end < len(profiles) {
+		sb.WriteString(stDim.Render("  ↓ more") + "\n")
+	}
+
 	return strings.TrimRight(sb.String(), "\n")
 }
 
@@ -915,7 +1097,7 @@ func (a *app) renderStatus() string {
 	d := pollIntervals[a.intervalIdx]
 	dStr := d.String()
 	hint := fmt.Sprintf(
-		" tab panel  f full  ↑↓/jk nav  s/↵ swap  u unload  p poll:%s  r reload  q quit ",
+		" tab panel  f full  ↑↓/jk nav  s/↵ swap  y confirm  esc cancel  u unload  p poll:%s  r reload  q quit ",
 		dStr,
 	)
 	return lipgloss.NewStyle().

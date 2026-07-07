@@ -1,6 +1,7 @@
 package main
 
 import (
+	"encoding/json"
 	"flag"
 	"fmt"
 	"os"
@@ -19,10 +20,16 @@ func main() {
 	configPath := flag.String("config", defaultConfig(), "path to models.yaml")
 	logPath := flag.String("log", defaultLog(), "path to llama-swap log")
 	showVersion := flag.Bool("version", false, "print version and exit")
+	status := flag.Bool("status", false, "print stack status as JSON and exit")
 	flag.Parse()
 
 	if *showVersion {
 		fmt.Println(version)
+		return
+	}
+
+	if *status {
+		runStatus(*baseURL, *configPath)
 		return
 	}
 
@@ -32,6 +39,53 @@ func main() {
 		fmt.Fprintln(os.Stderr, "error:", err)
 		os.Exit(1)
 	}
+}
+
+// StatusResult is the JSON shape emitted by --status.
+type StatusResult struct {
+	Model            string `json:"model"`                      // profile ID; empty = nothing loaded
+	State            string `json:"state"`                      // "idle" | "starting" | "ready"
+	Name             string `json:"name,omitempty"`             // human-readable name from models.yaml
+	Port             int    `json:"port,omitempty"`             // backend port
+	MTP              bool   `json:"mtp"`                        // speculative MTP enabled
+	MTPTokens        int    `json:"mtp_tokens,omitempty"`       // num_speculative_tokens
+	Reasoning        bool   `json:"reasoning"`                  // --reasoning-parser present
+	ThinkingDefault  string `json:"thinking_default,omitempty"` // "on" | "off"
+	ContextLen       int    `json:"context_len,omitempty"`      // --max-model-len; 0 = model native
+	ConcurrencyLimit int    `json:"concurrency_limit,omitempty"`
+}
+
+func runStatus(baseURL, configPath string) {
+	data := fetchAll(baseURL)
+
+	var result StatusResult
+	if data.Active == nil {
+		result.State = "idle"
+	} else {
+		result.Model = data.Active.ID
+		result.Port = data.Active.Port
+		if data.Metrics != nil {
+			result.State = "ready"
+		} else {
+			result.State = "starting"
+		}
+		if reg, err := loadRegistry(configPath); err == nil {
+			if cfg, ok := reg.Models[data.Active.ID]; ok {
+				result.Name = cfg.Name
+				result.ConcurrencyLimit = cfg.ConcurrencyLimit
+				caps := ParseCapabilities(cfg)
+				result.MTP = caps.MTP
+				result.MTPTokens = caps.MTPTokens
+				result.Reasoning = caps.Reasoning
+				result.ThinkingDefault = caps.ThinkingDefault
+				result.ContextLen = caps.ContextLen
+			}
+		}
+	}
+
+	enc := json.NewEncoder(os.Stdout)
+	enc.SetIndent("", "  ")
+	enc.Encode(result) //nolint:errcheck
 }
 
 func defaultConfig() string {

@@ -1,0 +1,89 @@
+#!/usr/bin/env bash
+# Autotune dense W8A8 block-FP8 GEMM kernel configs for AMD Radeon R9700.
+#
+# vLLM ships pre-tuned configs for MI300X/MI325X but not for RDNA4 (R9700).
+# At startup, 5 dense GEMM shapes fall back to a sub-optimal default config.
+# This script finds the optimal tile params for each shape on the R9700 and
+# saves them as JSON files that vLLM picks up automatically on next start.
+#
+# The JSON files are written to vllm-dense-fp8-configs/ and then mounted into
+# the production containers via individual file bind-mounts (see instructions
+# printed at the end of this script).
+#
+# Expected runtime: 10-20 min (first run includes Triton JIT compilation)
+#
+# Usage:
+#   llmctl unload                  # free all GPU memory first
+#   scripts/tune-dense-fp8         # runs the sweep (blocks until done)
+#   # then follow the mount instructions printed at the end
+
+set -euo pipefail
+
+LLMSTACK_DIR="$(cd "$(dirname "$0")/.." && pwd)"
+OUTPUT_DIR="$LLMSTACK_DIR/vllm-dense-fp8-configs"
+CONTAINER_NAME="llmstack-dense-fp8-tune"
+
+echo "=== Dense FP8 block GEMM autotuner for AMD Radeon R9700 ==="
+echo "    LLMSTACK_DIR : $LLMSTACK_DIR"
+echo "    Output dir   : $OUTPUT_DIR"
+echo "    Container    : $CONTAINER_NAME"
+echo ""
+
+mkdir -p "$OUTPUT_DIR"
+
+# Warn if any llmstack containers are running (GPU contention)
+RUNNING=$(podman ps --format "{{.Names}}" 2>/dev/null | grep "^llmstack-" || true)
+if [ -n "$RUNNING" ]; then
+    echo "WARNING: Running containers detected (GPU may be in use):"
+    echo "$RUNNING" | sed 's/^/  /'
+    echo ""
+    echo "Run 'llmctl unload' first to free GPU memory, then re-run this script."
+    echo "Proceeding anyway — the tuner will fail if it can't allocate GPU memory."
+    echo ""
+fi
+
+echo "Starting tuner container ..."
+echo ""
+
+podman run --rm \
+    --name "$CONTAINER_NAME" \
+    --device=/dev/kfd \
+    --device=/dev/dri \
+    --group-add keep-groups \
+    --security-opt seccomp=unconfined \
+    --security-opt apparmor=unconfined \
+    --ipc=private \
+    --shm-size=8g \
+    --network=none \
+    -v "$LLMSTACK_DIR/scripts:/scripts:ro" \
+    -v "$LLMSTACK_DIR/.triton-cache:/root/.triton/cache" \
+    -v "$OUTPUT_DIR:/dense-fp8-configs" \
+    -e HSA_ENABLE_SDMA=0 \
+    --entrypoint="" \
+    docker.io/vllm/vllm-openai-rocm:v0.24.0 \
+    python3 /scripts/tune-dense-fp8-kernel.py --output /dense-fp8-configs "$@"
+
+echo ""
+echo "=== Tuning complete ==="
+echo ""
+echo "Config files written:"
+ls -1 "$OUTPUT_DIR"/*.json 2>/dev/null | sed 's|.*/||' | sed 's/^/  /'
+echo ""
+echo "To activate these configs, add the following volume mounts to each"
+echo "affected vLLM profile in config/models.yaml (qwen3.6-27b-fp8 and"
+echo "qwen3.6-27b-code). Insert them alongside the existing -v mounts:"
+echo ""
+
+CONFIGS_PATH="/usr/local/lib/python3.12/dist-packages/vllm/model_executor/layers/quantization/utils/configs"
+
+for json_file in "$OUTPUT_DIR"/*.json; do
+    fname=$(basename "$json_file")
+    echo "        -v $LLMSTACK_DIR/vllm-dense-fp8-configs/$fname:$CONFIGS_PATH/$fname:ro"
+done
+
+echo ""
+echo "Then restart: llmctl down && llmctl up && llmctl swap qwen3.6-27b-code"
+echo "Verify:       llmctl logs qwen3.6-27b-code | grep 'Using configuration'"
+echo ""
+echo "Each matched shape should log: 'Using configuration from ...R9700...'"
+echo "instead of: 'Using default W8A8 Block FP8 kernel config. Performance might be sub-optimal!'"

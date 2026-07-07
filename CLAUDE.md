@@ -147,7 +147,7 @@ The locally-built image (`localhost/llmstack-vllm:latest`) uses vLLM 0.10.2rc2 w
 transformers 5.7.0.dev0. Transformers 5.x removed `all_special_tokens_extended`, which
 causes `AttributeError` on Qwen3 models at startup. **Do not use this image.**
 
-All vLLM profiles must use: `docker.io/vllm/vllm-openai-rocm:latest` (vLLM 0.22.1, ROCm 7.2)
+All vLLM profiles must use: `docker.io/vllm/vllm-openai-rocm:v0.24.0` (vLLM 0.24.0, ROCm 7.2). Pinned tag policy: never reference the moving `:latest` tag — bump the pin here, in config/models.yaml, config/CLAUDE.md, and scripts/ together after canary validation (see docs/upgrade-plan-2026-07.md)
 
 ### FP8 kernel config — MoE experts are tuned, dense layers are not
 
@@ -160,13 +160,17 @@ Using configuration from /vllm-tuned-configs/E=64,N=512,device_name=AMD_Radeon_R
 This file lives in `vllm-tuned-configs/` and is mounted via `-v __LLMSTACK_DIR__/vllm-tuned-configs:/vllm-tuned-configs:ro`
 with `-e VLLM_TUNED_CONFIG_FOLDER=/vllm-tuned-configs` set in the env.
 
-**Dense attention/FFN layers (not yet tuned — expected warning):**
+**Dense attention/FFN layers (not tuned — expected warning):**
 ```
 Using default W8A8 Block FP8 kernel config. Performance might be sub-optimal!
-Config file not found at .../N=3072,K=2048,device_name=AMD_Radeon_R9700,dtype=fp8_w8a8,block_shape=[128,128].json
+Config file not found at .../N=4096,K=5120,device_name=AMD_Radeon_R9700,dtype=fp8_w8a8,block_shape=[128,128].json
 ```
-The `N=3072,K=2048` config (shared attention GEMM layers) has not been tuned for R9700.
-This warning is expected and acceptable — it falls back to MI300X defaults.
+The 5 dense GEMM shapes have not been tuned for R9700. This warning is expected and acceptable.
+The MI300X defaults are intentionally kept: a synthetic Triton tile sweep was attempted
+(scripts/tune-dense-fp8) and produced a -50% regression under real inference. Isolated
+do_bench tuning finds tile configs that win on random tensors but underperform under full
+model inference (memory pressure, interleaved ops, cache effects). Do not add R9700 dense
+configs unless tuned under actual vLLM inference load.
 
 If startup shows "Config file not found for device_name=AMD_Radeon_R9700" for the MoE config
 (E=64,N=512), the VLLM_TUNED_CONFIG_FOLDER env var or the volume mount is broken.
@@ -218,7 +222,8 @@ See `tui/CLAUDE.md` for architecture and coding conventions.
 | `qwen3.6-35b-fast` | vLLM | ~35 GB | 3B (MoE) | Thinking OFF by default |
 | `qwen3.6-35b-512k` | vLLM + MTP + YaRN | ~35 GB | 3B (MoE) | 512K ctx via RoPE scaling |
 | `qwen3.6-35b-awq` | vLLM AWQ | ~20 GB | 3B (MoE) | Int4; no expert-parallel |
-| `qwen3.6-27b-fp8` | vLLM | ~29 GB | 27B (dense) | Highest SWE-bench (77.2) |
+| `qwen3.6-27b-fp8` | vLLM | ~29 GB | 27B (dense) | Highest SWE-bench (77.2); no MTP |
+| `qwen3.6-27b-code` ✓ | vLLM + MTP | ~29 GB | 27B (dense) | MTP; 131K ctx; 381 tok/s @ conc=8 |
 | `qwen3.6-27b-q4km` | llama-server | ~17 GB | 27B (dense) | GGUF; low VRAM |
 | `qwen3.6-35b-q4ks` | llama-server | ~20 GB | 3B (MoE) | GGUF; fast cold start |
 | `qwen3-coder-30b-fp8` | vLLM | ~30 GB | 3B (MoE) | Legacy baseline only |
@@ -240,21 +245,19 @@ All measured on 4× R9700, vLLM 0.22.1, `--no-thinking`, MTP where noted.
 
 | Profile | serial | conc=8 | conc=16 |
 |---------|--------|--------|---------|
-| qwen3.6-35b-code (MTP, no tuned MoE config) | 43 | 261 | 481 |
-| qwen3.6-35b-code (MTP, R9700 tuned MoE config) | 43 | 175 | — |
+| qwen3.6-35b-code (MTP, MI300X defaults) | 43 | 261 | 481 |
 | qwen3.6-35b-awq | 92 | 250 | — |
 | qwen3.6-35b-fp8 no-MTP | 69 | 222 | — |
 | qwen3.6-27b-fp8 | 23 | 153 | — |
+| qwen3.6-27b-code (MTP, 131K ctx) | 67 | 381 | 629 |
 | qwen3-coder-30b-fp8 | 39 | 158 | — |
 | gemma4-26b-a4b (vLLM BF16) | 53.4 | 287.1 | **528.2** |
 | gemma4-26b-q8 (GGUF, llama-server) | 65.5 | 153.9 | 135.8 |
 | gemma4-12b-q4 (GGUF, llama-server) | 36.1 | 108.9 | 94.8 |
 
-**Note:** The R9700-tuned MoE configs (2026-06-18) show -33% regression at conc=8 vs
-MI300X defaults (175 vs 261 tok/s), while serial throughput is unchanged (43 tok/s).
-The tuning was done under isolated single-request load; the configs appear suboptimal
-for concurrent inference (conc≥8) where multiple requests compete for GPU memory/cache.
-Consider reverting `VLLM_TUNED_CONFIG_FOLDER` to use MI300X defaults for concurrent workloads.
+**Note:** R9700-tuned MoE configs (-33% at conc=8) were reverted; all 35b profiles now
+use MI300X defaults which outperform at concurrent load. The 261 tok/s figure above was
+measured before MTP was added — a fresh conc=8 baseline for 35b-code is pending.
 
 Full data across all prompt sizes: `bench/CLAUDE.md` and `bench/baselines/`.
 

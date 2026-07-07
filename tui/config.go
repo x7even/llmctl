@@ -3,6 +3,8 @@ package main
 import (
 	"fmt"
 	"os"
+	"regexp"
+	"strconv"
 	"strings"
 
 	"gopkg.in/yaml.v3"
@@ -81,6 +83,50 @@ func extractOrder(mapping *yaml.Node, key string) []string {
 		}
 	}
 	return nil
+}
+
+// ── Capabilities ──────────────────────────────────────────────────────────────
+
+// ModelCapabilities summarises the runtime features derived from cmd flags.
+type ModelCapabilities struct {
+	MTP             bool
+	MTPTokens       int    // num_speculative_tokens; 0 if MTP off
+	Reasoning       bool   // --reasoning-parser present
+	ThinkingDefault string // "on" or "off"; "" when reasoning not supported
+	ContextLen      int    // --max-model-len value; 0 = model native (no override)
+}
+
+var (
+	reMTPTokens  = regexp.MustCompile(`"num_speculative_tokens"\s*:\s*(\d+)`)
+	reContextLen = regexp.MustCompile(`--max-model-len\s+(\d+)`)
+)
+
+// ParseCapabilities extracts MTP, reasoning and context flags from a profile's Cmd.
+func ParseCapabilities(cfg ModelConfig) ModelCapabilities {
+	cmd := cfg.Cmd
+	var c ModelCapabilities
+
+	if strings.Contains(cmd, `"method": "mtp"`) || strings.Contains(cmd, `"method":"mtp"`) {
+		c.MTP = true
+		if m := reMTPTokens.FindStringSubmatch(cmd); m != nil {
+			c.MTPTokens, _ = strconv.Atoi(m[1])
+		}
+	}
+
+	c.Reasoning = strings.Contains(cmd, "--reasoning-parser")
+	if c.Reasoning {
+		if strings.Contains(cmd, "no-think") || strings.Contains(cmd, "no_think") {
+			c.ThinkingDefault = "off"
+		} else {
+			c.ThinkingDefault = "on"
+		}
+	}
+
+	if m := reContextLen.FindStringSubmatch(cmd); m != nil {
+		c.ContextLen, _ = strconv.Atoi(m[1])
+	}
+
+	return c
 }
 
 // ── Config display ─────────────────────────────────────────────────────────────

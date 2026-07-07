@@ -1,5 +1,6 @@
 # Secrets and runtime state — never commit
 config/mcp.json
+.rollback/
 config/models.yaml.bak
 .env
 *.pid

@@ -17,7 +17,7 @@ No screen; GPU-only headless rig. PCIe 5.0 ×16 per slot.
 
 | Image | vLLM | ROCm | Use when |
 |---|---|---|---|
-| `docker.io/vllm/vllm-openai-rocm:latest` | 0.22.1 | 7.2 | All vLLM profiles (FP8, AWQ, safetensors) |
+| `docker.io/vllm/vllm-openai-rocm:v0.24.0` | 0.24.0 | 7.2 | All vLLM profiles (FP8, AWQ, safetensors) |
 | `localhost/llmstack-llama:latest` | llama.cpp | Vulkan | GGUF models |
 
 All vLLM profiles use `--entrypoint="" ... vllm serve` because the AMD official
@@ -39,9 +39,9 @@ The compilation cache is mounted via `-v .vllm-cache:/root/.cache/vllm` and
 `-v .triton-cache:/root/.triton/cache`. After the first start these directories
 are populated and subsequent starts skip the Inductor compilation entirely.
 
-`healthCheckTimeout` is set to 300 s — sufficient for warm starts. On a fresh
-machine (empty cache), manually run `llmctl logs <profile>` and wait for
-"Application startup complete." before the first use.
+`healthCheckTimeout` is set to 1200 s — sufficient for warm starts and the ~800 s FP8
+KV calibration that runs on every cold start. On a fresh machine (empty cache), manually
+run `llmctl logs <profile>` and wait for "Application startup complete." before the first use.
 
 ---
 
@@ -64,7 +64,10 @@ output quality matters more than raw latency.
 - `--enable-expert-parallel` — MoE experts distributed across GPUs for better
   utilisation with TP=4.
 - `--reasoning-parser qwen3` — strips `<think>…</think>` from `content` and
-  exposes it in `reasoning_content`. Thinking is ON by default (Qwen3.6 native).
+  exposes it in the response's reasoning field. Thinking is ON by default (Qwen3.6 native).
+  **Field name changed in vLLM 0.24.0:** responses now carry `message.reasoning`
+  (streaming: `delta.reasoning`); vLLM ≤0.22.x used `message.reasoning_content`.
+  Clients parsing the old field silently get nothing — check both, prefer the new name.
 - `--enable-prefix-caching` — caches common prompt prefixes across requests.
   Agentic workflows with shared system prompts see 2–3× effective throughput gain.
 - `--cudagraph-capture-sizes 1 2 4 8 16 32` — explicit graph sizes instead of
@@ -72,7 +75,11 @@ output quality matters more than raw latency.
   loss at practical concurrency levels (batches > 32 fall back to eager).
 - Context: 262,144 tokens (native hybrid linear+full attention)
 
-**Benchmark — vLLM 0.22.1, no-thinking, MTP enabled (2026-06-06):**
+**Benchmark — vLLM 0.22.1, no-thinking, no-MTP (2026-06-06):**
+
+> **Note:** These figures were measured *before* MTP was added to this profile. MTP has
+> since been enabled via `--speculative-config`. A fresh conc=8 baseline with MTP active
+> is pending. The numbers below reflect the pre-MTP FP8 baseline.
 
 | Prompt | serial | conc=2 | conc=4 | conc=8 | conc=16 |
 |--------|--------|--------|--------|--------|---------|
@@ -89,11 +96,12 @@ Decode tok/s. p90 latency at conc=8: ~5 s (medium), ~12 s (long), ~49 s (xlarge)
 |--------|-------------|
 | vLLM 0.20.0 + MTP + thinking | 485 |
 | vLLM 0.20.0 no-MTP no-thinking | 222 |
-| vLLM 0.22.1 + MTP no-thinking | **261** |
+| vLLM 0.22.1 no-MTP no-thinking | **261** |
 | AWQ Int4 no-MTP no-thinking | 250 |
 
 The 0.20.0 thinking number is not directly comparable (thinking tokens inflate
 measured throughput). The 0.22.1 and AWQ no-thinking numbers are clean comparisons.
+The 261 figure is the pre-MTP baseline; a fresh conc=8 run with MTP enabled is pending.
 
 ---
 
@@ -140,6 +148,26 @@ attention; the remaining 30 use linear attention (O(n)). KV cache is needed for 
 of layers only, making 512K context practical where it would OOM on a dense model.
 
 **Concurrency limit:** 16. At 512K context, one sequence consumes most available KV cache.
+
+---
+
+### `qwen3.6-35b-32k` / `-64k` / `-128k` / `-128k-nomtp` — context-bounded variants
+
+Clones of the code profile with `--max-model-len` bounded to 32K/64K/128K: a smaller
+KV pool means faster warmup and more sequence headroom for tool-call/MCP sessions
+that never approach 256K. The `-32k`/`-64k`/`-128k` variants keep MTP.
+
+**`qwen3.6-35b-128k-nomtp`** (alias `35b-nomtp`) drops speculative decoding. Measured
+on vLLM 0.24.0 (2026-07-07, 4× R9700, 1024-in/256-out, seed 42):
+
+| Profile | conc 1 tok/s | conc 8 tok/s | ITL p50 @ conc 8 |
+|---|---|---|---|
+| `-128k` (MTP) | **68.98** | 312.42 | 49.5 ms |
+| `-128k-nomtp` | ~59 | **329.70** | **19.0 ms** |
+
+Rule of thumb: **MTP for single-user interactive sessions; no-MTP for parallel agent
+fleets** (conc ≥ 8). Switching between the two invalidates the vLLM compile-cache match —
+budget ~16 min for the first swap in each direction. Full data: docs/upgrade-plan-2026-07.md.
 
 ---
 
@@ -196,6 +224,66 @@ parameters per forward pass. This makes it slower but more accurate:
 | | serial | conc=4 | conc=8 |
 |---|---|---|---|
 | decode tok/s | 23 | 125 | **153** |
+
+No MTP. For the MTP-enabled variant with higher throughput see `qwen3.6-27b-code` below.
+
+---
+
+### `qwen3.6-27b-code` — dense 27B with MTP
+
+**Aliases:** `27b-code`
+
+**Use for:** High-quality code generation where throughput at concurrent load matters;
+same SWE-bench accuracy as `qwen3.6-27b-fp8` (77.2) with significantly higher tok/s
+at conc≥4 due to Multi-Token Prediction.
+
+**Key differences from `qwen3.6-27b-fp8`:**
+- MTP enabled (`--speculative-config '{"method": "mtp", "num_speculative_tokens": 2}'`) —
+  major throughput uplift at conc≥4 where batch verification amortises draft cost.
+- 131,072 token context (vs shorter in the fp8 profile).
+- BF16 KV cache (no `--kv-cache-dtype fp8`) — slightly higher VRAM per token but avoids
+  per-start FP8 KV calibration (~16 min).
+- `--gpu-memory-utilization 0.95`, `--max-num-seqs 32`.
+
+**Benchmark (vLLM 0.22.1, no-thinking, MTP enabled, 2026-06-21):**
+
+| Prompt | serial | conc=2 | conc=4 | conc=8 | conc=16 |
+|--------|--------|--------|--------|--------|---------|
+| short-64    | 65 | 89  | 122 | **303** | 500 |
+| medium-256  | 67 | 115 | 214 | **381** | 629 |
+| long-512    | 74 | 128 | 240 | **412** | 677 |
+| xlarge-2048 | 71 | 127 | 243 | **444** | 720 |
+
+Decode tok/s. Baseline: `bench/baselines/qwen3.6-27b-code-notunableop-20260621.json`.
+p90 latency at conc=8: ~3.7 s (medium), ~7.8 s (long), ~37 s (xlarge).
+
+**MTP impact vs no-MTP (medium-256):**
+
+| | conc=1 | conc=4 | conc=8 | conc=16 |
+|--|--------|--------|--------|---------|
+| qwen3.6-27b-fp8 (no MTP, 2026-05-09) | 26 | 125 | 153 | — |
+| qwen3.6-27b-code (MTP, 2026-06-21)   | 66 | 214 | **381** | 629 |
+
+The ~2.5× gain at conc=8 is primarily MTP — the profiles also differ in context length
+and KV dtype, but MTP is the dominant factor at high concurrency.
+
+---
+
+### `qwen3.6-27b-code-f16` — dense 27B BF16 (full precision)
+
+**Aliases:** `27b-f16`, `27b-bf16`
+
+**Use for:** Highest-quality code generation where quantisation fidelity matters; comparing
+BF16 vs FP8 output quality on the 27B dense model.
+
+**Key differences from `qwen3.6-27b-code` (FP8):**
+- Full BF16 weights — zero W8A8 quantisation error in dense attention/FFN layers.
+- Higher VRAM footprint: ~54 GB weights vs ~29 GB for FP8; leaves ~74 GB for KV cache.
+- MTP enabled (`--speculative-config '{"method": "mtp", "num_speculative_tokens": 2}'`).
+- 131,072 token context (BF16 KV, same as FP8 code profile).
+- Decode throughput approximately half of FP8 (reads 2× weight bytes per step).
+
+**Benchmark:** not benchmarked. Expected serial ~30–35 tok/s (half the FP8 rate).
 
 ---
 
@@ -279,8 +367,8 @@ giving MoE-class throughput at a fraction of the VRAM of a dense model. It suppo
 multimodal input (image + text) via a bundled SigLIP-400M vision encoder. Thinking/reasoning
 mode is active by default in the IT variant.
 
-Three profiles are configured. As of 2026-06-13, only `gemma4-26b-q8` has model files on
-disk and has been benchmarked. The other two require model downloads before use.
+Four profiles are configured. As of 2026-06-13, only `gemma4-26b-q8` has model files on
+disk and has been benchmarked. The other three require model downloads before use.
 
 ---
 
@@ -405,7 +493,7 @@ pressure at long contexts with 4 concurrent streams; speedup recovers at conc=16
 
 **Aliases:** `gemma4-vllm`, `gemma4-concurrent`
 
-**Backend:** vLLM 0.22.1 (`docker.io/vllm/vllm-openai-rocm:latest`), BF16 safetensors.
+**Backend:** vLLM 0.24.0 (`docker.io/vllm/vllm-openai-rocm:v0.24.0`), BF16 safetensors.
 **Model path:** `/mnt/models/llm/google/gemma-4-26B-A4B-it`
 **VRAM:** 122.7 GB across 4 GPUs — nearly fills all 128 GB. Profile is exclusive; cannot
 co-load with any other model. The large VRAM footprint is the model weights (49 GB BF16)
@@ -413,7 +501,8 @@ plus the KV cache pool vLLM allocates at startup.
 
 **Use for:** High-concurrency agent workloads. vLLM's PagedAttention and MoE architecture
 (4B active params per token) combine to give outstanding batching efficiency — **528 tok/s
-at conc=16** on medium-256 prompts, which beats `qwen3.6-35b-code` with MTP (481 tok/s).
+at conc=16** on medium-256 prompts, which exceeds the pre-MTP `qwen3.6-35b-code` baseline
+(481 tok/s; a fresh MTP-enabled baseline for 35b-code is pending).
 Use this profile when many parallel requests are hitting Gemma 4 simultaneously.
 
 **First boot:** vLLM triggers Inductor/Triton compile on first start (~3–5 min with warm
@@ -463,24 +552,49 @@ dynamics at that concurrency level.
 
 ---
 
+### `gemma4-26b-fp8` — Gemma 4 26B FP8 vLLM (long-context)
+
+**Aliases:** `gemma4-fp8`, `gemma4-fast-vllm`
+
+**Backend:** vLLM 0.24.0 (`docker.io/vllm/vllm-openai-rocm:v0.24.0`), FP8-Dynamic weights.
+**Model path:** `/mnt/models/llm/RedHatAI/gemma-4-26B-A4B-it-FP8-Dynamic`
+**VRAM:** ~26 GB FP8 weights + BF16 KV cache across 4 GPUs.
+
+**Use for:** Long-context coding sessions and document analysis. FP8 quantisation roughly
+halves weight VRAM vs BF16, leaving far more headroom for KV cache at extended context.
+Max context: 262,144 tokens. Heterogeneous attention architecture (25 sliding + 5 full
+attention layers) makes this efficient at long contexts.
+
+**Key config notes:**
+- `--max-model-len 262144` — full native context window.
+- No `--kv-cache-dtype fp8` — BF16 KV avoids calibration; ~2× VRAM per KV token vs FP8 KV
+  but is simpler and avoids accuracy questions at long contexts.
+- No `--enable-expert-parallel` — not confirmed supported for this MoE architecture.
+- No `--reasoning-parser` — Gemma 4 has no structured thinking mode.
+
+**Benchmark:** not benchmarked. Model requires download to `/mnt/models/llm/RedHatAI/`.
+
+---
+
 ### Gemma 4 cross-model comparison
 
-All three Gemma 4 profiles benchmarked. Medium-256 prompt, decode tok/s:
+Three of four Gemma 4 profiles have benchmark data. Medium-256 prompt, decode tok/s:
 
 | Model | backend | quant | VRAM | conc=1 | conc=8 | conc=16 |
 |-------|---------|-------|------|--------|--------|---------|
 | `gemma4-26b-a4b` | vLLM | BF16 | 123 GB | 53.4 | 287.1 | **528.2** |
+| `gemma4-26b-fp8` | vLLM | FP8 | ~26 GB | — | — | — |
 | `gemma4-26b-q8` | llama-server | Q8_0 GGUF | 32 GB | 65.5 | 153.9 | 135.8 |
 | `gemma4-12b-q4` | llama-server | Q4_K_M GGUF | 13 GB | 36.1 | 108.9 | 94.8 |
 | — | — | — | — | — | — | — |
-| `qwen3.6-35b-code` (MTP, no-think) | vLLM | FP8 | 35 GB | 43 | 261 | 481 |
-| `qwen3.6-35b-fast` (no-think) | vLLM | FP8 | 35 GB | 69 | 222 | — |
+| `qwen3.6-35b-code` (pre-MTP baseline, no-think) | vLLM | FP8 | 35 GB | 43 | 261 | 481 |
+| `qwen3.6-35b-fast` (no-think, no-MTP) | vLLM | FP8 | 35 GB | 69 | 222 | — |
 | `qwen3.6-35b-q4ks` | llama-server | Q4_K_S | 20 GB | ~80 | ~175 | — |
 
 **Key findings:**
-- `gemma4-26b-a4b` **beats** `qwen3.6-35b-code+MTP` at conc=16 (528 vs 481 tok/s) despite
-  being BF16 vs FP8 and having no speculative decoding. The 4B active params per token
-  allows vLLM to pack dramatically more requests per batch.
+- `gemma4-26b-a4b` **beats** `qwen3.6-35b-code` (pre-MTP baseline) at conc=16 (528 vs
+  481 tok/s) despite being BF16 vs FP8 and having no speculative decoding. The 4B active
+  params per token allows vLLM to pack dramatically more requests per batch.
 - `gemma4-26b-q8` serial (65.5) is comparable to Qwen3.6 FP8 serial (43–69) but doesn't
   scale as well with concurrency — llama-server caps at `--parallel 16` without vLLM's
   PagedAttention. Advantage: 32 GB VRAM vs 123 GB, can co-load with other models.

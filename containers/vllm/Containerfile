@@ -5,7 +5,7 @@
 # models at startup.
 #
 # All profiles now use the AMD official image instead:
-#   docker.io/vllm/vllm-openai-rocm:latest  (vLLM 0.22.1, ROCm 7.2)
+#   docker.io/vllm/vllm-openai-rocm:v0.24.0  (vLLM 0.24.0, ROCm 7.2)
 #
 # This file is retained for reference only.
 FROM localhost/vllm-rdna4:rocm7.1.1-navi-fixed

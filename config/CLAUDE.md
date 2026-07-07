@@ -39,7 +39,7 @@ startup or a startup failure.
 ```yaml
 cmd: podman run --rm --entrypoint="" \
   ... \
-  docker.io/vllm/vllm-openai-rocm:latest \
+  docker.io/vllm/vllm-openai-rocm:v0.24.0 \
   vllm serve /models/<dir> ...
 ```
 
@@ -105,7 +105,11 @@ dimension 1 with size 1`. FP8 profiles can keep `--enable-expert-parallel`.
 This image (vLLM 0.10.2rc2) is broken with transformers 5.x — crashes with
 `AttributeError: 'Qwen3Config' object has no attribute 'all_special_tokens_extended'`.
 
-All vLLM profiles must use: `docker.io/vllm/vllm-openai-rocm:latest`
+All vLLM profiles must use the same **pinned** tag: `docker.io/vllm/vllm-openai-rocm:v0.24.0`.
+Never reference the moving `:latest` tag — it silently changes what vLLM version
+production runs. Version bumps happen deliberately: canary first, then update the
+pin everywhere at once (models.yaml, this file, root CLAUDE.md, scripts/) — see
+docs/upgrade-plan-2026-07.md. Rollback anchor: `localhost/vllm-openai-rocm:v0.22.1-baseline`.
 
 ### MTP requires the draft head file
 
@@ -145,7 +149,7 @@ Use llama-server (Vulkan) for all GGUF files. Use vLLM for safetensors only.
             -v /mnt/models/llm:/models:ro \
             -v __LLMSTACK_DIR__/.vllm-cache:/root/.cache/vllm \
             -v __LLMSTACK_DIR__/.triton-cache:/root/.triton/cache \
-            docker.io/vllm/vllm-openai-rocm:latest \
+            docker.io/vllm/vllm-openai-rocm:v0.24.0 \
             vllm serve /models/<model-dir> \
               --served-model-name <profile-id> \
               --tensor-parallel-size 4 \

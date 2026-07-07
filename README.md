@@ -4,7 +4,7 @@ OpenAI-compatible LLM serving stack for **concurrent agent use**.
 Designed for: Claude Code · OpenCode · MCP testing · agent frameworks · raw API clients.
 
 Reference hardware: 1–4× AMD Radeon AI PRO R9700 (gfx1201, 32 GB each) — `scripts/configure` auto-detects your GPU count and patches the config accordingly. See [Hardware compatibility](#hardware-compatibility) for details.  
-Backends: **vLLM 0.22.1** (FP8/AWQ/safetensors, PagedAttention, high concurrency) + **llama-server Vulkan** (GGUF models)  
+Backends: **vLLM 0.24.0** (FP8/AWQ/safetensors, PagedAttention, high concurrency) + **llama-server Vulkan** (GGUF models)  
 Router: **llama-swap** — one OpenAI endpoint, models loaded on demand by the `model` field
 
 ---
@@ -18,7 +18,7 @@ Before cloning, confirm these are in place:
 - **GPU device group membership** — your user must be in the `render` (and optionally `video`) group: `groups | grep render`. If not: `sudo usermod -aG render,video $USER` then log out and back in.
 - **Models on disk** — the config expects models at `/mnt/models/llm/`. Adjust the `-v` mount paths in `config/models.yaml` if yours are elsewhere.
 
-The vLLM container image (`docker.io/vllm/vllm-openai-rocm:latest`) is large (~20 GB) and will be pulled automatically on first `llmctl swap`. Make sure you have the disk space and a reasonable connection before starting.
+The vLLM container image (`docker.io/vllm/vllm-openai-rocm:v0.24.0`) is large (~35 GB) and will be pulled automatically on first `llmctl swap`. Make sure you have the disk space and a reasonable connection before starting.
 
 ---
 
@@ -82,6 +82,8 @@ llmpanel
 | `qwen3.6-35b-code` | vLLM TP=4 + MTP | ~35 GB | 262K | Claude Code, OpenCode, agentic coding — highest quality |
 | `qwen3.6-35b-fast` | vLLM TP=4 | ~35 GB | 262K | Low-latency chat; thinking disabled by default |
 | `qwen3.6-35b-512k` | vLLM TP=4 + MTP + YaRN | ~35 GB | 512K | Large codebase ingestion, long documents |
+| `qwen3.6-35b-32k` / `-64k` / `-128k` | vLLM TP=4 + MTP | ~35 GB | 32K–128K | Context-bounded variants of the code profile; smaller KV pool, faster warmup |
+| `qwen3.6-35b-128k-nomtp` | vLLM TP=4 | ~35 GB | 128K | Parallel agent fleets — beats MTP at conc≥8 with 2.6× better ITL (see docs/models.md) |
 | `qwen3.6-35b-awq` | vLLM TP=4, AWQ Int4 | ~20 GB | 262K | Quality/VRAM tradeoff; leaves headroom for large KV cache |
 | `qwen3.6-27b-fp8` | vLLM TP=4 | ~29 GB | 262K | Dense model; highest SWE-bench (77.2 vs 73.4 for MoE) |
 | `qwen3.6-27b-q4km` | llama-server Vulkan | ~17 GB | 32K | Dense Q4 GGUF; minimal VRAM footprint |
