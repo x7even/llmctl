@@ -65,23 +65,32 @@ llmctl down && llmctl up
 
 ## vLLM cold start — critical knowledge
 
-**First boot on a fresh machine takes 18–20 minutes.** This is normal. Breakdown:
+**Historical figures (vLLM ≤0.25.x, per-shape Inductor compilation):** first boot on a
+fresh machine took 18–20 minutes — ~14 min Inductor torch.compile (4 TP ranks in
+parallel, cached after the first run in `.vllm-cache/`) plus ~14 min (~800 s) of model
+profiling/warmup (FP8 KV calibration), uncached, every start. `healthCheckTimeout: 1200`
+and `llmctl swap` timeout `1260` s were sized for this.
 
-| Phase | Time | Cached? |
-|-------|------|---------|
-| Inductor torch.compile (4 TP ranks in parallel) | ~14 min | ✅ `.vllm-cache/` |
-| Model profiling/warmup (FP8 KV calibration) | ~14 min | ❌ every start |
-| CUDA graph capture (6 batch sizes) | ~13 s | ❌ every start |
-| **Total — first boot** | **~30 min** | |
-| **Total — subsequent boots** | **~16 min** | |
+**vLLM 0.26.0 changed this dramatically.** It replaced per-shape Inductor compilation
+with a single dynamic-shape "compile range" (log: `Compiling a graph for compile range
+(1, 32768) takes ~20s`), and the FP8 KV-calibration/profiling step dropped from ~800s to
+~20-40s. Measured cold-start totals on this hardware (warm `.vllm-cache/`, 2026-07-27):
 
-Note: the model profiling/warmup run (FP8 KV calibration + memory profiling) takes ~800 s every
-cold start for Qwen3.6-35B-A3B-FP8 with TP=4/EP=4 and 262K context. This is unavoidable.
-`healthCheckTimeout: 1200` in models.yaml and `llmctl swap` timeout of 1260 s accommodate this.
+| Profile | Profiling/warmup step | Total swap time |
+|---------|----------------------|-----------------|
+| `qwen3.6-35b-128k-nomtp` (FP8, no MTP) | 20.98 s | 2m04s |
+| `qwen3.6-35b-128k` (FP8, MTP) | — | 2m41s |
+| `gemma4-26b-a4b` (BF16) | — | 3m07s |
+| `qwen3.6-35b-awq` (AWQ Int4) | 37.17 s | 3m21s |
+
+First boot is now **~2-3 minutes**, not 18-20. `healthCheckTimeout`/swap timeouts are kept
+at a generous 2100 s ceiling (see `config/models.yaml`) as headroom for profiles not
+covered by this measurement (256K/512K YaRN-scaled contexts, dense 27B) — treat that
+number as a safety margin, not the expected wait.
 
 **TTL must be 0 for these profiles.** llama-swap's TTL timer starts from container launch, not
-from when the model becomes healthy. If startup (800 s) exceeds TTL (600 s), the model is
-immediately unloaded the moment it becomes healthy. All three FP8-35B profiles set `ttl: 0`.
+from when the model becomes healthy. Even at the new ~2-3 min startup, a TTL below that would
+unload the model the moment it becomes healthy. All FP8-35B profiles set `ttl: 0`.
 
 The cache directories `.vllm-cache/` and `.triton-cache/` live in this repo root (gitignored).
 They **must exist on the host** — created automatically by `mkdir -p .vllm-cache .triton-cache`
@@ -147,7 +156,7 @@ The locally-built image (`localhost/llmstack-vllm:latest`) uses vLLM 0.10.2rc2 w
 transformers 5.7.0.dev0. Transformers 5.x removed `all_special_tokens_extended`, which
 causes `AttributeError` on Qwen3 models at startup. **Do not use this image.**
 
-All vLLM profiles must use: `docker.io/vllm/vllm-openai-rocm:v0.24.0` (vLLM 0.24.0, ROCm 7.2). Pinned tag policy: never reference the moving `:latest` tag — bump the pin here, in config/models.yaml, config/CLAUDE.md, and scripts/ together after canary validation (see docs/upgrade-plan-2026-07.md)
+All vLLM profiles must use: `docker.io/vllm/vllm-openai-rocm:v0.26.0` (vLLM 0.26.0, ROCm 7.2.3). Pinned tag policy: never reference the moving `:latest` tag — bump the pin here, in config/models.yaml, config/CLAUDE.md, and scripts/ together after canary validation (see docs/upgrade-plan-2026-07.md)
 
 ### FP8 kernel config — MoE experts are tuned, dense layers are not
 

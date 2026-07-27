@@ -18,7 +18,7 @@ Before cloning, confirm these are in place:
 - **GPU device group membership** — your user must be in the `render` (and optionally `video`) group: `groups | grep render`. If not: `sudo usermod -aG render,video $USER` then log out and back in.
 - **Models on disk** — the config expects models at `/mnt/models/llm/`. Adjust the `-v` mount paths in `config/models.yaml` if yours are elsewhere.
 
-The vLLM container image (`docker.io/vllm/vllm-openai-rocm:v0.24.0`) is large (~35 GB) and will be pulled automatically on first `llmctl swap`. Make sure you have the disk space and a reasonable connection before starting.
+The vLLM container image (`docker.io/vllm/vllm-openai-rocm:v0.26.0`) is large (~35 GB) and will be pulled automatically on first `llmctl swap`. Make sure you have the disk space and a reasonable connection before starting.
 
 ---
 

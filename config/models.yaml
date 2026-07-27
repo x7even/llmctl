@@ -17,7 +17,7 @@
 #   llmstack-llama-<profile>  ← llama-server containers  (GGUF)
 #
 # Image pinning: every vLLM profile uses the same pinned tag
-#   docker.io/vllm/vllm-openai-rocm:v0.24.0
+#   docker.io/vllm/vllm-openai-rocm:v0.26.0
 # Never reference the moving :latest tag. Version bumps happen deliberately —
 # canary first, then update all refs at once (validation record and bench
 # results: docs/upgrade-plan-2026-07.md).
@@ -26,7 +26,10 @@
 # CLIENT NOTE: vLLM 0.24.0 renames the chat reasoning field from
 # message.reasoning_content to message.reasoning — adapt clients that parse it.
 
-healthCheckTimeout: 1200  # seconds; Gemma4 first-boot Triton compile ~18 min; warm starts ~2-3 min
+healthCheckTimeout: 2100  # seconds; conservative ceiling, not the expected wait — measured
+# v0.26.0 first boots (4 profiles, 2026-07-27) all landed at ~2-3 min (see CLAUDE.md
+# "vLLM cold start"). Kept high as headroom for profiles not covered by that measurement
+# (256K/512K YaRN contexts, dense 27B). Warm starts ~2-3 min.
 startPort: 9100           # llama-swap assigns backends ports starting here
 globalTTL: 0              # 0 = never auto-unload (set per-model below)
 
@@ -63,7 +66,7 @@ models:
         -e HSA_ENABLE_SDMA=0
         -e TORCH_BLAS_PREFER_HIPBLASLT=1
         --entrypoint=""
-        docker.io/vllm/vllm-openai-rocm:v0.24.0
+        docker.io/vllm/vllm-openai-rocm:v0.26.0
         vllm serve /models/Qwen3.6-27B-FP8
         --host 127.0.0.1
         --port ${PORT}
@@ -114,7 +117,7 @@ models:
         -e HSA_ENABLE_SDMA=0
         -e TORCH_BLAS_PREFER_HIPBLASLT=1
         --entrypoint=""
-        docker.io/vllm/vllm-openai-rocm:v0.24.0
+        docker.io/vllm/vllm-openai-rocm:v0.26.0
         vllm serve /models/Qwen3.6-27B-FP8
         --host 127.0.0.1
         --port ${PORT}
@@ -169,7 +172,7 @@ models:
         -e HSA_ENABLE_SDMA=0
         -e TORCH_BLAS_PREFER_HIPBLASLT=1
         --entrypoint=""
-        docker.io/vllm/vllm-openai-rocm:v0.24.0
+        docker.io/vllm/vllm-openai-rocm:v0.26.0
         vllm serve /models/Qwen3.6-27B
         --host 127.0.0.1
         --port ${PORT}
@@ -255,7 +258,7 @@ models:
         -e HSA_ENABLE_SDMA=0
         -e TORCH_BLAS_PREFER_HIPBLASLT=1
         --entrypoint=""
-        docker.io/vllm/vllm-openai-rocm:v0.24.0
+        docker.io/vllm/vllm-openai-rocm:v0.26.0
         vllm serve /models/Qwen3-Coder-30B-A3B-Instruct-FP8
         --host 127.0.0.1
         --port ${PORT}
@@ -302,7 +305,7 @@ models:
         -e HSA_ENABLE_SDMA=0
         -e TORCH_BLAS_PREFER_HIPBLASLT=1
         --entrypoint=""
-        docker.io/vllm/vllm-openai-rocm:v0.24.0
+        docker.io/vllm/vllm-openai-rocm:v0.26.0
         vllm serve /models/QuantTrio/Qwen3.6-35B-A3B-AWQ
         --host 127.0.0.1
         --port ${PORT}
@@ -360,7 +363,7 @@ models:
         -e HSA_ENABLE_SDMA=0
         -e TORCH_BLAS_PREFER_HIPBLASLT=1
         --entrypoint=""
-        docker.io/vllm/vllm-openai-rocm:v0.24.0
+        docker.io/vllm/vllm-openai-rocm:v0.26.0
         vllm serve /models/Qwen3.6-35B-A3B-FP8
         --host 127.0.0.1
         --port ${PORT}
@@ -406,7 +409,7 @@ models:
         -e HSA_ENABLE_SDMA=0
         -e TORCH_BLAS_PREFER_HIPBLASLT=1
         --entrypoint=""
-        docker.io/vllm/vllm-openai-rocm:v0.24.0
+        docker.io/vllm/vllm-openai-rocm:v0.26.0
         vllm serve /models/Qwen3.6-35B-A3B-FP8
         --host 127.0.0.1
         --port ${PORT}
@@ -452,7 +455,7 @@ models:
         -e HSA_ENABLE_SDMA=0
         -e TORCH_BLAS_PREFER_HIPBLASLT=1
         --entrypoint=""
-        docker.io/vllm/vllm-openai-rocm:v0.24.0
+        docker.io/vllm/vllm-openai-rocm:v0.26.0
         vllm serve /models/Qwen3.6-35B-A3B-FP8
         --host 127.0.0.1
         --port ${PORT}
@@ -498,7 +501,7 @@ models:
         -e HSA_ENABLE_SDMA=0
         -e TORCH_BLAS_PREFER_HIPBLASLT=1
         --entrypoint=""
-        docker.io/vllm/vllm-openai-rocm:v0.24.0
+        docker.io/vllm/vllm-openai-rocm:v0.26.0
         vllm serve /models/Qwen3.6-35B-A3B-FP8
         --host 127.0.0.1
         --port ${PORT}
@@ -553,7 +556,7 @@ models:
         -e HSA_ENABLE_SDMA=0
         -e TORCH_BLAS_PREFER_HIPBLASLT=1
         --entrypoint=""
-        docker.io/vllm/vllm-openai-rocm:v0.24.0
+        docker.io/vllm/vllm-openai-rocm:v0.26.0
         vllm serve /models/Qwen3.6-35B-A3B-FP8
         --host 127.0.0.1
         --port ${PORT}
@@ -608,7 +611,7 @@ models:
         -e HSA_ENABLE_SDMA=0
         -e TORCH_BLAS_PREFER_HIPBLASLT=1
         --entrypoint=""
-        docker.io/vllm/vllm-openai-rocm:v0.24.0
+        docker.io/vllm/vllm-openai-rocm:v0.26.0
         vllm serve /models/Qwen3.6-35B-A3B-FP8
         --host 127.0.0.1
         --port ${PORT}
@@ -666,7 +669,7 @@ models:
         -e VLLM_ALLOW_LONG_MAX_MODEL_LEN=1
         -e TORCH_BLAS_PREFER_HIPBLASLT=1
         --entrypoint=""
-        docker.io/vllm/vllm-openai-rocm:v0.24.0
+        docker.io/vllm/vllm-openai-rocm:v0.26.0
         vllm serve /models/Qwen3.6-35B-A3B-FP8
         --host 127.0.0.1
         --port ${PORT}
@@ -906,7 +909,7 @@ models:
         -e HSA_ENABLE_SDMA=0
         -e TORCH_BLAS_PREFER_HIPBLASLT=1
         --entrypoint=""
-        docker.io/vllm/vllm-openai-rocm:v0.24.0
+        docker.io/vllm/vllm-openai-rocm:v0.26.0
         vllm serve /models/google/gemma-4-26B-A4B-it
         --host 127.0.0.1
         --port ${PORT}
@@ -961,7 +964,7 @@ models:
         -e HSA_ENABLE_SDMA=0
         -e TORCH_BLAS_PREFER_HIPBLASLT=1
         --entrypoint=""
-        docker.io/vllm/vllm-openai-rocm:v0.24.0
+        docker.io/vllm/vllm-openai-rocm:v0.26.0
         vllm serve /models/RedHatAI/gemma-4-26B-A4B-it-FP8-Dynamic
         --host 127.0.0.1
         --port ${PORT}
