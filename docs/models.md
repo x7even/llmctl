@@ -201,8 +201,13 @@ here) — so it was tested directly rather than assumed safe. `llmctl swap qwen3
 loaded cleanly in 3m21s on v0.26.0 (`Initial profiling/warmup run took 37.17s` — AWQ has
 no FP8 KV calibration step, so it's faster than the FP8 profiles), served a live
 completion correctly, no `IndexError`. Light no-thinking recheck:
-serial 80.2 tok/s, conc=8 272.0 tok/s (`bench/baselines/qwen3.6-35b-awq-v0.26.0-nothink.json`)
-— both in line with or above the 0.20.0 baseline above.
+serial 80.2 tok/s, conc=8 272.0 tok/s (`bench/baselines/qwen3.6-35b-awq-v0.26.0-nothink.json`).
+Mixed against the 0.20.0 baseline above: conc=8 is above (272.0 vs 250, +8.8%), but serial
+is below (80.2 vs 92, −12.8%). This is **not** a matched-version regression check like the
+other Phase 6 tables — it spans six vLLM versions (0.20.0 → 0.26.0) with unrelated changes
+in between, so the delta can't be attributed to this bump specifically. What this test does
+establish is the thing it was run for: the crash risk (AWQ + expert-parallel WNA16 fallback)
+does not reproduce on v0.26.0, and absolute throughput is still in a usable range.
 
 ---
 

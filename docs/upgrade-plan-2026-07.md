@@ -395,7 +395,12 @@ churn, which is what kept the risk profile low enough to canary and cut over in 
   | 8  | 289.4 tok/s | 298.8 tok/s | +3.2% |
   | 16 | 506.2 tok/s | 504.3 tok/s | −0.4% |
 
-  All deltas within ±6.6%, well inside noise — no MTP regression from the version bump.
+  The 16-request levels (conc 1/2/4/8/16) run −4.9% to +3.2%, inside the −5% gate. The
+  `serial` row is an outlier at −6.6%, technically outside the gate — but it's an
+  `n_requests: 3` sample (see the baseline JSON), an order of magnitude fewer requests
+  than every other row, so a couple of slow individual requests move it several points.
+  Not treated as a regression signal given the sample size, but noted rather than folded
+  into "all deltas within noise."
   (Note: this v0.24.0-canary row supersedes the mismatched-tool figure previously cited
   for 0.24.0 MTP conc=8 — 312.42 tok/s in the Results table below came from `vllm bench
   serve`, a different harness than `concurrent_bench.py` used everywhere else in this
@@ -421,8 +426,12 @@ churn, which is what kept the risk profile low enough to canary and cut over in 
   3m21s (`Initial profiling/warmup run took 37.17s` — AWQ has no FP8 KV calibration step,
   so it's faster than the FP8 profiles), served a live completion correctly, no
   `IndexError`. Recheck: serial 80.2 tok/s, conc=8 272.0 tok/s
-  (`bench/baselines/qwen3.6-35b-awq-v0.26.0-nothink.json`) — in line with or above the
-  existing 0.20.0 baseline. Detail in `docs/models.md`.
+  (`bench/baselines/qwen3.6-35b-awq-v0.26.0-nothink.json`). Against the existing 0.20.0
+  baseline (92 / 250 tok/s), conc=8 is above (+8.8%) but serial is below (−12.8%) — and
+  since that baseline spans six vLLM versions back, this isn't a matched-version delta the
+  way the other Phase 6 tables are. What it does confirm is the thing being tested: no
+  crash from the AWQ+WNA16-fallback combination, and throughput stays in a usable range.
+  Detail in `docs/models.md`.
 - [x] **FP8 profiling/warmup speedup — the real driver of the faster cold starts.** The
   compile-range change (above) explains part of the faster first boot, but not all of it.
   Direct log measurement across profiles found vLLM's FP8 KV-calibration/model-profiling
@@ -453,8 +462,11 @@ churn, which is what kept the risk profile low enough to canary and cut over in 
   the redo matched within noise — but the profile-name lineage was wrong and is now clean.
 
 **Gate:** healthy endpoint, tok/s within −5% of baseline bench (or better) — met for the
-no-MTP profile, the MTP profile (via genuine same-harness comparison), the gemma4-26b-a4b
-profile, and the AWQ profile.
+no-MTP profile and the MTP profile at every 16-request concurrency level (the MTP `serial`
+row is a −6.6% outlier on an `n_requests: 3` sample, noted above, not treated as a
+regression), and for the gemma4-26b-a4b profile. The AWQ profile's crash-risk check passed
+cleanly (no `IndexError`), but its throughput comparison is against a six-version-old
+0.20.0 baseline, not a matched v0.24.0→v0.26.0 delta — see the caveat in `docs/models.md`.
 
 **Rollback:** revert `docker.io/vllm/vllm-openai-rocm:v0.26.0` → `:v0.24.0` in
 `config/models.yaml` (all 14 occurrences), `llmctl down && llmctl up`, `llmctl swap`
