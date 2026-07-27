@@ -17,7 +17,7 @@ No screen; GPU-only headless rig. PCIe 5.0 ×16 per slot.
 
 | Image | vLLM | ROCm | Use when |
 |---|---|---|---|
-| `docker.io/vllm/vllm-openai-rocm:v0.24.0` | 0.24.0 | 7.2 | All vLLM profiles (FP8, AWQ, safetensors) |
+| `docker.io/vllm/vllm-openai-rocm:v0.26.0` | 0.26.0+rocm723 | 7.2.3 | All vLLM profiles (FP8, AWQ, safetensors) |
 | `localhost/llmstack-llama:latest` | llama.cpp | Vulkan | GGUF models |
 
 All vLLM profiles use `--entrypoint="" ... vllm serve` because the AMD official
@@ -194,6 +194,15 @@ tradeoff vs FP8; loading alongside another model.
 AWQ serial is faster than FP8 serial (92 vs 69 no-MTP) due to smaller model footprint.
 At conc=8 it's slightly below FP8+MTP (250 vs 261) because FP8 benefits more from
 batched execution.
+
+**v0.26.0 note:** this profile combines two things CLAUDE.md flags as fragile — AWQ's
+Triton WNA16 MoE fallback kernel (crashes under `--enable-expert-parallel`, not used
+here) — so it was tested directly rather than assumed safe. `llmctl swap qwen3.6-35b-awq`
+loaded cleanly in 3m21s on v0.26.0 (`Initial profiling/warmup run took 37.17s` — AWQ has
+no FP8 KV calibration step, so it's faster than the FP8 profiles), served a live
+completion correctly, no `IndexError`. Light no-thinking recheck:
+serial 80.2 tok/s, conc=8 272.0 tok/s (`bench/baselines/qwen3.6-35b-awq-v0.26.0-nothink.json`)
+— both in line with or above the 0.20.0 baseline above.
 
 ---
 
@@ -493,11 +502,24 @@ pressure at long contexts with 4 concurrent streams; speedup recovers at conc=16
 
 **Aliases:** `gemma4-vllm`, `gemma4-concurrent`
 
-**Backend:** vLLM 0.24.0 (`docker.io/vllm/vllm-openai-rocm:v0.24.0`), BF16 safetensors.
+**Backend:** vLLM 0.26.0 (`docker.io/vllm/vllm-openai-rocm:v0.26.0`), BF16 safetensors.
 **Model path:** `/mnt/models/llm/google/gemma-4-26B-A4B-it`
 **VRAM:** 122.7 GB across 4 GPUs — nearly fills all 128 GB. Profile is exclusive; cannot
 co-load with any other model. The large VRAM footprint is the model weights (49 GB BF16)
 plus the KV cache pool vLLM allocates at startup.
+
+**v0.26.0 note:** upstream issue #49878 reports a ~40% KV-cache VRAM sizing regression
+for Gemma 4 models between vLLM v0.25.1→v0.26.0 (reported on NVIDIA Blackwell running
+a different Gemma 4 checkpoint with FP8 KV cache + speculative decoding). Given this
+concern and that this profile already consumes 122.7/128 GB, it was tested directly as
+part of the v0.24.0→v0.26.0 upgrade (2026-07-27): `llmctl swap gemma4-26b-a4b` loaded
+cleanly in 3m07s, served a live completion correctly, and used ~124 GB total VRAM — in
+line with the historical 122.7 GB figure, no OOM, no KV-cache blowup. The upstream
+report does not reproduce on this hardware/config. A light conc=1/8/16 recheck on
+medium-256 no-thinking gave 63.0/233.1/485.6 tok/s (`bench/baselines/gemma4-26b-a4b-v0.26.0-nothink.json`)
+— conc=16 is close to the 0.22.1-era baseline below; conc=8 is softer, but this compares
+against a baseline four vLLM versions back, not a matched 0.24.0→0.26.0 delta, so it
+isn't read as a regression from this bump specifically.
 
 **Use for:** High-concurrency agent workloads. vLLM's PagedAttention and MoE architecture
 (4B active params per token) combine to give outstanding batching efficiency — **528 tok/s
@@ -556,7 +578,7 @@ dynamics at that concurrency level.
 
 **Aliases:** `gemma4-fp8`, `gemma4-fast-vllm`
 
-**Backend:** vLLM 0.24.0 (`docker.io/vllm/vllm-openai-rocm:v0.24.0`), FP8-Dynamic weights.
+**Backend:** vLLM 0.26.0 (`docker.io/vllm/vllm-openai-rocm:v0.26.0`), FP8-Dynamic weights.
 **Model path:** `/mnt/models/llm/RedHatAI/gemma-4-26B-A4B-it-FP8-Dynamic`
 **VRAM:** ~26 GB FP8 weights + BF16 KV cache across 4 GPUs.
 

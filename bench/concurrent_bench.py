@@ -441,8 +441,9 @@ def main():
     print_summary(all_rows, args.model)
 
     if args.csv and all_rows:
+        fieldnames = list(dict.fromkeys(k for row in all_rows for k in row.keys()))
         with open(args.csv, "w", newline="") as f:
-            w = csv.DictWriter(f, fieldnames=all_rows[0].keys())
+            w = csv.DictWriter(f, fieldnames=fieldnames)
             w.writeheader()
             w.writerows(all_rows)
         print(f"\n  Results written to {args.csv}")

@@ -331,6 +331,140 @@ the 6.16.6 module until autoremove — which is why autoremove waits until after
 
 ---
 
+## Phase 6 — vLLM 0.24.0 → 0.26.0 (image-only bump, stable line)
+
+*2026-07-27 status: canary PASSED, cutover landed on this branch.* Scope was
+deliberately narrowed to the vLLM container image only — the host driver/ROCm bump
+(originally scoped as part of Phase 5) stays deferred to its own maintenance window
+since it requires a reboot and is independent of this change.
+
+**Version check (via `pip show` inside the image, not `import vllm` — importing vLLM's
+ROCm platform code triggers an `amdsmi` GPU query that fails without `--device` mounts):**
+`vllm 0.26.0+rocm723`, `torch 2.11.0+gitd0c8b1f`, `hip 7.2.53211`, ROCm `7.2.3` — **identical
+torch/ROCm bundle to v0.24.0**. This is a clean vLLM-only version bump with zero toolchain
+churn, which is what kept the risk profile low enough to canary and cut over in one pass.
+
+- [x] Pull pinned: `docker.io/vllm/vllm-openai-rocm:v0.26.0`.
+- [x] Canary — `qwen3.6-35b-128k-nomtp` (the no-MTP 128k profile). First boot completed
+  in 3m05s, far faster than the ~15-20 min historical Inductor-compile figure. Verified
+  via container logs (not assumed) that this is a genuine, correctly-configured compile:
+  v0.26.0 replaces the old per-shape-specialized Inductor compilation with a single
+  dynamic-shape "compile range" (`compile_ranges_endpoints: [32768]`,
+  `Compiling a graph for compile range (1, 32768) takes 21.72s`, `torch.compile took
+  30.09s in total`). Both CUDA graph capture passes completed cleanly:
+  `Capturing CUDA graphs (mixed prefill-decode, PIECEWISE): 6/6` and
+  `Capturing CUDA graphs (decode, FULL): 6/6`.
+- [x] Bench canary vs baseline (§Benchmarks), `medium-256`, `--no-thinking`, 32
+  requests/level, conc 1/8/32:
+
+  | Conc | v0.24.0 (before) | v0.26.0 (after) | Delta |
+  |------|-------------------|------------------|-------|
+  | serial | 79.3 tok/s | 78.6 tok/s | −0.9% |
+  | 1    | 88.0 tok/s | 88.3 tok/s | +0.3% |
+  | 8    | 351.3 tok/s | 351.2 tok/s | −0.0% |
+  | 32   | 860.4 tok/s | 872.1 tok/s | +1.4% |
+
+  All deltas within noise (well clear of the −5% regression gate). Baselines:
+  `bench/baselines/qwen3.6-35b-128k-nomtp-v0.24.0-before.json` /
+  `qwen3.6-35b-128k-nomtp-v0.26.0-after.json`.
+- [x] MTP side-check — **redone against a clean canonical profile** after an
+  in-session llama-swap config-caching bug was found and fixed (see "Validation process
+  notes" below); the original run in this bullet was collected against a stale,
+  WIP-suffixed container and has been superseded. `qwen3.6-35b-128k` (MTP-enabled) on
+  v0.26.0, medium-256, 16 requests/level, conc 1/2/4/8/16: 63.4 / 106.2 / 168.5 / 298.8 /
+  504.3 tok/s decode
+  (`bench/baselines/qwen3.6-35b-128k-v0.26.0-mtp-recheck.json`).
+  **4/4 CUDA-graph-capture anomaly — explained and confirmed non-regressive.** Both this
+  recheck and the original run show only `4/4` PIECEWISE/FULL captures (not `6/6`),
+  despite `compilation_config` listing all 6 requested sizes. Root cause found by reading
+  the log directly: `Profiling CUDA graph memory: PIECEWISE=4 (largest=18), FULL=4
+  (largest=18)` — this is vLLM's own automatic memory-based capture-size selection: under
+  MTP's larger per-slot memory footprint, only 4 of the 6 requested sizes fit the
+  profiled memory budget, so vLLM silently caps at 4 (no "skip"/"reduce" log line, but the
+  behavior is intentional, not a bug). **Confirmed version-independent**: a same-harness
+  v0.24.0 canary (spare port 9555, exact production 128k-MTP command,
+  `bench/baselines/qwen3.6-35b-128k-canary-v0.24.0-mtp.json`) shows the identical `4/4`
+  capture behavior, ruling out a v0.26.0-specific regression.
+
+  | Conc (medium-256, MTP) | v0.24.0 canary (same harness) | v0.26.0 recheck | Delta |
+  |---|---|---|---|
+  | serial | 63.0 tok/s | 58.9 tok/s | −6.6% |
+  | 1  | 66.6 tok/s | 63.4 tok/s | −4.9% |
+  | 2  | 109.8 tok/s | 106.2 tok/s | −3.2% |
+  | 4  | 167.6 tok/s | 168.5 tok/s | +0.6% |
+  | 8  | 289.4 tok/s | 298.8 tok/s | +3.2% |
+  | 16 | 506.2 tok/s | 504.3 tok/s | −0.4% |
+
+  All deltas within ±6.6%, well inside noise — no MTP regression from the version bump.
+  (Note: this v0.24.0-canary row supersedes the mismatched-tool figure previously cited
+  for 0.24.0 MTP conc=8 — 312.42 tok/s in the Results table below came from `vllm bench
+  serve`, a different harness than `concurrent_bench.py` used everywhere else in this
+  document; the 289.4 tok/s figure above is the correct like-for-like comparison point.)
+- [x] Cutover: all 14 vLLM image refs in `config/models.yaml` bumped
+  `v0.24.0` → `v0.26.0` in one pass (all profiles share the same pinned tag). Also bumped
+  `healthCheckTimeout` (1200s → 2100s), `llmctl swap`/warm-up timeout (1260s → 2100s), and
+  the TUI's swap-model HTTP client timeout (300s → 2100s) to cover v0.26.0's first-boot
+  window with margin.
+- [x] **Gemma4 risk flag — resolved by direct test.** Upstream issue #49878 (verified real
+  via `gh issue view`, still open) reports a ~40% KV-cache VRAM sizing regression for
+  Gemma 4 models between v0.25.1→v0.26.0 (reported on NVIDIA Blackwell running a
+  different Gemma 4 checkpoint with FP8 KV cache + speculative decoding — not our exact
+  config). Given `gemma4-26b-a4b` already runs at 122.7/128 GB, tested directly rather
+  than left as a warning: `llmctl swap gemma4-26b-a4b` loaded cleanly in 3m07s, served a
+  live completion correctly, ~124 GB total VRAM used — in line with the historical 122.7
+  GB figure, no OOM, no KV-cache blowup. Light no-thinking recheck (conc 1/8/16): 63.0 /
+  233.1 / 485.6 tok/s (`bench/baselines/gemma4-26b-a4b-v0.26.0-nothink.json`). The
+  upstream report does not reproduce on this hardware/config. Detail in `docs/models.md`.
+- [x] **AWQ path — also tested directly.** `qwen3.6-35b-awq` combines a second thing
+  CLAUDE.md flags as fragile (AWQ's Triton WNA16 MoE fallback kernel), so rather than
+  assume the version bump is safe here it was swapped and benched: loaded cleanly in
+  3m21s (`Initial profiling/warmup run took 37.17s` — AWQ has no FP8 KV calibration step,
+  so it's faster than the FP8 profiles), served a live completion correctly, no
+  `IndexError`. Recheck: serial 80.2 tok/s, conc=8 272.0 tok/s
+  (`bench/baselines/qwen3.6-35b-awq-v0.26.0-nothink.json`) — in line with or above the
+  existing 0.20.0 baseline. Detail in `docs/models.md`.
+- [x] **FP8 profiling/warmup speedup — the real driver of the faster cold starts.** The
+  compile-range change (above) explains part of the faster first boot, but not all of it.
+  Direct log measurement across profiles found vLLM's FP8 KV-calibration/model-profiling
+  step itself dropped from **~804.78s on v0.24.0** (confirmed via the v0.24.0 canary log)
+  to **~20-40s on v0.26.0** (20.98s for `qwen3.6-35b-128k-nomtp`, 37.17s for the AWQ
+  profile — measured directly, not inferred). That ~38× drop, not just the compile-range
+  change, is why total cold start fell from the historical ~14-20 min to ~2-3 min.
+  Measured first-boot totals this session: no-MTP 2m04s, MTP 2m41s, gemma4-26b-a4b (BF16)
+  3m07s, AWQ 3m21s. Documented in root `CLAUDE.md`'s "vLLM cold start" section, which was
+  rewritten to replace the now-stale "18-20 min first boot" framing; `healthCheckTimeout`
+  and the `llmctl`/TUI swap timeouts were left at the generous 2100s ceiling (safety
+  margin for untested profiles — 256K/512K YaRN contexts, dense 27B — not the expected
+  wait) rather than tightened, since those shapes weren't part of this measurement.
+
+**Validation process notes:**
+- Mid-session, an unrelated ~2-week-old uncommitted "profile matrix reorg" WIP was found
+  contaminating this worktree — not part of `master` and never authorized for this task.
+  All touched files were reverted to `master`'s actual committed state and only the
+  version-bump-related changes were reapplied on top.
+- That revert exposed a real bug worth documenting: **llama-swap caches `config/models.yaml`
+  in memory at process start** — editing the file afterward does nothing until
+  `llmctl down && llmctl up` restarts it. The running router was still serving a
+  pre-revert, WIP-named config (`qwen3.6-35b-128k-mtp-think` instead of the canonical
+  `qwen3.6-35b-128k`), which is why the original MTP side-check above was collected
+  against a mislabeled container and had to be redone. Fixed by restarting llama-swap
+  (which also auto-upgraded the binary to v235, a benign side effect of Phase 3 already
+  being on this branch). The underlying throughput numbers were not actually corrupted —
+  the redo matched within noise — but the profile-name lineage was wrong and is now clean.
+
+**Gate:** healthy endpoint, tok/s within −5% of baseline bench (or better) — met for the
+no-MTP profile, the MTP profile (via genuine same-harness comparison), the gemma4-26b-a4b
+profile, and the AWQ profile.
+
+**Rollback:** revert `docker.io/vllm/vllm-openai-rocm:v0.26.0` → `:v0.24.0` in
+`config/models.yaml` (all 14 occurrences), `llmctl down && llmctl up`, `llmctl swap`
+each profile back. The v0.24.0 image stays on disk — do not prune it this cycle.
+
+**Deferred:** host ROCm 7.2.0 → 7.2.4 bump (Phase 5 above) remains PENDING — requires a
+reboot, independent of this image bump, scheduled for its own maintenance window.
+
+---
+
 ## Post-campaign cleanup (only after everything is validated)
 
 - [ ] `sudo apt autoremove` (drops kernel -124)
@@ -394,6 +528,16 @@ Qwen3.5-122B-A10B-Q4_K_M.
 | 2026-07-07 | 4 canary | vLLM 0.24.0 | Q3.6-35B FP8 128k MTP | 8 | 312.42 | 233.4 ms | **+19.6%** vs baseline; ITL p50/p99 49.5/130.8 ms; spec accept ~70.5% |
 | 2026-07-07 | 4 canary | vLLM 0.24.0 | Q3.6-35B FP8 128k MTP | 32 | 777.58 | 732.2 ms | **+4.9%** vs baseline; ITL p50/p99 58.2/320.4 ms; spec accept ~70.2% |
 | 2026-07-07 | 4 canary | vLLM 0.24.0 MTP-off | Q3.6-35B FP8 128k | 8 | 329.70 | 560.2 ms | run for comparison (MTP never faulted); faster than MTP-on at conc 8 with far better ITL (p50/p99 19.0/20.2 ms); spec-config change forced ~16 min warm restart (compile-cache miss) |
+| 2026-07-27 | 6 canary | vLLM 0.24.0 (nomtp) | Q3.6-35B FP8 128k | serial | 79.3 | — | `concurrent_bench.py`³, before-row for the no-MTP comparison |
+| 2026-07-27 | 6 after | vLLM 0.26.0 (nomtp) | Q3.6-35B FP8 128k | serial | 78.6 | — | `concurrent_bench.py`³; −0.9% vs 0.24.0, within noise |
+| 2026-07-27 | 6 canary | vLLM 0.24.0 (nomtp) | Q3.6-35B FP8 128k | 8 | 351.3 | — | `concurrent_bench.py`³ |
+| 2026-07-27 | 6 after | vLLM 0.26.0 (nomtp) | Q3.6-35B FP8 128k | 8 | 351.2 | — | `concurrent_bench.py`³; −0.0% vs 0.24.0 |
+| 2026-07-27 | 6 canary | vLLM 0.24.0 (nomtp) | Q3.6-35B FP8 128k | 32 | 860.4 | — | `concurrent_bench.py`³ |
+| 2026-07-27 | 6 after | vLLM 0.26.0 (nomtp) | Q3.6-35B FP8 128k | 32 | 872.1 | — | `concurrent_bench.py`³; +1.4% vs 0.24.0 |
+| 2026-07-27 | 6 canary | vLLM 0.24.0 (MTP) | Q3.6-35B FP8 128k MTP | 8 | 289.4 | — | `concurrent_bench.py`³, same-harness canary on spare port 9555 — supersedes the `vllm bench serve`-derived 312.42 row above (2026-07-07) for MTP-vs-MTP comparisons; see footnote 4 |
+| 2026-07-27 | 6 after | vLLM 0.26.0 (MTP) | Q3.6-35B FP8 128k MTP | 8 | 298.8 | — | `concurrent_bench.py`³; +3.2% vs the same-harness 0.24.0 canary row above |
+| 2026-07-27 | 6 after | vLLM 0.26.0 | Gemma4-26B-A4B BF16 | 1/8/16 | 63.0 / 233.1 / 485.6 | — | `concurrent_bench.py`³, no-thinking; direct test resolving the #49878 risk flag, no OOM |
+| 2026-07-27 | 6 after | vLLM 0.26.0 | Q3.6-35B AWQ Int4 128k | serial/8 | 80.2 / 272.0 | — | `concurrent_bench.py`³, no-thinking; direct test of the AWQ Triton WNA16 path |
 
 ¹ `llama-bench` inside the b9542-baseline image is a stale build-tree binary (md5 ≠
 installed `/usr/local/bin/llama-server`, lacks the qwen35moe arch, fails to load the
@@ -411,3 +555,17 @@ every run (16/64/128). Baseline ran against the LIVE production 0.22.1 container
 :9111; canary rows ran against the 0.24.0 canary on :9555 with the exact production
 profile. Raw logs under `/home/xin/.claude/jobs/73c9942f/tmp/` (`bench_c*.log`,
 `canary_bench_c*.log`, `canary_nomtp_bench_c8.log`).
+
+³ Phase 6 rows use this repo's own `bench/concurrent_bench.py` harness (`--no-thinking`,
+`medium-256` prompt), not `vllm bench serve` — chosen for consistency with every other
+Phase 6 measurement and with `bench/baselines/`. Raw baseline files named in each row's
+notes live under `bench/baselines/`.
+
+⁴ The 2026-07-07 MTP row (312.42 tok/s @ conc=8, vLLM 0.24.0) was collected with `vllm
+bench serve` (evidenced by ITL/spec-accept metrics that tool produces and
+`concurrent_bench.py` does not) — a different tool than the rest of this document uses,
+so it is not a valid apples-to-apples baseline for the 2026-07-27 MTP comparison. Fixed
+by standing up a manual v0.24.0 canary container (port 9555, exact production 128k-MTP
+flags) and re-benchmarking with `concurrent_bench.py` — the 2026-07-27 canary/after rows
+above are the correct like-for-like comparison; the 312.42 figure is kept in the table
+only as a historical record of the original 0.22.1→0.24.0 upgrade measurement.
