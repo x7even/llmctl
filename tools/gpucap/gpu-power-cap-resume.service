@@ -1,0 +1,10 @@
+[Unit]
+Description=Re-apply GPU power cap after suspend/hibernate
+After=suspend.target hibernate.target hybrid-sleep.target suspend-then-hibernate.target
+
+[Service]
+Type=oneshot
+ExecStart=/usr/local/bin/gpucap apply
+
+[Install]
+WantedBy=suspend.target hibernate.target hybrid-sleep.target suspend-then-hibernate.target

@@ -1,0 +1,11 @@
+[Unit]
+Description=Apply GPU power cap (see /etc/gpucap.conf)
+After=systemd-modules-load.service
+
+[Service]
+Type=oneshot
+RemainAfterExit=yes
+ExecStart=/usr/local/bin/gpucap apply
+
+[Install]
+WantedBy=multi-user.target
