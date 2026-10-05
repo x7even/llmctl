@@ -1,0 +1,83 @@
+{
+ "passed": 16,
+ "total": 18,
+ "fatal": null,
+ "timed_out": false,
+ "stderr_tail": "",
+ "tests": [
+  {
+   "test": "test_basic_ints",
+   "ok": true
+  },
+  {
+   "test": "test_division_types",
+   "ok": true
+  },
+  {
+   "test": "test_floor_semantics_negative",
+   "ok": true
+  },
+  {
+   "test": "test_decimal_literals",
+   "ok": false,
+   "err": "ValueError: Malformed number at position 0"
+  },
+  {
+   "test": "test_left_associativity",
+   "ok": true
+  },
+  {
+   "test": "test_power_right_assoc",
+   "ok": true
+  },
+  {
+   "test": "test_unary_vs_power",
+   "ok": true
+  },
+  {
+   "test": "test_stacked_unary",
+   "ok": true
+  },
+  {
+   "test": "test_unary_precedence_vs_mul",
+   "ok": true
+  },
+  {
+   "test": "test_whitespace",
+   "ok": true
+  },
+  {
+   "test": "test_nested_parens",
+   "ok": true
+  },
+  {
+   "test": "test_int_float_result_types",
+   "ok": true
+  },
+  {
+   "test": "test_big_ints",
+   "ok": true
+  },
+  {
+   "test": "test_zero_division",
+   "ok": true
+  },
+  {
+   "test": "test_zero_ok",
+   "ok": true
+  },
+  {
+   "test": "test_malformed_raises_valueerror",
+   "ok": true
+  },
+  {
+   "test": "test_not_using_eval",
+   "ok": true
+  },
+  {
+   "test": "test_differential_fuzz",
+   "ok": false,
+   "err": "ValueError: Malformed number at position 0"
+  }
+ ]
+}

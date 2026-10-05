@@ -1,0 +1,91 @@
+{
+ "passed": 8,
+ "total": 18,
+ "fatal": null,
+ "timed_out": false,
+ "stderr_tail": "",
+ "tests": [
+  {
+   "test": "test_basic_ints",
+   "ok": true
+  },
+  {
+   "test": "test_division_types",
+   "ok": true
+  },
+  {
+   "test": "test_floor_semantics_negative",
+   "ok": true
+  },
+  {
+   "test": "test_decimal_literals",
+   "ok": true
+  },
+  {
+   "test": "test_left_associativity",
+   "ok": true
+  },
+  {
+   "test": "test_power_right_assoc",
+   "ok": false,
+   "err": "ValueError: Unexpected token op '*' at position 2"
+  },
+  {
+   "test": "test_unary_vs_power",
+   "ok": false,
+   "err": "ValueError: Unexpected token op '*' at position 3"
+  },
+  {
+   "test": "test_stacked_unary",
+   "ok": true
+  },
+  {
+   "test": "test_unary_precedence_vs_mul",
+   "ok": false,
+   "err": "ValueError: Unexpected token op '*' at position 5"
+  },
+  {
+   "test": "test_whitespace",
+   "ok": false,
+   "err": "ValueError: Unexpected token op '*' at position 3"
+  },
+  {
+   "test": "test_nested_parens",
+   "ok": false,
+   "err": "ValueError: Unexpected token op '*' at position 6"
+  },
+  {
+   "test": "test_int_float_result_types",
+   "ok": false,
+   "err": "ValueError: Unexpected token op '*' at position 2"
+  },
+  {
+   "test": "test_big_ints",
+   "ok": false,
+   "err": "ValueError: Unexpected token op '*' at position 2"
+  },
+  {
+   "test": "test_zero_division",
+   "ok": false,
+   "err": "AssertionError: '0**-1': raised ValueError, expected ZeroDivisionError"
+  },
+  {
+   "test": "test_zero_ok",
+   "ok": false,
+   "err": "ValueError: Unexpected token op '*' at position 2"
+  },
+  {
+   "test": "test_malformed_raises_valueerror",
+   "ok": true
+  },
+  {
+   "test": "test_not_using_eval",
+   "ok": true
+  },
+  {
+   "test": "test_differential_fuzz",
+   "ok": false,
+   "err": "ValueError: Unexpected token op '*' at position 11"
+  }
+ ]
+}

@@ -1,0 +1,40 @@
+{
+ "id": "chatcmpl-bd45c01fa6b59d10",
+ "object": "chat.completion",
+ "created": 1791206986,
+ "model": "qwen3.8-27b-code",
+ "choices": [
+  {
+   "index": 0,
+   "message": {
+    "role": "assistant",
+    "content": "```python\n\"\"\"A fixed-capacity cache with per-entry TTL and LRU eviction.\"\"\"\n\nfrom __future__ import annotations\n\nimport time\nfrom collections import OrderedDict\nfrom typing import Any, Callable\n\n\nclass TTLCache:\n    \"\"\"A fixed-capacity cache with per-entry time-to-live and LRU eviction.\"\"\"\n\n    def __init__(\n        self,\n        capacity: int,\n        default_ttl: float,\n        clock: Callable[[], float] = time.monotonic,\n    ) -> None:\n        if not isinstance(capacity, int) or isinstance(capacity, bool) or capacity < 1:\n            raise ValueError(\"capacity must be an int >= 1\")\n        if not isinstance(default_ttl, (int, float)) or isinstance(default_ttl, bool):\n            raise ValueError(\"default_ttl must be a number > 0\")\n        if default_ttl <= 0:\n            raise ValueError(\"default_ttl must be > 0\")\n\n        self._capacity = capacity\n        self._default_ttl = float(default_ttl)\n        self._clock = clock\n        # Maps key -> (value, expire_time)\n        self._store: \"OrderedDict[Any, tuple[Any, float]]\" = OrderedDict()\n\n    def _now(self) -> float:\n        return self._clock()\n\n    def _is_expired(self, expire_time: float) -> bool:\n        return self._now() >= expire_time\n\n    def _purge_expired(self) -> None:\n        \"\"\"Remove all expired entries from the cache.\"\"\"\n        now = self._now()\n        expired_keys = [\n            key for key, (_, expire_time) in self._store.items() if now >= expire_time\n        ]\n        for key in expired_keys:\n            del self._store[key]\n\n    def put(self, key: Any, value: Any, ttl: float | None = None) -> None:\n        \"\"\"Insert or overwrite a key-value pair.\"\"\"\n        if ttl is not None:\n            if not isinstance(ttl, (int, float)) or isinstance(ttl, bool):\n                raise ValueError(\"ttl must be a number > 0 or None\")\n            if ttl <= 0:\n                raise ValueError(\"ttl must be > 0\")\n            effective_ttl = float(ttl)\n        else:\n            effective_ttl = self._default_ttl\n\n        now = self._now()\n        expire_time = now + effective_ttl\n\n        # Check if key already exists and is live\n        if key in self._store:\n            _, existing_expire = self._store[key]\n            if now < existing_expire:\n                # Still live: overwrite, reset TTL, mark as most recently used\n                self._store[key] = (value, expire_time)\n                self._store.move_to_end(key)\n                return\n            else:\n                # Expired: treat as new key insertion\n                del self._store[key]\n\n        # New key insertion: may need eviction\n        if len(self._store) >= self._capacity:\n            # First, discard all expired entries\n            self._purge_expired()\n            if len(self._store) >= self._capacity:\n                # Evict the least recently used live entry\n                self._store.popitem(last=False)\n\n        self._store[key] = (value, expire_time)\n\n    def get(self, key: Any, default: Any = None) -> Any:\n        \"\"\"Get a value by key, marking it as most recently used. Returns default if missing or expired.\"\"\"\n        if key in self._store:\n            value, expire_time = self._store[key]\n            now = self._now()\n            if now >= expire_time:\n                # Expired: remove and return default\n                del self._store[key]\n                return default\n            # Live: mark as most recently used\n            self._store.move_to_end(key)\n            return value\n        return default\n\n    def peek(self, key: Any, default: Any = None) -> Any:\n        \"\"\"Get a value by key without changing recency. Returns default if missing or expired.\"\"\"\n        if key in self._store:\n            value, expire_time = self._store[key]\n            now = self._now()\n            if now >= expire_time:\n                # Expired: remove and return default\n                del self._store[key]\n                return default\n            # Live: do NOT change recency\n            return value\n        return default\n\n    def delete(self, key: Any) -> bool:\n        \"\"\"Delete a key. Returns True if a live entry was removed, False otherwise.\"\"\"\n        if key in self._store:\n            _, expire_time = self._store[key]\n            now = self._now()\n            if now >= expire_time:\n                # Expired: remove and return False\n                del self._store[key]\n                return False\n            # Live: remove and return True\n            del self._store[key]\n            return True\n        return False\n\n    def keys(self) -> list:\n        \"\"\"Return live keys ordered from least-recently-used to most-recently-used.\"\"\"\n        self._purge_expired()\n        return list(self._store.keys())\n\n    def __len__(self) -> int:\n        \"\"\"Return the number of live entries.\"\"\"\n        self._purge_expired()\n        return len(self._store)\n\n    def __contains__(self, key: Any) -> bool:\n        \"\"\"Return True if the key is present and live. Does not change recency.\"\"\"\n        if key in self._store:\n            _, expire_time = self._store[key]\n            now = self._now()\n            if now >= expire_time:\n                # Expired: remove\n                del self._store[key]\n                return False\n            return True\n        return False\n```",
+    "refusal": null,
+    "annotations": null,
+    "audio": null,
+    "function_call": null,
+    "reasoning": null
+   },
+   "logprobs": null,
+   "finish_reason": "stop",
+   "stop_reason": null,
+   "token_ids": null,
+   "routed_experts": null
+  }
+ ],
+ "service_tier": null,
+ "system_fingerprint": "vllm-0.26.0-tp4-0126c26e",
+ "usage": {
+  "prompt_tokens": 793,
+  "total_tokens": 2047,
+  "completion_tokens": 1254,
+  "prompt_tokens_details": null
+ },
+ "prompt_logprobs": null,
+ "prompt_token_ids": null,
+ "prompt_text": null,
+ "kv_transfer_params": null,
+ "ec_transfer_params": null,
+ "metrics": null,
+ "_wall_s": 63.270755032001034
+}

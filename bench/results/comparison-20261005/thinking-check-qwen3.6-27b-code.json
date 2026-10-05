@@ -1,0 +1,10 @@
+{
+ "default": {
+  "reasoning_chars": 1138,
+  "content_chars": 0
+ },
+ "enable_thinking=false": {
+  "reasoning_chars": 0,
+  "content_chars": 725
+ }
+}

@@ -1,0 +1,98 @@
+{
+ "passed": 1,
+ "total": 18,
+ "fatal": null,
+ "timed_out": false,
+ "stderr_tail": "",
+ "tests": [
+  {
+   "test": "test_basic_ints",
+   "ok": false,
+   "err": "TypeError: cannot unpack non-iterable int object"
+  },
+  {
+   "test": "test_division_types",
+   "ok": false,
+   "err": "TypeError: cannot unpack non-iterable int object"
+  },
+  {
+   "test": "test_floor_semantics_negative",
+   "ok": false,
+   "err": "TypeError: cannot unpack non-iterable int object"
+  },
+  {
+   "test": "test_decimal_literals",
+   "ok": false,
+   "err": "TypeError: cannot unpack non-iterable float object"
+  },
+  {
+   "test": "test_left_associativity",
+   "ok": false,
+   "err": "TypeError: cannot unpack non-iterable int object"
+  },
+  {
+   "test": "test_power_right_assoc",
+   "ok": false,
+   "err": "TypeError: cannot unpack non-iterable int object"
+  },
+  {
+   "test": "test_unary_vs_power",
+   "ok": false,
+   "err": "TypeError: cannot unpack non-iterable int object"
+  },
+  {
+   "test": "test_stacked_unary",
+   "ok": false,
+   "err": "TypeError: cannot unpack non-iterable int object"
+  },
+  {
+   "test": "test_unary_precedence_vs_mul",
+   "ok": false,
+   "err": "TypeError: cannot unpack non-iterable int object"
+  },
+  {
+   "test": "test_whitespace",
+   "ok": false,
+   "err": "TypeError: cannot unpack non-iterable int object"
+  },
+  {
+   "test": "test_nested_parens",
+   "ok": false,
+   "err": "TypeError: cannot unpack non-iterable int object"
+  },
+  {
+   "test": "test_int_float_result_types",
+   "ok": false,
+   "err": "TypeError: cannot unpack non-iterable int object"
+  },
+  {
+   "test": "test_big_ints",
+   "ok": false,
+   "err": "TypeError: cannot unpack non-iterable int object"
+  },
+  {
+   "test": "test_zero_division",
+   "ok": false,
+   "err": "AssertionError: '1/0': raised TypeError, expected ZeroDivisionError"
+  },
+  {
+   "test": "test_zero_ok",
+   "ok": false,
+   "err": "TypeError: cannot unpack non-iterable int object"
+  },
+  {
+   "test": "test_malformed_raises_valueerror",
+   "ok": false,
+   "err": "AssertionError: '(1': raised TypeError, expected ValueError"
+  },
+  {
+   "test": "test_not_using_eval",
+   "ok": true
+  },
+  {
+   "test": "test_differential_fuzz",
+   "ok": false,
+   "err": "TypeError: cannot unpack non-iterable float object"
+  }
+ ]
+}

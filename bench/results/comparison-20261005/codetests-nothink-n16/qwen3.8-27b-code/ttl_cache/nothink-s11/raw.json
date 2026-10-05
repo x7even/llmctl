@@ -1,0 +1,40 @@
+{
+ "id": "chatcmpl-87eb73a5ffd05b4f",
+ "object": "chat.completion",
+ "created": 1791223754,
+ "model": "qwen3.8-27b-code",
+ "choices": [
+  {
+   "index": 0,
+   "message": {
+    "role": "assistant",
+    "content": "```python\nfrom collections import OrderedDict\nfrom typing import Callable, Any, Optional\nimport time\n\n\nclass TTLCache:\n    def __init__(self, capacity: int, default_ttl: float, clock: Callable[[], float] = time.monotonic) -> None:\n        if not isinstance(capacity, int) or isinstance(capacity, bool):\n            raise ValueError(\"capacity must be an int\")\n        if capacity < 1:\n            raise ValueError(\"capacity must be >= 1\")\n        if not isinstance(default_ttl, (int, float)) or isinstance(default_ttl, bool):\n            raise ValueError(\"default_ttl must be a number\")\n        if default_ttl <= 0:\n            raise ValueError(\"default_ttl must be > 0\")\n\n        self._capacity = capacity\n        self._default_ttl = default_ttl\n        self._clock = clock\n        # key -> (value, expiry_time)\n        # OrderedDict preserves insertion order; we move_to_end on access to track LRU\n        self._data: OrderedDict = OrderedDict()\n\n    def _is_expired(self, expiry: float, now: Optional[float] = None) -> bool:\n        if now is None:\n            now = self._clock()\n        return now >= expiry\n\n    def _purge_expired(self) -> None:\n        now = self._clock()\n        expired_keys = []\n        for key, (value, expiry) in self._data.items():\n            if now >= expiry:\n                expired_keys.append(key)\n        for key in expired_keys:\n            del self._data[key]\n\n    def put(self, key, value, ttl: Optional[float] = None) -> None:\n        if ttl is not None:\n            if not isinstance(ttl, (int, float)) or isinstance(ttl, bool):\n                raise ValueError(\"ttl must be a number\")\n            if ttl <= 0:\n                raise ValueError(\"ttl must be > 0\")\n            effective_ttl = ttl\n        else:\n            effective_ttl = self._default_ttl\n\n        now = self._clock()\n        expiry = now + effective_ttl\n\n        # Check if key exists and is still live\n        if key in self._data:\n            _, existing_expiry = self._data[key]\n            if not self._is_expired(existing_expiry, now):\n                # Overwrite existing live key: reset TTL, mark MRU\n                self._data[key] = (value, expiry)\n                self._data.move_to_end(key)\n                return\n            else:\n                # Expired: remove it, treat as new insertion\n                del self._data[key]\n\n        # New insertion\n        # Purge expired entries first\n        self._purge_expired()\n\n        # If still at capacity, evict LRU\n        if len(self._data) >= self._capacity:\n            # Evict the least recently used (first item)\n            self._data.popitem(last=False)\n\n        self._data[key] = (value, expiry)\n\n    def get(self, key, default=None):\n        now = self._clock()\n        if key in self._data:\n            value, expiry = self._data[key]\n            if now >= expiry:\n                del self._data[key]\n                return default\n            else:\n                self._data.move_to_end(key)\n                return value\n        return default\n\n    def peek(self, key, default=None):\n        now = self._clock()\n        if key in self._data:\n            value, expiry = self._data[key]\n            if now >= expiry:\n                del self._data[key]\n                return default\n            else:\n                return value\n        return default\n\n    def delete(self, key) -> bool:\n        now = self._clock()\n        if key in self._data:\n            value, expiry = self._data[key]\n            if now >= expiry:\n                del self._data[key]\n                return False\n            else:\n                del self._data[key]\n                return True\n        return False\n\n    def keys(self) -> list:\n        self._purge_expired()\n        return list(self._data.keys())\n\n    def __len__(self) -> int:\n        self._purge_expired()\n        return len(self._data)\n\n    def __contains__(self, key) -> bool:\n        now = self._clock()\n        if key in self._data:\n            value, expiry = self._data[key]\n            if now >= expiry:\n                del self._data[key]\n                return False\n            return True\n        return False\n```",
+    "refusal": null,
+    "annotations": null,
+    "audio": null,
+    "function_call": null,
+    "reasoning": null
+   },
+   "logprobs": null,
+   "finish_reason": "stop",
+   "stop_reason": null,
+   "token_ids": null,
+   "routed_experts": null
+  }
+ ],
+ "service_tier": null,
+ "system_fingerprint": "vllm-0.26.0-tp4-0126c26e",
+ "usage": {
+  "prompt_tokens": 793,
+  "total_tokens": 1789,
+  "completion_tokens": 996,
+  "prompt_tokens_details": null
+ },
+ "prompt_logprobs": null,
+ "prompt_token_ids": null,
+ "prompt_text": null,
+ "kv_transfer_params": null,
+ "ec_transfer_params": null,
+ "metrics": null,
+ "_wall_s": 33.449687428998004
+}

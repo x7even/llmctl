@@ -1,0 +1,40 @@
+{
+ "id": "chatcmpl-bbf30e44a8f06ab1",
+ "object": "chat.completion",
+ "created": 1791223714,
+ "model": "qwen3.8-27b-code",
+ "choices": [
+  {
+   "index": 0,
+   "message": {
+    "role": "assistant",
+    "content": "```python\nfrom collections import OrderedDict\nfrom typing import Any, Callable\nimport time\n\n\nclass TTLCache:\n    \"\"\"A fixed-capacity LRU cache with per-entry time-to-live.\"\"\"\n\n    def __init__(\n        self,\n        capacity: int,\n        default_ttl: float,\n        clock: Callable[[], float] = time.monotonic,\n    ) -> None:\n        if not isinstance(capacity, int) or isinstance(capacity, bool):\n            raise ValueError(\"capacity must be an int\")\n        if capacity < 1:\n            raise ValueError(\"capacity must be >= 1\")\n        if not isinstance(default_ttl, (int, float)) or isinstance(default_ttl, bool):\n            raise ValueError(\"default_ttl must be a number\")\n        if default_ttl <= 0:\n            raise ValueError(\"default_ttl must be > 0\")\n\n        self._capacity = capacity\n        self._default_ttl = float(default_ttl)\n        self._clock = clock\n        # OrderedDict: key -> (value, expires_at)\n        # Order: least-recently-used first, most-recently-used last\n        self._store: \"OrderedDict[Any, tuple[Any, float]]\" = OrderedDict()\n\n    def _now(self) -> float:\n        return self._clock()\n\n    def _is_expired(self, expires_at: float, now: float) -> bool:\n        return now >= expires_at\n\n    def _purge_expired(self, now: float) -> None:\n        \"\"\"Remove all expired entries from the cache.\"\"\"\n        expired_keys = []\n        for key in self._store:\n            _, expires_at = self._store[key]\n            if self._is_expired(expires_at, now):\n                expired_keys.append(key)\n        for key in expired_keys:\n            del self._store[key]\n\n    def _touch(self, key: Any) -> None:\n        \"\"\"Move key to the most-recently-used position.\"\"\"\n        if key in self._store:\n            self._store.move_to_end(key)\n\n    def put(self, key: Any, value: Any, ttl: float | None = None) -> None:\n        now = self._now()\n\n        # Validate ttl\n        if ttl is not None:\n            if not isinstance(ttl, (int, float)) or isinstance(ttl, bool):\n                raise ValueError(\"ttl must be a number\")\n            if ttl <= 0:\n                raise ValueError(\"ttl must be > 0\")\n            effective_ttl = float(ttl)\n        else:\n            effective_ttl = self._default_ttl\n\n        expires_at = now + effective_ttl\n\n        # Check if key already exists and is live\n        if key in self._store:\n            _, existing_expires_at = self._store[key]\n            if self._is_expired(existing_expires_at, now):\n                # Expired entry: treat as new key insertion\n                del self._store[key]\n            else:\n                # Live entry: overwrite, reset TTL, mark MRU\n                self._store[key] = (value, expires_at)\n                self._store.move_to_end(key)\n                return\n\n        # New key insertion: may need to evict\n        # First purge all expired entries\n        self._purge_expired(now)\n\n        # If still at capacity, evict LRU\n        if len(self._store) >= self._capacity:\n            # Evict the least-recently-used entry (first in OrderedDict)\n            self._store.popitem(last=False)\n\n        self._store[key] = (value, expires_at)\n\n    def get(self, key: Any, default: Any = None) -> Any:\n        now = self._now()\n\n        if key not in self._store:\n            return default\n\n        value, expires_at = self._store[key]\n        if self._is_expired(expires_at, now):\n            del self._store[key]\n            return default\n\n        # Mark as most-recently-used\n        self._store.move_to_end(key)\n        return value\n\n    def peek(self, key: Any, default: Any = None) -> Any:\n        now = self._now()\n\n        if key not in self._store:\n            return default\n\n        value, expires_at = self._store[key]\n        if self._is_expired(expires_at, now):\n            del self._store[key]\n            return default\n\n        # Do NOT change recency\n        return value\n\n    def delete(self, key: Any) -> bool:\n        now = self._now()\n\n        if key not in self._store:\n            return False\n\n        _, expires_at = self._store[key]\n        if self._is_expired(expires_at, now):\n            del self._store[key]\n            return False\n\n        del self._store[key]\n        return True\n\n    def keys(self) -> list:\n        now = self._now()\n        self._purge_expired(now)\n        return list(self._store.keys())\n\n    def __len__(self) -> int:\n        now = self._now()\n        self._purge_expired(now)\n        return len(self._store)\n\n    def __contains__(self, key: Any) -> bool:\n        now = self._now()\n\n        if key not in self._store:\n            return False\n\n        _, expires_at = self._store[key]\n        if self._is_expired(expires_at, now):\n            del self._store[key]\n            return False\n\n        return True\n```",
+    "refusal": null,
+    "annotations": null,
+    "audio": null,
+    "function_call": null,
+    "reasoning": null
+   },
+   "logprobs": null,
+   "finish_reason": "stop",
+   "stop_reason": null,
+   "token_ids": null,
+   "routed_experts": null
+  }
+ ],
+ "service_tier": null,
+ "system_fingerprint": "vllm-0.26.0-tp4-0126c26e",
+ "usage": {
+  "prompt_tokens": 793,
+  "total_tokens": 1995,
+  "completion_tokens": 1202,
+  "prompt_tokens_details": null
+ },
+ "prompt_logprobs": null,
+ "prompt_token_ids": null,
+ "prompt_text": null,
+ "kv_transfer_params": null,
+ "ec_transfer_params": null,
+ "metrics": null,
+ "_wall_s": 39.45753657200112
+}

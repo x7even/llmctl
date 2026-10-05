@@ -1,0 +1,11 @@
+{
+ "label": "after-concurrent_bench",
+ "time": "2026-10-05 10:38:55",
+ "containers": "llmstack-vllm-qwen3.6-27b-code Up About an hour",
+ "live_8080_running": "{\"running\":[]}",
+ "mtp": {
+  "draft_tokens": 380468.0,
+  "accepted_tokens": 253726.0,
+  "drafts": 190234.0
+ }
+}

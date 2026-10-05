@@ -1,0 +1,40 @@
+{
+ "id": "chatcmpl-87ee9d6101b5f1fd",
+ "object": "chat.completion",
+ "created": 1791223753,
+ "model": "qwen3.8-27b-code",
+ "choices": [
+  {
+   "index": 0,
+   "message": {
+    "role": "assistant",
+    "content": "```python\nfrom collections import OrderedDict\nfrom typing import Callable, Any, Optional\n\n\nclass TTLCache:\n    def __init__(self, capacity: int, default_ttl: float, clock: Callable[[], float] = None) -> None:\n        if not isinstance(capacity, int) or isinstance(capacity, bool) or capacity < 1:\n            raise ValueError(\"capacity must be an int >= 1\")\n        if not isinstance(default_ttl, (int, float)) or isinstance(default_ttl, bool) or default_ttl <= 0:\n            raise ValueError(\"default_ttl must be > 0\")\n        if clock is None:\n            import time\n            clock = time.monotonic\n        self._capacity = capacity\n        self._default_ttl = default_ttl\n        self._clock = clock\n        # key -> (value, expiry_time)\n        self._data: \"OrderedDict[Any, tuple[Any, float]]\" = OrderedDict()\n\n    def _purge_expired(self) -> None:\n        now = self._clock()\n        to_remove = []\n        for key, (_, expiry) in self._data.items():\n            if now >= expiry:\n                to_remove.append(key)\n        for key in to_remove:\n            del self._data[key]\n\n    def _is_expired(self, expiry: float) -> bool:\n        return self._clock() >= expiry\n\n    def put(self, key, value, ttl: Optional[float] = None) -> None:\n        if ttl is not None:\n            if not isinstance(ttl, (int, float)) or isinstance(ttl, bool) or ttl <= 0:\n                raise ValueError(\"ttl must be > 0\")\n        effective_ttl = self._default_ttl if ttl is None else ttl\n        now = self._clock()\n        expiry = now + effective_ttl\n\n        # Check if key exists and is still live\n        if key in self._data:\n            _, existing_expiry = self._data[key]\n            if not self._is_expired(existing_expiry):\n                # Overwrite existing live key: reset TTL, mark MRU\n                self._data[key] = (value, expiry)\n                self._data.move_to_end(key)\n                return\n            else:\n                # Expired: treat as new key, remove it first\n                del self._data[key]\n\n        # Inserting a new key\n        self._purge_expired()\n\n        if len(self._data) >= self._capacity:\n            # Evict LRU\n            self._data.popitem(last=False)\n\n        self._data[key] = (value, expiry)\n\n    def get(self, key, default=None):\n        if key not in self._data:\n            return default\n        value, expiry = self._data[key]\n        if self._is_expired(expiry):\n            del self._data[key]\n            return default\n        self._data.move_to_end(key)\n        return value\n\n    def peek(self, key, default=None):\n        if key not in self._data:\n            return default\n        value, expiry = self._data[key]\n        if self._is_expired(expiry):\n            del self._data[key]\n            return default\n        return value\n\n    def delete(self, key) -> bool:\n        if key not in self._data:\n            return False\n        _, expiry = self._data[key]\n        if self._is_expired(expiry):\n            del self._data[key]\n            return False\n        del self._data[key]\n        return True\n\n    def keys(self) -> list:\n        self._purge_expired()\n        return list(self._data.keys())\n\n    def __len__(self) -> int:\n        self._purge_expired()\n        return len(self._data)\n\n    def __contains__(self, key) -> bool:\n        if key not in self._data:\n            return False\n        _, expiry = self._data[key]\n        if self._is_expired(expiry):\n            del self._data[key]\n            return False\n        return True\n```",
+    "refusal": null,
+    "annotations": null,
+    "audio": null,
+    "function_call": null,
+    "reasoning": null
+   },
+   "logprobs": null,
+   "finish_reason": "stop",
+   "stop_reason": null,
+   "token_ids": null,
+   "routed_experts": null
+  }
+ ],
+ "service_tier": null,
+ "system_fingerprint": "vllm-0.26.0-tp4-0126c26e",
+ "usage": {
+  "prompt_tokens": 793,
+  "total_tokens": 1676,
+  "completion_tokens": 883,
+  "prompt_tokens_details": null
+ },
+ "prompt_logprobs": null,
+ "prompt_token_ids": null,
+ "prompt_text": null,
+ "kv_transfer_params": null,
+ "ec_transfer_params": null,
+ "metrics": null,
+ "_wall_s": 30.1385910740064
+}

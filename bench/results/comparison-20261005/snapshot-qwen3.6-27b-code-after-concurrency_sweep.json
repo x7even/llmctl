@@ -1,0 +1,11 @@
+{
+ "label": "after-concurrency_sweep",
+ "time": "2026-10-05 11:08:21",
+ "containers": "llmstack-vllm-qwen3.6-27b-code Up 2 hours",
+ "live_8080_running": "{\"running\":[]}",
+ "mtp": {
+  "draft_tokens": 846988.0,
+  "accepted_tokens": 708405.0,
+  "drafts": 423494.0
+ }
+}

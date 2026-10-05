@@ -1,0 +1,40 @@
+{
+ "id": "chatcmpl-8e77f039ca93f66c",
+ "object": "chat.completion",
+ "created": 1791198874,
+ "model": "qwen3.6-27b-code",
+ "choices": [
+  {
+   "index": 0,
+   "message": {
+    "role": "assistant",
+    "content": "```python\nimport time\nfrom collections import OrderedDict\nfrom typing import Callable\n\n\nclass TTLCache:\n    \"\"\"\n    A fixed-capacity cache with per-entry time-to-live and least-recently-used eviction.\n    Standard library only. Deterministic under an injected clock.\n    \"\"\"\n\n    def __init__(self, capacity: int, default_ttl: float, clock: Callable[[], float] = time.monotonic) -> None:\n        if not isinstance(capacity, int) or capacity < 1:\n            raise ValueError(\"capacity must be an int >= 1\")\n        if not isinstance(default_ttl, (int, float)) or default_ttl <= 0:\n            raise ValueError(\"default_ttl must be > 0\")\n        \n        self.capacity = capacity\n        self.default_ttl = float(default_ttl)\n        self.clock = clock\n        \n        # _store: OrderedDict[key -> (value, expiry_time)]\n        # Order: least-recently-used at the front (left), most-recently-used at the back (right)\n        self._store: OrderedDict = OrderedDict()\n\n    def _is_expired(self, expiry_time: float) -> bool:\n        \"\"\"Check if an entry is expired based on current clock time.\"\"\"\n        if expiry_time == float('inf'):\n            return False\n        return self.clock() >= expiry_time\n\n    def _purge_expired(self) -> None:\n        \"\"\"Remove all expired entries from the cache.\"\"\"\n        expired_keys = []\n        for key, (value, expiry_time) in self._store.items():\n            if self._is_expired(expiry_time):\n                expired_keys.append(key)\n        for key in expired_keys:\n            del self._store[key]\n\n    def _move_to_end(self, key: str) -> None:\n        \"\"\"Mark a key as most-recently-used by moving it to the end of the OrderedDict.\"\"\"\n        self._store.move_to_end(key)\n\n    def _evict_lru(self) -> None:\n        \"\"\"Evict the least-recently-used entry (the first item in the OrderedDict).\"\"\"\n        if self._store:\n            self._store.popitem(last=False)\n\n    def put(self, key, value, ttl: float | None = None) -> None:\n        \"\"\"\n        Inserts or overwrites an entry.\n        If ttl is None, uses default_ttl.\n        If ttl is provided, it must be > 0.\n        \"\"\"\n        # Validate ttl if provided\n        if ttl is not None:\n            if not isinstance(ttl, (int, float)) or ttl <= 0:\n                raise ValueError(\"ttl must be > 0 if provided\")\n            entry_ttl = float(ttl)\n        else:\n            entry_ttl = self.default_ttl\n\n        now = self.clock()\n        expiry_time = now + entry_ttl if entry_ttl != float('inf') else float('inf')\n\n        # If key already exists\n        if key in self._store:\n            # Check if it's expired\n            _, old_expiry = self._store[key]\n            if self._is_expired(old_expiry):\n                # Treat as new key insertion\n                del self._store[key]\n                # Fall through to new key logic\n            else:\n                # Overwrite existing live key: replace value, reset TTL, mark as MRU\n                self._store[key] = (value, expiry_time)\n                self._move_to_end(key)\n                return\n\n        # New key insertion (or overwrite of expired key)\n        # First, purge all expired entries\n        self._purge_expired()\n\n        # If cache is full, evict LRU\n        if len(self._store) >= self.capacity:\n            self._evict_lru()\n\n        # Insert new entry\n        self._store[key] = (value, expiry_time)\n        # It's already at the end (most recently used)\n\n    def get(self, key, default=None):\n        \"\"\"\n        Returns the value if the key is present and live, and marks it most-recently-used.\n        Does not extend the TTL.\n        If expired, removes entry and returns default.\n        If missing, returns default.\n        \"\"\"\n        if key not in self._store:\n            return default\n\n        value, expiry_time = self._store[key]\n\n        if self._is_expired(expiry_time):\n            del self._store[key]\n            return default\n\n        # Mark as most-recently-used\n        self._move_to_end(key)\n        return value\n\n    def peek(self, key, default=None):\n        \"\"\"\n        Like get but does not change recency.\n        Expired entries are removed and default returned.\n        \"\"\"\n        if key not in self._store:\n            return default\n\n        value, expiry_time = self._store[key]\n\n        if self._is_expired(expiry_time):\n            del self._store[key]\n            return default\n\n        return value\n\n    def delete(self, key) -> bool:\n        \"\"\"\n        Returns True if a live entry was removed.\n        Returns False if the key is missing or its entry had already expired.\n        An expired entry is removed either way.\n        \"\"\"\n        if key not in self._store:\n            return False\n\n        value, expiry_time = self._store[key]\n\n        if self._is_expired(expiry_time):\n            del self._store[key]\n            return False\n\n        del self._store[key]\n        return True\n\n    def keys(self) -> list:\n        \"\"\"\n        Returns the live keys ordered from least-recently-used to most-recently-used.\n        Expired entries are purged first.\n        \"\"\"\n        self._purge_expired()\n        return list(self._store.keys())\n\n    def __len__(self) -> int:\n        \"\"\"Counts live entries only (expired entries are purged first).\"\"\"\n        self._purge_expired()\n        return len(self._store)\n\n    def __contains__(self, key) -> bool:\n        \"\"\"\n        True only for live entries and does not change recency.\n        \"\"\"\n        if key not in self._store:\n            return False\n\n        value, expiry_time = self._store[key]\n\n        if self._is_expired(expiry_time):\n            del self._store[key]\n            return False\n\n        return True\n```",
+    "refusal": null,
+    "annotations": null,
+    "audio": null,
+    "function_call": null,
+    "reasoning": null
+   },
+   "logprobs": null,
+   "finish_reason": "stop",
+   "stop_reason": null,
+   "token_ids": null,
+   "routed_experts": null
+  }
+ ],
+ "service_tier": null,
+ "system_fingerprint": "vllm-0.26.0-tp4-2b546a5a",
+ "usage": {
+  "prompt_tokens": 793,
+  "total_tokens": 2171,
+  "completion_tokens": 1378,
+  "prompt_tokens_details": null
+ },
+ "prompt_logprobs": null,
+ "prompt_token_ids": null,
+ "prompt_text": null,
+ "kv_transfer_params": null,
+ "ec_transfer_params": null,
+ "metrics": null,
+ "_wall_s": 52.686847569002566
+}

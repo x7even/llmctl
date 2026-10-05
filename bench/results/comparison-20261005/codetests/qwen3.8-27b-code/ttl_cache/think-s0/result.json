@@ -1,0 +1,119 @@
+{
+ "passed": 0,
+ "total": 22,
+ "fatal": null,
+ "timed_out": false,
+ "stderr_tail": "",
+ "tests": [
+  {
+   "test": "test_basic_put_get",
+   "ok": false,
+   "err": "AttributeError: module 'solution' has no attribute 'TTLCache'"
+  },
+  {
+   "test": "test_validation",
+   "ok": false,
+   "err": "AssertionError: raised AttributeError, expected ValueError"
+  },
+  {
+   "test": "test_expiry_boundary_inclusive",
+   "ok": false,
+   "err": "AttributeError: module 'solution' has no attribute 'TTLCache'"
+  },
+  {
+   "test": "test_per_entry_ttl",
+   "ok": false,
+   "err": "AttributeError: module 'solution' has no attribute 'TTLCache'"
+  },
+  {
+   "test": "test_infinite_ttl",
+   "ok": false,
+   "err": "AttributeError: module 'solution' has no attribute 'TTLCache'"
+  },
+  {
+   "test": "test_get_does_not_extend_ttl",
+   "ok": false,
+   "err": "AttributeError: module 'solution' has no attribute 'TTLCache'"
+  },
+  {
+   "test": "test_overwrite_resets_ttl_and_value",
+   "ok": false,
+   "err": "AttributeError: module 'solution' has no attribute 'TTLCache'"
+  },
+  {
+   "test": "test_overwrite_uses_new_ttl_or_default",
+   "ok": false,
+   "err": "AttributeError: module 'solution' has no attribute 'TTLCache'"
+  },
+  {
+   "test": "test_lru_eviction_order",
+   "ok": false,
+   "err": "AttributeError: module 'solution' has no attribute 'TTLCache'"
+  },
+  {
+   "test": "test_get_refreshes_recency",
+   "ok": false,
+   "err": "AttributeError: module 'solution' has no attribute 'TTLCache'"
+  },
+  {
+   "test": "test_peek_does_not_refresh",
+   "ok": false,
+   "err": "AttributeError: module 'solution' has no attribute 'TTLCache'"
+  },
+  {
+   "test": "test_contains_does_not_refresh",
+   "ok": false,
+   "err": "AttributeError: module 'solution' has no attribute 'TTLCache'"
+  },
+  {
+   "test": "test_overwrite_refreshes_and_never_evicts",
+   "ok": false,
+   "err": "AttributeError: module 'solution' has no attribute 'TTLCache'"
+  },
+  {
+   "test": "test_expired_purged_before_lru_eviction",
+   "ok": false,
+   "err": "AttributeError: module 'solution' has no attribute 'TTLCache'"
+  },
+  {
+   "test": "test_expired_slot_reclaimed_prefers_expired_over_lru",
+   "ok": false,
+   "err": "AttributeError: module 'solution' has no attribute 'TTLCache'"
+  },
+  {
+   "test": "test_len_excludes_expired",
+   "ok": false,
+   "err": "AttributeError: module 'solution' has no attribute 'TTLCache'"
+  },
+  {
+   "test": "test_delete_semantics",
+   "ok": false,
+   "err": "AttributeError: module 'solution' has no attribute 'TTLCache'"
+  },
+  {
+   "test": "test_overwrite_expired_key_counts_as_new_insert",
+   "ok": false,
+   "err": "AttributeError: module 'solution' has no attribute 'TTLCache'"
+  },
+  {
+   "test": "test_none_value_is_a_hit",
+   "ok": false,
+   "err": "AttributeError: module 'solution' has no attribute 'TTLCache'"
+  },
+  {
+   "test": "test_hashable_keys",
+   "ok": false,
+   "err": "AttributeError: module 'solution' has no attribute 'TTLCache'"
+  },
+  {
+   "test": "test_capacity_one",
+   "ok": false,
+   "err": "AttributeError: module 'solution' has no attribute 'TTLCache'"
+  },
+  {
+   "test": "test_model_based_random",
+   "ok": false,
+   "err": "AttributeError: module 'solution' has no attribute 'TTLCache'"
+  }
+ ]
+}
