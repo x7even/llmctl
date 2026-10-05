@@ -138,6 +138,59 @@ models:
         --cudagraph-capture-sizes 1 2 4 8 16 32
     cmdStop: podman stop llmstack-vllm-${MODEL_ID}
 
+  # ─── vLLM: Qwen3.8-27B FP8 (dense, MTP) ────────────────────────────────
+  # Successor to qwen3.6-27b-code (released 2026-08-14, Apache 2.0).
+  # Official Qwen/Qwen3.8-27B-FP8 — 30.9 GB incl. bundled mtp.safetensors.
+  # Dense 27B, 262144 native context, vision, thinking on by default;
+  # reasoning_effort (xhigh/medium/low) is a per-request parameter.
+  # Settings mirror qwen3.6-27b-code until benchmarked; untested on vLLM 0.26.0
+  # at first commit — check `llmctl logs qwen3.8-27b-code` on first boot.
+  qwen3.8-27b-code:
+    name: "Qwen3.8-27B FP8 (code, MTP)"
+    ttl: 0
+    checkEndpoint: /health
+    concurrencyLimit: 64
+    aliases:
+      - 27b-3.8
+      - qwen3.8-27b
+    cmd: |
+      podman run --replace --rm
+        --name llmstack-vllm-${MODEL_ID}
+        --device=/dev/kfd
+        --device=/dev/dri
+        --group-add keep-groups
+        --security-opt seccomp=unconfined
+        --security-opt apparmor=unconfined
+        --ipc=private
+        --shm-size=32g
+        --network=host
+        -v /mnt/models/llm:/models:ro
+        -v /home/xin/ai/llmstack/.vllm-cache:/root/.cache/vllm
+        -v /home/xin/ai/llmstack/.triton-cache:/root/.triton/cache
+        -e HSA_ENABLE_SDMA=0
+        -e TORCH_BLAS_PREFER_HIPBLASLT=1
+        --entrypoint=""
+        docker.io/vllm/vllm-openai-rocm:v0.26.0
+        vllm serve /models/Qwen3.8-27B-FP8
+        --host 127.0.0.1
+        --port ${PORT}
+        --served-model-name qwen3.8-27b-code
+        --dtype auto
+        --tensor-parallel-size 4
+        --max-model-len 131072
+        --max-num-seqs 32
+        --max-num-batched-tokens 32768
+        --gpu-memory-utilization 0.95
+        --enable-prefix-caching
+        --enable-chunked-prefill
+        --trust-remote-code
+        --reasoning-parser qwen3
+        --enable-auto-tool-choice
+        --tool-call-parser qwen3_xml
+        --speculative-config '{"method": "mtp", "num_speculative_tokens": 2}'
+        --cudagraph-capture-sizes 1 2 4 8 16 32
+    cmdStop: podman stop llmstack-vllm-${MODEL_ID}
+
   # ─── vLLM: Qwen3.6-27B BF16 (code-optimised, full precision) ───────────
   # Best for: highest quality code generation — full BF16 precision, zero quantization error
   #           Same SWE-bench architecture as -fp8 but no W8A8 approximation in dense layers
