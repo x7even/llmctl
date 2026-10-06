@@ -1,0 +1,40 @@
+{
+ "id": "chatcmpl-ae6c99caa63379d2",
+ "object": "chat.completion",
+ "created": 1791198926,
+ "model": "qwen3.6-27b-code",
+ "choices": [
+  {
+   "index": 0,
+   "message": {
+    "role": "assistant",
+    "content": "```python\nfrom collections import OrderedDict\nfrom typing import Callable, Any\n\n\nclass TTLCache:\n    def __init__(self, capacity: int, default_ttl: float, clock: Callable[[], float] = None) -> None:\n        if clock is None:\n            import time\n            clock = time.monotonic\n        \n        if not isinstance(capacity, int) or capacity < 1:\n            raise ValueError(\"capacity must be an int >= 1\")\n        if not isinstance(default_ttl, (int, float)) or default_ttl <= 0:\n            raise ValueError(\"default_ttl must be > 0\")\n        \n        self._capacity = capacity\n        self._default_ttl = float(default_ttl)\n        self._clock = clock\n        # _store: OrderedDict[key -> (value, expiry_time)]\n        # Order is LRU (left) to MRU (right)\n        self._store: OrderedDict = OrderedDict()\n    \n    def _now(self) -> float:\n        return self._clock()\n    \n    def _purge_expired(self) -> None:\n        \"\"\"Remove all expired entries from the cache.\"\"\"\n        now = self._now()\n        expired_keys = []\n        for key, (value, expiry) in self._store.items():\n            if now >= expiry:\n                expired_keys.append(key)\n        for key in expired_keys:\n            del self._store[key]\n    \n    def _is_expired(self, key: Any) -> bool:\n        \"\"\"Check if a specific key is expired. Assumes key exists in _store.\"\"\"\n        now = self._now()\n        _, expiry = self._store[key]\n        return now >= expiry\n    \n    def _move_to_end(self, key: Any) -> None:\n        \"\"\"Move key to the end (MRU position).\"\"\"\n        self._store.move_to_end(key)\n    \n    def put(self, key, value, ttl: float | None = None) -> None:\n        if ttl is not None:\n            if not isinstance(ttl, (int, float)) or ttl <= 0:\n                raise ValueError(\"ttl must be > 0\")\n            entry_ttl = float(ttl)\n        else:\n            entry_ttl = self._default_ttl\n        \n        now = self._now()\n        expiry = now + entry_ttl\n        \n        # If key exists, check if it's expired\n        if key in self._store:\n            if self._is_expired(key):\n                # Treat as new key: remove expired entry first\n                del self._store[key]\n                # Now proceed as insertion of new key\n                self._insert_new(key, value, expiry)\n            else:\n                # Overwrite existing live key\n                self._store[key] = (value, expiry)\n                self._move_to_end(key)\n        else:\n            # New key\n            self._insert_new(key, value, expiry)\n    \n    def _insert_new(self, key: Any, value: Any, expiry: float) -> None:\n        \"\"\"Insert a new key, handling eviction if necessary.\"\"\"\n        # First, purge all expired entries\n        self._purge_expired()\n        \n        # If still at capacity, evict LRU\n        if len(self._store) >= self._capacity:\n            # Evict the first item (LRU)\n            self._store.popitem(last=False)\n        \n        # Insert new key at the end (MRU)\n        self._store[key] = (value, expiry)\n    \n    def get(self, key, default=None):\n        if key not in self._store:\n            return default\n        \n        if self._is_expired(key):\n            del self._store[key]\n            return default\n        \n        # Live entry: return value and mark as MRU\n        value, _ = self._store[key]\n        self._move_to_end(key)\n        return value\n    \n    def peek(self, key, default=None):\n        if key not in self._store:\n            return default\n        \n        if self._is_expired(key):\n            del self._store[key]\n            return default\n        \n        # Live entry: return value without changing recency\n        value, _ = self._store[key]\n        return value\n    \n    def delete(self, key) -> bool:\n        if key not in self._store:\n            return False\n        \n        if self._is_expired(key):\n            del self._store[key]\n            return False\n        \n        # Live entry: remove it\n        del self._store[key]\n        return True\n    \n    def keys(self) -> list:\n        # Purge expired entries first\n        self._purge_expired()\n        # Return keys from LRU (left) to MRU (right)\n        return list(self._store.keys())\n    \n    def __len__(self) -> int:\n        # Purge expired entries first\n        self._purge_expired()\n        return len(self._store)\n    \n    def __contains__(self, key) -> bool:\n        if key not in self._store:\n            return False\n        \n        if self._is_expired(key):\n            del self._store[key]\n            return False\n        \n        return True\n```",
+    "refusal": null,
+    "annotations": null,
+    "audio": null,
+    "function_call": null,
+    "reasoning": null
+   },
+   "logprobs": null,
+   "finish_reason": "stop",
+   "stop_reason": null,
+   "token_ids": null,
+   "routed_experts": null
+  }
+ ],
+ "service_tier": null,
+ "system_fingerprint": "vllm-0.26.0-tp4-2b546a5a",
+ "usage": {
+  "prompt_tokens": 793,
+  "total_tokens": 1912,
+  "completion_tokens": 1119,
+  "prompt_tokens_details": null
+ },
+ "prompt_logprobs": null,
+ "prompt_token_ids": null,
+ "prompt_text": null,
+ "kv_transfer_params": null,
+ "ec_transfer_params": null,
+ "metrics": null,
+ "_wall_s": 44.66046721699968
+}

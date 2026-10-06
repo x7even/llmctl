@@ -1,0 +1,91 @@
+{
+ "passed": 8,
+ "total": 18,
+ "fatal": null,
+ "timed_out": false,
+ "stderr_tail": "",
+ "tests": [
+  {
+   "test": "test_basic_ints",
+   "ok": false,
+   "err": "ValueError: Unexpected token: '/'"
+  },
+  {
+   "test": "test_division_types",
+   "ok": false,
+   "err": "ValueError: Unexpected token: '/'"
+  },
+  {
+   "test": "test_floor_semantics_negative",
+   "ok": false,
+   "err": "ValueError: Unexpected token: '/'"
+  },
+  {
+   "test": "test_decimal_literals",
+   "ok": true
+  },
+  {
+   "test": "test_left_associativity",
+   "ok": false,
+   "err": "ValueError: Unexpected token: '/'"
+  },
+  {
+   "test": "test_power_right_assoc",
+   "ok": true
+  },
+  {
+   "test": "test_unary_vs_power",
+   "ok": true
+  },
+  {
+   "test": "test_stacked_unary",
+   "ok": true
+  },
+  {
+   "test": "test_unary_precedence_vs_mul",
+   "ok": false,
+   "err": "ValueError: Unexpected token: '/'"
+  },
+  {
+   "test": "test_whitespace",
+   "ok": true
+  },
+  {
+   "test": "test_nested_parens",
+   "ok": true
+  },
+  {
+   "test": "test_int_float_result_types",
+   "ok": false,
+   "err": "ValueError: Unexpected token: '/'"
+  },
+  {
+   "test": "test_big_ints",
+   "ok": false,
+   "err": "ValueError: Unexpected token: '/'"
+  },
+  {
+   "test": "test_zero_division",
+   "ok": false,
+   "err": "AssertionError: '1//0': raised ValueError, expected ZeroDivisionError"
+  },
+  {
+   "test": "test_zero_ok",
+   "ok": false,
+   "err": "ValueError: Unexpected token: '/'"
+  },
+  {
+   "test": "test_malformed_raises_valueerror",
+   "ok": true
+  },
+  {
+   "test": "test_not_using_eval",
+   "ok": true
+  },
+  {
+   "test": "test_differential_fuzz",
+   "ok": false,
+   "err": "ValueError: Unexpected token: '/'"
+  }
+ ]
+}

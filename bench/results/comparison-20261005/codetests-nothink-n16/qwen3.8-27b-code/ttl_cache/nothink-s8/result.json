@@ -1,0 +1,97 @@
+{
+ "passed": 22,
+ "total": 22,
+ "fatal": null,
+ "timed_out": false,
+ "stderr_tail": "",
+ "tests": [
+  {
+   "test": "test_basic_put_get",
+   "ok": true
+  },
+  {
+   "test": "test_validation",
+   "ok": true
+  },
+  {
+   "test": "test_expiry_boundary_inclusive",
+   "ok": true
+  },
+  {
+   "test": "test_per_entry_ttl",
+   "ok": true
+  },
+  {
+   "test": "test_infinite_ttl",
+   "ok": true
+  },
+  {
+   "test": "test_get_does_not_extend_ttl",
+   "ok": true
+  },
+  {
+   "test": "test_overwrite_resets_ttl_and_value",
+   "ok": true
+  },
+  {
+   "test": "test_overwrite_uses_new_ttl_or_default",
+   "ok": true
+  },
+  {
+   "test": "test_lru_eviction_order",
+   "ok": true
+  },
+  {
+   "test": "test_get_refreshes_recency",
+   "ok": true
+  },
+  {
+   "test": "test_peek_does_not_refresh",
+   "ok": true
+  },
+  {
+   "test": "test_contains_does_not_refresh",
+   "ok": true
+  },
+  {
+   "test": "test_overwrite_refreshes_and_never_evicts",
+   "ok": true
+  },
+  {
+   "test": "test_expired_purged_before_lru_eviction",
+   "ok": true
+  },
+  {
+   "test": "test_expired_slot_reclaimed_prefers_expired_over_lru",
+   "ok": true
+  },
+  {
+   "test": "test_len_excludes_expired",
+   "ok": true
+  },
+  {
+   "test": "test_delete_semantics",
+   "ok": true
+  },
+  {
+   "test": "test_overwrite_expired_key_counts_as_new_insert",
+   "ok": true
+  },
+  {
+   "test": "test_none_value_is_a_hit",
+   "ok": true
+  },
+  {
+   "test": "test_hashable_keys",
+   "ok": true
+  },
+  {
+   "test": "test_capacity_one",
+   "ok": true
+  },
+  {
+   "test": "test_model_based_random",
+   "ok": true
+  }
+ ]
+}

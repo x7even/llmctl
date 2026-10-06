@@ -1,0 +1,70 @@
+{
+ "model": "qwen3.8-27b-code",
+ "rows": [
+  {
+   "task": "ttl_cache",
+   "mode": "think",
+   "sample": 0,
+   "passed": 22,
+   "total": 22,
+   "full_pass": true,
+   "fatal": null,
+   "finish": "stop",
+   "completion_tokens": 25645,
+   "wall_s": 1152.9,
+   "reasoning_chars": 98127,
+   "failed_tests": []
+  },
+  {
+   "task": "ttl_cache",
+   "mode": "think",
+   "sample": 1,
+   "passed": 0,
+   "total": 22,
+   "full_pass": false,
+   "fatal": null,
+   "finish": "stop",
+   "completion_tokens": 40752,
+   "wall_s": 2079.4,
+   "reasoning_chars": 148087,
+   "failed_tests": [
+    "test_basic_put_get",
+    "test_validation",
+    "test_expiry_boundary_inclusive",
+    "test_per_entry_ttl",
+    "test_infinite_ttl",
+    "test_get_does_not_extend_ttl",
+    "test_overwrite_resets_ttl_and_value",
+    "test_overwrite_uses_new_ttl_or_default",
+    "test_lru_eviction_order",
+    "test_get_refreshes_recency",
+    "test_peek_does_not_refresh",
+    "test_contains_does_not_refresh",
+    "test_overwrite_refreshes_and_never_evicts",
+    "test_expired_purged_before_lru_eviction",
+    "test_expired_slot_reclaimed_prefers_expired_over_lru",
+    "test_len_excludes_expired",
+    "test_delete_semantics",
+    "test_overwrite_expired_key_counts_as_new_insert",
+    "test_none_value_is_a_hit",
+    "test_hashable_keys",
+    "test_capacity_one",
+    "test_model_based_random"
+   ]
+  },
+  {
+   "task": "ttl_cache",
+   "mode": "think",
+   "sample": 3,
+   "passed": 22,
+   "total": 22,
+   "full_pass": true,
+   "fatal": null,
+   "finish": "stop",
+   "completion_tokens": 36480,
+   "wall_s": 1937.4,
+   "reasoning_chars": 136619,
+   "failed_tests": []
+  }
+ ]
+}

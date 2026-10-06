@@ -1,0 +1,11 @@
+{
+ "label": "pre-load",
+ "time": "2026-10-05 09:20:45",
+ "containers": "llmstack-vllm-qwen3.6-27b-code Up 5 minutes",
+ "live_8080_running": "{\"running\":[]}",
+ "mtp": {
+  "draft_tokens": 3630.0,
+  "accepted_tokens": 3133.0,
+  "drafts": 1815.0
+ }
+}

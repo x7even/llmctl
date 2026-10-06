@@ -1,0 +1,40 @@
+{
+ "id": "chatcmpl-9f681b51c86640ac",
+ "object": "chat.completion",
+ "created": 1791198868,
+ "model": "qwen3.6-27b-code",
+ "choices": [
+  {
+   "index": 0,
+   "message": {
+    "role": "assistant",
+    "content": "```python\nfrom __future__ import annotations\nimport time\nfrom collections import OrderedDict\nfrom typing import Callable, Any, Optional\n\n\nclass TTLCache:\n    \"\"\"\n    A fixed-capacity cache with per-entry time-to-live and least-recently-used eviction.\n    \"\"\"\n\n    def __init__(\n        self,\n        capacity: int,\n        default_ttl: float,\n        clock: Callable[[], float] = time.monotonic,\n    ) -> None:\n        if not isinstance(capacity, int) or capacity < 1:\n            raise ValueError(\"capacity must be an integer >= 1\")\n        if not isinstance(default_ttl, (int, float)) or default_ttl <= 0:\n            raise ValueError(\"default_ttl must be > 0\")\n        # Allow inf\n        if default_ttl != float(\"inf\") and default_ttl <= 0:\n            raise ValueError(\"default_ttl must be > 0\")\n\n        self.capacity = capacity\n        self.default_ttl = float(default_ttl)\n        self.clock = clock\n\n        # Internal storage: key -> (value, expire_time)\n        # We use OrderedDict to maintain insertion/access order for LRU\n        # The order is: least-recently-used at the beginning, most-recently-used at the end\n        self._cache: OrderedDict = OrderedDict()\n\n    def _is_expired(self, expire_time: float) -> bool:\n        \"\"\"Check if an entry is expired based on current clock.\"\"\"\n        if expire_time == float(\"inf\"):\n            return False\n        return self.clock() >= expire_time\n\n    def _purge_expired(self) -> None:\n        \"\"\"Remove all expired entries from the cache.\"\"\"\n        expired_keys = []\n        for key, (value, expire_time) in self._cache.items():\n            if self._is_expired(expire_time):\n                expired_keys.append(key)\n        for key in expired_keys:\n            del self._cache[key]\n\n    def _get_expire_time(self, ttl: Optional[float]) -> float:\n        \"\"\"Calculate expiration time given a TTL.\"\"\"\n        if ttl is None:\n            ttl = self.default_ttl\n        if ttl == float(\"inf\"):\n            return float(\"inf\")\n        return self.clock() + ttl\n\n    def put(self, key, value, ttl: Optional[float] = None) -> None:\n        \"\"\"\n        Inserts or overwrites an entry.\n        If key exists and is live: replace value, reset TTL, mark as most-recently-used.\n        If key exists but expired: treat as new insertion.\n        If key doesn't exist: insert as new.\n        \"\"\"\n        # Validate ttl if provided\n        if ttl is not None:\n            if not isinstance(ttl, (int, float)) or ttl <= 0:\n                raise ValueError(\"ttl must be > 0\")\n            if ttl != float(\"inf\") and ttl <= 0:\n                raise ValueError(\"ttl must be > 0\")\n\n        current_time = self.clock()\n        expire_time = self._get_expire_time(ttl)\n\n        # Check if key exists\n        if key in self._cache:\n            # Key exists, check if it's expired\n            _, existing_expire_time = self._cache[key]\n            if self._is_expired(existing_expire_time):\n                # Treat as new insertion: remove expired entry first\n                del self._cache[key]\n                # Fall through to new insertion logic\n            else:\n                # Overwrite existing live entry\n                self._cache[key] = (value, expire_time)\n                # Mark as most-recently-used by moving to end\n                self._cache.move_to_end(key)\n                return\n\n        # New insertion: need to handle capacity\n        # First purge all expired entries\n        self._purge_expired()\n\n        # If still at capacity, evict LRU (first item in OrderedDict)\n        if len(self._cache) >= self.capacity:\n            # Evict the least-recently-used entry (first item)\n            self._cache.popitem(last=False)\n\n        # Insert new entry at the end (most-recently-used)\n        self._cache[key] = (value, expire_time)\n\n    def get(self, key, default=None):\n        \"\"\"\n        Returns the value if the key is present and live, marking it most-recently-used.\n        Does not extend TTL.\n        If expired, removes entry and returns default.\n        If missing, returns default.\n        \"\"\"\n        if key not in self._cache:\n            return default\n\n        value, expire_time = self._cache[key]\n\n        if self._is_expired(expire_time):\n            # Remove expired entry\n            del self._cache[key]\n            return default\n\n        # Mark as most-recently-used\n        self._cache.move_to_end(key)\n        return value\n\n    def peek(self, key, default=None):\n        \"\"\"\n        Like get but does not change recency.\n        Expired entries are removed and default is returned.\n        \"\"\"\n        if key not in self._cache:\n            return default\n\n        value, expire_time = self._cache[key]\n\n        if self._is_expired(expire_time):\n            # Remove expired entry\n            del self._cache[key]\n            return default\n\n        # Do not change recency\n        return value\n\n    def delete(self, key) -> bool:\n        \"\"\"\n        Returns True if a live entry was removed.\n        Returns False if the key is missing or its entry had already expired.\n        Expired entries are removed either way.\n        \"\"\"\n        if key not in self._cache:\n            return False\n\n        value, expire_time = self._cache[key]\n\n        if self._is_expired(expire_time):\n            # Remove expired entry\n            del self._cache[key]\n            return False\n\n        # Remove live entry\n        del self._cache[key]\n        return True\n\n    def keys(self) -> list:\n        \"\"\"\n        Returns the live keys ordered from least-recently-used to most-recently-used.\n        Expired entries are purged first.\n        \"\"\"\n        self._purge_expired()\n        return list(self._cache.keys())\n\n    def __len__(self) -> int:\n        \"\"\"Counts live entries only (expired entries are purged first).\"\"\"\n        self._purge_expired()\n        return len(self._cache)\n\n    def __contains__(self, key) -> bool:\n        \"\"\"\n        True only for live entries and does not change recency.\n        \"\"\"\n        if key not in self._cache:\n            return False\n\n        value, expire_time = self._cache[key]\n\n        if self._is_expired(expire_time):\n            # Remove expired entry\n            del self._cache[key]\n            return False\n\n        return True\n```",
+    "refusal": null,
+    "annotations": null,
+    "audio": null,
+    "function_call": null,
+    "reasoning": null
+   },
+   "logprobs": null,
+   "finish_reason": "stop",
+   "stop_reason": null,
+   "token_ids": null,
+   "routed_experts": null
+  }
+ ],
+ "service_tier": null,
+ "system_fingerprint": "vllm-0.26.0-tp4-2b546a5a",
+ "usage": {
+  "prompt_tokens": 793,
+  "total_tokens": 2274,
+  "completion_tokens": 1481,
+  "prompt_tokens_details": null
+ },
+ "prompt_logprobs": null,
+ "prompt_token_ids": null,
+ "prompt_text": null,
+ "kv_transfer_params": null,
+ "ec_transfer_params": null,
+ "metrics": null,
+ "_wall_s": 57.89840620999894
+}
