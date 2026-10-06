@@ -15,7 +15,13 @@ import (
 )
 
 const (
-	confPath   = "/etc/gpucap.conf"
+	confPath = "/etc/gpucap.conf"
+
+	// defaultCap is the cap in watts used when /etc/gpucap.conf does not exist or has no
+	// CAP_W line. 230 is just the value for the machine this was written for.
+	// To make a different cap persist across reboots, either run `sudo gpucap set <watts>`
+	// (writes CAP_W to /etc/gpucap.conf, which is what the boot/resume units read), or change
+	// this value (and the matching CAP_W in install.sh) and rebuild.
 	defaultCap = 230
 )
 
