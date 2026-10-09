@@ -1,0 +1,39 @@
+{
+ "choices": [
+  {
+   "finish_reason": "stop",
+   "index": 0,
+   "message": {
+    "role": "assistant",
+    "content": "```python\nimport re\nfrom collections import Counter\nfrom typing import Iterable\n\n\ndef analyze_log(lines: Iterable[str]) -> dict:\n    \"\"\"\n    Summarise a web server access log in Common Log Format.\n    \"\"\"\n    # Regex for Common Log Format:\n    # ip ident user [timestamp] \"METHOD path PROTOCOL\" status bytes\n    # ip: \\S+\n    # ident: \\S+ or -\n    # user: \\S+ or -\n    # timestamp: [date]\n    # request: \"METHOD path PROTOCOL\"\n    # status: \\d+\n    # bytes: \\d+ or -\n    \n    # Pattern: ip ident user [timestamp] \"METHOD path PROTOCOL\" status bytes\n    log_pattern = re.compile(\n        r'^(\\S+)\\s+'           # ip\n        r'(\\S+)\\s+'            # ident\n        r'(\\S+)\\s+'            # user\n        r'\\[([^\\]]+)\\]\\s+'     # timestamp\n        r'\"([^\"]*)\"\\s+'        # request line\n        r'(\\d+)\\s+'            # status\n        r'(\\S+)$'              # bytes (could be - or number)\n    )\n    \n    month_map = {\n        'Jan': '01', 'Feb': '02', 'Mar': '03', 'Apr': '04',\n        'May': '05', 'Jun': '06', 'Jul': '07', 'Aug': '08',\n        'Sep': '09', 'Oct': '10', 'Nov': '11', 'Dec': '12'\n    }\n    \n    total_requests = 0\n    malformed = 0\n    unique_ips = set()\n    status_counts = Counter()\n    bytes_total = 0\n    error_count = 0\n    path_counts = Counter()\n    requests_per_hour = Counter()\n    \n    for line in lines:\n        line = line.rstrip('\\n\\r')\n        if not line:\n            malformed += 1\n            continue\n        \n        match = log_pattern.match(line)\n        if not match:\n            malformed += 1\n            continue\n        \n        ip = match.group(1)\n        timestamp = match.group(4)\n        request_line = match.group(5)\n        status_str = match.group(6)\n        bytes_str = match.group(7)\n        \n        # Validate status is numeric\n        try:\n            status = int(status_str)\n        except ValueError:\n            malformed += 1\n            continue\n        \n        # Parse bytes\n        if bytes_str == '-':\n            bytes_val = 0\n        else:\n            try:\n                bytes_val = int(bytes_str)\n            except ValueError:\n                malformed += 1\n                continue\n        \n        # Parse timestamp: format like 10/Oct/2026:13:55:36 +0000\n        # We need to extract date and hour for requests_per_hour\n        # Format: DD/Mon/YYYY:HH:MM:SS +ZZZZ\n        ts_match = re.match(r'^(\\d{2})/([A-Za-z]{3})/(\\d{4}):(\\d{2}):\\d{2}:\\d{2}', timestamp)\n        if not ts_match:\n            malformed += 1\n            continue\n        \n        day = ts_match.group(1)\n        mon_str = ts_match.group(2)\n        year = ts_match.group(3)\n        hour = ts_match.group(4)\n        \n        if mon_str not in month_map:\n            malformed += 1\n            continue\n        \n        mon = month_map[mon_str]\n        hour_key = f\"{year}-{mon}-{day} {hour}\"\n        \n        # Parse request line: \"METHOD path PROTOCOL\"\n        # We need to extract the path (without query string)\n        req_match = re.match(r'^(\\S+)\\s+(\\S+)\\s+(\\S+)$', request_line)\n        if not req_match:\n            malformed += 1\n            continue\n        \n        method = req_match.group(1)\n        path = req_match.group(2)\n        protocol = req_match.group(3)\n        \n        # Remove query string from path\n        if '?' in path:\n            path = path.split('?')[0]\n        \n        # All good, this is a valid line\n        total_requests += 1\n        unique_ips.add(ip)\n        status_counts[status] += 1\n        bytes_total += bytes_val\n        \n        if 400 <= status <= 599:\n            error_count += 1\n        \n        path_counts[path] += 1\n        requests_per_hour[hour_key] += 1\n    \n    # Calculate error_rate\n    if total_requests > 0:\n        error_rate = round(error_count / total_requests, 4)\n    else:\n        error_rate = 0.0\n    \n    # Get top 3 paths\n    # Sort by count descending, then path ascending\n    sorted_paths = sorted(path_counts.items(), key=lambda x: (-x[1], x[0]))\n    top_paths = sorted_paths[:3]\n    \n    return {\n        \"total_requests\": total_requests,\n        \"malformed\": malformed,\n        \"unique_ips\": len(unique_ips),\n        \"status_counts\": dict(status_counts),\n        \"bytes_total\": bytes_total,\n        \"error_rate\": error_rate,\n        \"top_paths\": top_paths,\n        \"requests_per_hour\": dict(requests_per_hour),\n    }\n```"
+   }
+  }
+ ],
+ "created": 1791536699,
+ "model": "/models/unsloth/Qwen3.8-Flash-Next-GGUF/UD-IQ4_XS/Qwen3.8-Flash-Next-UD-IQ4_XS-00001-of-00003.gguf",
+ "system_fingerprint": "b11098-6fcaa16f4",
+ "object": "chat.completion",
+ "usage": {
+  "completion_tokens": 1219,
+  "prompt_tokens": 472,
+  "total_tokens": 1691,
+  "prompt_tokens_details": {
+   "cached_tokens": 0
+  }
+ },
+ "id": "chatcmpl-gNLsv8MH9YkbVxvOhLsvJTSy1NbvFO1U",
+ "timings": {
+  "cache_n": 0,
+  "prompt_n": 472,
+  "prompt_ms": 3313.891,
+  "prompt_per_token_ms": 7.020955508474576,
+  "prompt_per_second": 142.43075586976155,
+  "predicted_n": 1219,
+  "predicted_ms": 101999.252,
+  "predicted_per_token_ms": 83.74322824302133,
+  "predicted_per_second": 11.941264039857861,
+  "draft_n": 1005,
+  "draft_n_accepted": 886
+ },
+ "_wall_s": 106.3283027940015
+}

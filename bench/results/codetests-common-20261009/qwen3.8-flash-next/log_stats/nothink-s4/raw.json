@@ -1,0 +1,39 @@
+{
+ "choices": [
+  {
+   "finish_reason": "stop",
+   "index": 0,
+   "message": {
+    "role": "assistant",
+    "content": "```python\nimport re\nfrom collections import defaultdict\nfrom datetime import datetime\nfrom typing import Iterable, Dict, List, Tuple, Optional\n\n# Pattern for Common Log Format\n# ip ident user [timestamp] \"METHOD path PROTOCOL\" status bytes\nCLF_PATTERN = re.compile(\n    r'^(\\S+)\\s+'          # ip\n    r'(\\S+)\\s+'           # ident\n    r'(\\S+)\\s+'           # user\n    r'\\[([^\\]]+)\\]\\s+'    # [timestamp]\n    r'\"(\\S+)\\s+(\\S+)\\s+(\\S+)\"\\s+'  # \"METHOD path PROTOCOL\"\n    r'(\\d{3})\\s+'         # status (must be 3 digits)\n    r'(\\d+|-)$'           # bytes (digits or -)\n)\n\nMONTH_MAP = {\n    'Jan': 1, 'Feb': 2, 'Mar': 3, 'Apr': 4,\n    'May': 5, 'Jun': 6, 'Jul': 7, 'Aug': 8,\n    'Sep': 9, 'Oct': 10, 'Nov': 11, 'Dec': 12\n}\n\n\ndef parse_timestamp(ts_str: str) -> Optional[datetime]:\n    \"\"\"Parse timestamp like '10/Oct/2026:13:55:36 +0000' ignoring timezone.\"\"\"\n    # Format: DD/Mon/YYYY:HH:MM:SS +ZZZZ\n    # We need to extract date and time parts\n    try:\n        # Split off the timezone part\n        # The format is: 10/Oct/2026:13:55:36 +0000\n        # Find the last space before the timezone\n        # Actually, let's use strptime with a custom approach\n        \n        # Remove timezone: everything after the last space that looks like +ZZZZ or -ZZZZ\n        # But simpler: use regex to extract date/time\n        match = re.match(r'(\\d{2})/(\\w{3})/(\\d{4}):(\\d{2}):(\\d{2}):(\\d{2})', ts_str)\n        if not match:\n            return None\n        day, month_str, year, hour, minute, second = match.groups()\n        month = MONTH_MAP.get(month_str)\n        if month is None:\n            return None\n        return datetime(int(year), month, int(day), int(hour), int(minute), int(second))\n    except (ValueError, TypeError):\n        return None\n\n\ndef analyze_log(lines: Iterable[str]) -> dict:\n    total_requests = 0\n    malformed = 0\n    unique_ips = set()\n    status_counts = defaultdict(int)\n    bytes_total = 0\n    path_counts = defaultdict(int)\n    requests_per_hour = defaultdict(int)\n    \n    for line in lines:\n        # Strip trailing newline/carriage return but not leading/trailing whitespace that might be part of the format\n        # Actually, we should strip the line of leading/trailing whitespace for matching\n        stripped = line.rstrip('\\r\\n')\n        \n        # Check if the line is empty after stripping\n        if not stripped:\n            malformed += 1\n            continue\n        \n        match = CLF_PATTERN.match(stripped)\n        if not match:\n            malformed += 1\n            continue\n        \n        ip, ident, user, timestamp_str, method, path, protocol, status_str, bytes_str = match.groups()\n        \n        # Parse status\n        try:\n            status = int(status_str)\n        except ValueError:\n            malformed += 1\n            continue\n        \n        # Parse bytes\n        if bytes_str == '-':\n            bytes_val = 0\n        else:\n            try:\n                bytes_val = int(bytes_str)\n            except ValueError:\n                malformed += 1\n                continue\n        \n        # Parse timestamp\n        dt = parse_timestamp(timestamp_str)\n        if dt is None:\n            malformed += 1\n            continue\n        \n        # Extract path without query string\n        if '?' in path:\n            clean_path = path.split('?')[0]\n        else:\n            clean_path = path\n        \n        # Valid line\n        total_requests += 1\n        unique_ips.add(ip)\n        status_counts[status] += 1\n        bytes_total += bytes_val\n        path_counts[clean_path] += 1\n        \n        # Requests per hour\n        hour_key = dt.strftime('%Y-%m-%d %H')\n        requests_per_hour[hour_key] += 1\n    \n    # Calculate error rate\n    if total_requests == 0:\n        error_rate = 0.0\n    else:\n        error_count = sum(count for status, count in status_counts.items() if 400 <= status <= 599)\n        error_rate = round(error_count / total_requests, 4)\n    \n    # Top paths: 3 most requested, sorted by count desc then path asc\n    sorted_paths = sorted(path_counts.items(), key=lambda x: (-x[1], x[0]))\n    top_paths = sorted_paths[:3]\n    \n    return {\n        \"total_requests\": total_requests,\n        \"malformed\": malformed,\n        \"unique_ips\": len(unique_ips),\n        \"status_counts\": dict(status_counts),\n        \"bytes_total\": bytes_total,\n        \"error_rate\": error_rate,\n        \"top_paths\": top_paths,\n        \"requests_per_hour\": dict(requests_per_hour),\n    }\n```"
+   }
+  }
+ ],
+ "created": 1791536787,
+ "model": "/models/unsloth/Qwen3.8-Flash-Next-GGUF/UD-IQ4_XS/Qwen3.8-Flash-Next-UD-IQ4_XS-00001-of-00003.gguf",
+ "system_fingerprint": "b11098-6fcaa16f4",
+ "object": "chat.completion",
+ "usage": {
+  "completion_tokens": 1216,
+  "prompt_tokens": 472,
+  "total_tokens": 1688,
+  "prompt_tokens_details": {
+   "cached_tokens": 468
+  }
+ },
+ "id": "chatcmpl-4M5cQjc8QnqlEAQJNqelLEvWmx5BMpbW",
+ "timings": {
+  "cache_n": 468,
+  "prompt_n": 4,
+  "prompt_ms": 289.824,
+  "prompt_per_token_ms": 72.456,
+  "prompt_per_second": 13.801479518604394,
+  "predicted_n": 1216,
+  "predicted_ms": 108889.834,
+  "predicted_per_token_ms": 89.62126255144032,
+  "predicted_per_second": 11.158066417843926,
+  "draft_n": 1059,
+  "draft_n_accepted": 865
+ },
+ "_wall_s": 109.60142280599757
+}

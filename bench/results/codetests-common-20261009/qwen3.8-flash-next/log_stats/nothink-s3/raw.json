@@ -1,0 +1,39 @@
+{
+ "choices": [
+  {
+   "finish_reason": "stop",
+   "index": 0,
+   "message": {
+    "role": "assistant",
+    "content": "```python\nimport re\nfrom collections import defaultdict\nfrom typing import Iterable, Dict, List, Tuple\n\ndef analyze_log(lines: Iterable[str]) -> dict:\n    \"\"\"\n    Summarise a web server access log in Common Log Format.\n    \n    Format: ip ident user [timestamp] \"METHOD path PROTOCOL\" status bytes\n    \"\"\"\n    # Pattern to match Common Log Format\n    # ip ident user [timestamp] \"METHOD path PROTOCOL\" status bytes\n    log_pattern = re.compile(\n        r'^(\\S+)\\s+'          # IP\n        r'(\\S+)\\s+'           # ident\n        r'(\\S+)\\s+'           # user\n        r'\\[([^\\]]+)\\]\\s+'    # timestamp\n        r'\"(\\S+)\\s+'          # METHOD\n        r'(\\S+)\\s+'           # path (with query string potentially)\n        r'(\\S+)\"\\s+'          # PROTOCOL\n        r'(\\d+)\\s+'           # status (must be numeric)\n        r'(\\S+)$'             # bytes (can be '-' or number)\n    )\n    \n    total_requests = 0\n    malformed = 0\n    ips = set()\n    status_counts = defaultdict(int)\n    bytes_total = 0\n    path_counts = defaultdict(int)\n    requests_per_hour = defaultdict(int)\n    \n    month_map = {\n        'Jan': '01', 'Feb': '02', 'Mar': '03', 'Apr': '04',\n        'May': '05', 'Jun': '06', 'Jul': '07', 'Aug': '08',\n        'Sep': '09', 'Oct': '10', 'Nov': '11', 'Dec': '12'\n    }\n    \n    for line in lines:\n        # Strip trailing newline but don't strip leading/trailing spaces for matching\n        line = line.rstrip('\\n\\r')\n        \n        # Try to match the pattern\n        match = log_pattern.match(line)\n        if not match:\n            malformed += 1\n            continue\n        \n        ip = match.group(1)\n        ident = match.group(2)\n        user = match.group(3)\n        timestamp = match.group(4)\n        method = match.group(5)\n        path_with_query = match.group(6)\n        protocol = match.group(7)\n        status_str = match.group(8)\n        bytes_str = match.group(9)\n        \n        # Validate status is numeric (already ensured by regex \\d+, but double-check)\n        try:\n            status = int(status_str)\n        except ValueError:\n            malformed += 1\n            continue\n        \n        # Parse bytes\n        if bytes_str == '-':\n            bytes_val = 0\n        else:\n            try:\n                bytes_val = int(bytes_str)\n            except ValueError:\n                malformed += 1\n                continue\n        \n        # Valid line\n        total_requests += 1\n        ips.add(ip)\n        status_counts[status] += 1\n        bytes_total += bytes_val\n        \n        # Extract path without query string\n        if '?' in path_with_query:\n            path = path_with_query.split('?')[0]\n        else:\n            path = path_with_query\n        path_counts[path] += 1\n        \n        # Parse timestamp for hour bucket\n        # Format: 10/Oct/2026:13:55:36 +0000\n        # We need: YYYY-MM-DD HH\n        try:\n            # Split off timezone\n            ts_no_tz = timestamp.split()[0]\n            # Format: DD/Mon/YYYY:HH:MM:SS\n            day_mon_year_time = ts_no_tz.split(':')\n            date_part = day_mon_year_time[0]  # DD/Mon/YYYY\n            hour_part = day_mon_year_time[1]   # HH\n            \n            date_components = date_part.split('/')\n            day = date_components[0]\n            mon = date_components[1]\n            year = date_components[2]\n            \n            mon_str = month_map.get(mon)\n            if mon_str is None:\n                malformed += 1\n                total_requests -= 1\n                ips.discard(ip)\n                status_counts[status] -= 1\n                bytes_total -= bytes_val\n                path_counts[path] -= 1\n                if path_counts[path] == 0:\n                    del path_counts[path]\n                continue\n            \n            hour_key = f\"{year}-{mon_str}-{day} {hour_part}\"\n            requests_per_hour[hour_key] += 1\n        except (IndexError, ValueError):\n            malformed += 1\n            total_requests -= 1\n            ips.discard(ip)\n            status_counts[status] -= 1\n            bytes_total -= bytes_val\n            path_counts[path] -= 1\n            if path_counts[path] == 0:\n                del path_counts[path]\n            continue\n    \n    # Calculate error rate\n    if total_requests == 0:\n        error_rate = 0.0\n    else:\n        error_count = sum(count for status, count in status_counts.items() if 400 <= status <= 599)\n        error_rate = round(error_count / total_requests, 4)\n    \n    # Top paths: 3 most requested, sorted by count desc then path asc\n    sorted_paths = sorted(path_counts.items(), key=lambda x: (-x[1], x[0]))\n    top_paths = sorted_paths[:3]\n    \n    return {\n        \"total_requests\": total_requests,\n        \"malformed\": malformed,\n        \"unique_ips\": len(ips),\n        \"status_counts\": dict(status_counts),\n        \"bytes_total\": bytes_total,\n        \"error_rate\": error_rate,\n        \"top_paths\": top_paths,\n        \"requests_per_hour\": dict(requests_per_hour)\n    }\n```"
+   }
+  }
+ ],
+ "created": 1791536707,
+ "model": "/models/unsloth/Qwen3.8-Flash-Next-GGUF/UD-IQ4_XS/Qwen3.8-Flash-Next-UD-IQ4_XS-00001-of-00003.gguf",
+ "system_fingerprint": "b11098-6fcaa16f4",
+ "object": "chat.completion",
+ "usage": {
+  "completion_tokens": 1298,
+  "prompt_tokens": 472,
+  "total_tokens": 1770,
+  "prompt_tokens_details": {
+   "cached_tokens": 0
+  }
+ },
+ "id": "chatcmpl-FodVyHo4HdwZijmQNEIdX7YZUzni4YqE",
+ "timings": {
+  "cache_n": 0,
+  "prompt_n": 472,
+  "prompt_ms": 3815.702,
+  "prompt_per_token_ms": 8.084114406779662,
+  "prompt_per_second": 123.69938742595727,
+  "predicted_n": 1298,
+  "predicted_ms": 110471.678,
+  "predicted_per_token_ms": 85.17477101002314,
+  "predicted_per_second": 11.740565758401894,
+  "draft_n": 1083,
+  "draft_n_accepted": 938
+ },
+ "_wall_s": 114.29315624100127
+}

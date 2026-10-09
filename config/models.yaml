@@ -854,6 +854,9 @@ models:
   # Weights: 93.7 GB (UD-IQ4_XS, 3 shards) + 2.8 GB MTP draft head, split across 4 GPUs
   # Model:   /mnt/models/llm/unsloth/Qwen3.8-Flash-Next-GGUF/
   # Note:    Experimental on gfx1201. Exclusive VRAM: unload other models first.
+  #          262144 ctx / 2 slots = 131072 per slot (~79 GB VRAM total at 262K/4 slots).
+  #          Layer-split decode does not scale with concurrency: 4 streams ran ~8.5 tok/s
+  #          each vs ~50 tok/s single, hence 2 slots.
   qwen3.8-flash-next:
     name: "Qwen3.8-Flash-Next (UD-IQ4_XS, MTP)"
     ttl: 0
@@ -878,7 +881,7 @@ models:
         --tensor-split 1,1,1,1
         --host 127.0.0.1
         --port ${PORT}
-        --ctx-size 65536
+        --ctx-size 262144
         --parallel 2
         --batch-size 1024
         --ubatch-size 512

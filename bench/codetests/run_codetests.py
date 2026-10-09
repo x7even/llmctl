@@ -28,6 +28,7 @@ TASKS_DIR = HERE / "tasks"
 TEMPERATURE = 0.6
 TOP_P = 0.95
 MAX_TOKENS = 24000
+REASONING_EFFORT = None  # think mode only; Qwen3.8 template default is xhigh
 
 WORKER = r'''
 import importlib.util, json, signal, sys, traceback
@@ -135,6 +136,8 @@ def call_model(url, model, prompt, mode, max_tokens, timeout=3600):
     }
     if mode == "nothink":
         body["chat_template_kwargs"] = {"enable_thinking": False}
+    elif REASONING_EFFORT:
+        body["chat_template_kwargs"] = {"reasoning_effort": REASONING_EFFORT}
     t0 = time.perf_counter()
     r = requests.post(url, json=body, timeout=timeout)
     r.raise_for_status()
@@ -180,7 +183,8 @@ def grade_saved(d, task, mode, k, resp=None):
 def summarize(rows, out, model):
     ok = [r for r in rows if "error" not in r]
     lines = [f"# Code test results — {model}", "", f"Generated {time.strftime('%Y-%m-%d %H:%M:%S')}  "
-             f"(temperature {TEMPERATURE}, top_p {TOP_P}, max_tokens {MAX_TOKENS})", "",
+             f"(temperature {TEMPERATURE}, top_p {TOP_P}, max_tokens {MAX_TOKENS}, "
+             f"reasoning_effort {REASONING_EFFORT or 'template default'})", "",
              "| task | mode | samples | full passes | mean tests passed | mean completion tok | truncated | import failures |",
              "|---|---|---|---|---|---|---|---|"]
     for task in sorted({r["task"] for r in ok}):
@@ -226,8 +230,9 @@ def cmd_validate(_):
 
 
 def cmd_run(args):
-    global MAX_TOKENS
+    global MAX_TOKENS, REASONING_EFFORT
     MAX_TOKENS = args.max_tokens  # recorded in summary.md; was always the 24000 default
+    REASONING_EFFORT = args.reasoning_effort
     out = Path(args.out)
     out.mkdir(parents=True, exist_ok=True)
     names = [t for t in task_names() if not args.tasks or t in args.tasks.split(",")]
@@ -272,6 +277,8 @@ def main():
     r.add_argument("--modes", default="think,nothink", help="comma list of think,nothink")
     r.add_argument("--max-tokens", type=int, default=MAX_TOKENS)
     r.add_argument("--parallel", type=int, default=8)
+    r.add_argument("--reasoning-effort", default=None, choices=["low", "medium", "xhigh"],
+                   help="think-mode reasoning_effort chat-template kwarg (default: template default, xhigh)")
     r.add_argument("--tasks", default="", help="comma list of task names (default: all)")
     r.add_argument("--timeout", type=int, default=3600,
                    help="per-request read timeout in seconds; a 64k-token thinking sample can take over an hour")

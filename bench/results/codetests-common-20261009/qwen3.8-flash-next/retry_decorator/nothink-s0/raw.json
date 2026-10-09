@@ -1,0 +1,39 @@
+{
+ "choices": [
+  {
+   "finish_reason": "stop",
+   "index": 0,
+   "message": {
+    "role": "assistant",
+    "content": "```python\nimport time\nimport functools\nfrom typing import Callable\n\n\ndef retry(max_attempts: int = 3, delay: float = 1.0, backoff: float = 2.0,\n          exceptions: tuple[type[BaseException], ...] = (Exception,),\n          sleep: Callable[[float], None] = time.sleep) -> Callable:\n    \"\"\"\n    A decorator factory that retries a function call if it raises specified exceptions.\n    \n    Args:\n        max_attempts: Maximum number of attempts (must be >= 1).\n        delay: Initial delay between retries in seconds (must be >= 0).\n        backoff: Multiplier for the delay after each retry (must be >= 1).\n        exceptions: Tuple of exception types to catch and retry on.\n        sleep: Function to call for sleeping between retries.\n    \n    Returns:\n        A decorator that wraps a function with retry logic.\n    \n    Raises:\n        ValueError: If max_attempts < 1, delay < 0, or backoff < 1.\n    \"\"\"\n    if max_attempts < 1:\n        raise ValueError(\"max_attempts must be >= 1\")\n    if delay < 0:\n        raise ValueError(\"delay must be >= 0\")\n    if backoff < 1:\n        raise ValueError(\"backoff must be >= 1\")\n    \n    def decorator(func: Callable) -> Callable:\n        @functools.wraps(func)\n        def wrapper(*args, **kwargs):\n            last_exception = None\n            for attempt in range(1, max_attempts + 1):\n                try:\n                    wrapper.calls += 1\n                    result = func(*args, **kwargs)\n                    return result\n                except exceptions as e:\n                    last_exception = e\n                    # If this was the last attempt, don't sleep\n                    if attempt < max_attempts:\n                        # Calculate delay for this retry\n                        # retry number k = attempt (since attempt 1 failed, we're about to do retry 1)\n                        # k = attempt, so delay * backoff ** (k - 1) = delay * backoff ** (attempt - 1)\n                        current_delay = delay * (backoff ** (attempt - 1))\n                        sleep(current_delay)\n                except BaseException:\n                    # Non-matching exception propagates immediately\n                    raise\n            # All attempts failed, re-raise the last exception\n            raise last_exception\n        \n        wrapper.calls = 0\n        return wrapper\n    \n    return decorator\n```"
+   }
+  }
+ ],
+ "created": 1791542408,
+ "model": "/models/unsloth/Qwen3.8-Flash-Next-GGUF/UD-IQ4_XS/Qwen3.8-Flash-Next-UD-IQ4_XS-00001-of-00003.gguf",
+ "system_fingerprint": "b11098-6fcaa16f4",
+ "object": "chat.completion",
+ "usage": {
+  "completion_tokens": 545,
+  "prompt_tokens": 433,
+  "total_tokens": 978,
+  "prompt_tokens_details": {
+   "cached_tokens": 0
+  }
+ },
+ "id": "chatcmpl-CgfuHUGYFYkjRfaq0eReZNL4ZaDxMzbZ",
+ "timings": {
+  "cache_n": 0,
+  "prompt_n": 433,
+  "prompt_ms": 1377.777,
+  "prompt_per_token_ms": 3.1819330254041573,
+  "prompt_per_second": 314.27437096133843,
+  "predicted_n": 545,
+  "predicted_ms": 51316.895,
+  "predicted_per_token_ms": 94.3325275735294,
+  "predicted_per_second": 10.60079726179848,
+  "draft_n": 462,
+  "draft_n_accepted": 392
+ },
+ "_wall_s": 53.18802320400209
+}

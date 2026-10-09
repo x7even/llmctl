@@ -1,0 +1,84 @@
+{
+ "passed": 0,
+ "total": 15,
+ "fatal": null,
+ "timed_out": false,
+ "stderr_tail": "",
+ "tests": [
+  {
+   "test": "test_empty_cart",
+   "ok": false,
+   "err": "AttributeError: module 'solution' has no attribute 'Cart'"
+  },
+  {
+   "test": "test_add_and_subtotal",
+   "ok": false,
+   "err": "AttributeError: module 'solution' has no attribute 'Cart'"
+  },
+  {
+   "test": "test_add_same_sku_accumulates",
+   "ok": false,
+   "err": "AttributeError: module 'solution' has no attribute 'Cart'"
+  },
+  {
+   "test": "test_add_validation",
+   "ok": false,
+   "err": "AttributeError: module 'solution' has no attribute 'Cart'"
+  },
+  {
+   "test": "test_remove_partial_and_full",
+   "ok": false,
+   "err": "AttributeError: module 'solution' has no attribute 'Cart'"
+  },
+  {
+   "test": "test_remove_validation",
+   "ok": false,
+   "err": "AttributeError: module 'solution' has no attribute 'Cart'"
+  },
+  {
+   "test": "test_remove_exact_quantity_removes_line",
+   "ok": false,
+   "err": "AttributeError: module 'solution' has no attribute 'Cart'"
+  },
+  {
+   "test": "test_coupon_save10",
+   "ok": false,
+   "err": "AttributeError: module 'solution' has no attribute 'Cart'"
+  },
+  {
+   "test": "test_coupon_fiveoff_capped",
+   "ok": false,
+   "err": "AttributeError: module 'solution' has no attribute 'Cart'"
+  },
+  {
+   "test": "test_coupon_replaces_previous_and_validation",
+   "ok": false,
+   "err": "AttributeError: module 'solution' has no attribute 'Cart'"
+  },
+  {
+   "test": "test_tax",
+   "ok": false,
+   "err": "AttributeError: module 'solution' has no attribute 'Cart'"
+  },
+  {
+   "test": "test_tax_applied_after_discount_with_rounding",
+   "ok": false,
+   "err": "AttributeError: module 'solution' has no attribute 'Cart'"
+  },
+  {
+   "test": "test_half_up_rounding",
+   "ok": false,
+   "err": "AttributeError: module 'solution' has no attribute 'Cart'"
+  },
+  {
+   "test": "test_tax_rate_validation",
+   "ok": false,
+   "err": "AssertionError: raised AttributeError, expected ValueError"
+  },
+  {
+   "test": "test_summary_keys_and_types",
+   "ok": false,
+   "err": "AttributeError: module 'solution' has no attribute 'Cart'"
+  }
+ ]
+}

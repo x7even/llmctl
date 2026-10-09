@@ -1,0 +1,39 @@
+{
+ "choices": [
+  {
+   "finish_reason": "stop",
+   "index": 0,
+   "message": {
+    "role": "assistant",
+    "content": "```python\nimport functools\nimport time\nfrom typing import Callable\n\n\ndef retry(max_attempts: int = 3, delay: float = 1.0, backoff: float = 2.0,\n          exceptions: tuple[type[BaseException], ...] = (Exception,),\n          sleep: Callable[[float], None] = time.sleep) -> Callable:\n    \"\"\"\n    A decorator factory for retrying flaky functions.\n    \n    Parameters:\n    - max_attempts: Maximum number of attempts (including the first call).\n    - delay: Initial delay in seconds before the first retry.\n    - backoff: Multiplicative factor for the delay on each subsequent retry.\n    - exceptions: Tuple of exception types to catch and retry on.\n    - sleep: Function to use for sleeping (defaults to time.sleep).\n    \n    Returns:\n    - A decorator that wraps a function with retry logic.\n    \"\"\"\n    if max_attempts < 1:\n        raise ValueError(\"max_attempts must be at least 1\")\n    if delay < 0:\n        raise ValueError(\"delay must be non-negative\")\n    if backoff < 1:\n        raise ValueError(\"backoff must be at least 1\")\n\n    def decorator(func: Callable) -> Callable:\n        @functools.wraps(func)\n        def wrapper(*args, **kwargs):\n            last_exception = None\n            for attempt in range(1, max_attempts + 1):\n                try:\n                    result = func(*args, **kwargs)\n                    wrapper.calls += 1\n                    return result\n                except exceptions as e:\n                    last_exception = e\n                    wrapper.calls += 1\n                    if attempt < max_attempts:\n                        wait_time = delay * (backoff ** (attempt - 1))\n                        sleep(wait_time)\n                except BaseException:\n                    wrapper.calls += 1\n                    raise\n            # All attempts failed\n            raise last_exception\n\n        wrapper.calls = 0\n        return wrapper\n\n    return decorator\n```"
+   }
+  }
+ ],
+ "created": 1791542680,
+ "model": "/models/unsloth/Qwen3.8-Flash-Next-GGUF/UD-IQ4_XS/Qwen3.8-Flash-Next-UD-IQ4_XS-00001-of-00003.gguf",
+ "system_fingerprint": "b11098-6fcaa16f4",
+ "object": "chat.completion",
+ "usage": {
+  "completion_tokens": 434,
+  "prompt_tokens": 433,
+  "total_tokens": 867,
+  "prompt_tokens_details": {
+   "cached_tokens": 429
+  }
+ },
+ "id": "chatcmpl-sJUE4rSFRowh8yIrCC5aXmkv5IuB7ARl",
+ "timings": {
+  "cache_n": 429,
+  "prompt_n": 4,
+  "prompt_ms": 369.039,
+  "prompt_per_token_ms": 92.25975,
+  "prompt_per_second": 10.838962819647788,
+  "predicted_n": 434,
+  "predicted_ms": 40516.293,
+  "predicted_per_token_ms": 93.5711154734411,
+  "predicted_per_second": 10.687058660573907,
+  "draft_n": 360,
+  "draft_n_accepted": 315
+ },
+ "_wall_s": 41.26449804499862
+}

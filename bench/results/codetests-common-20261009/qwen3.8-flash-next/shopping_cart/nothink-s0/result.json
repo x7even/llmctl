@@ -1,0 +1,70 @@
+{
+ "passed": 14,
+ "total": 15,
+ "fatal": null,
+ "timed_out": false,
+ "stderr_tail": "",
+ "tests": [
+  {
+   "test": "test_empty_cart",
+   "ok": true
+  },
+  {
+   "test": "test_add_and_subtotal",
+   "ok": true
+  },
+  {
+   "test": "test_add_same_sku_accumulates",
+   "ok": true
+  },
+  {
+   "test": "test_add_validation",
+   "ok": true
+  },
+  {
+   "test": "test_remove_partial_and_full",
+   "ok": true
+  },
+  {
+   "test": "test_remove_validation",
+   "ok": true
+  },
+  {
+   "test": "test_remove_exact_quantity_removes_line",
+   "ok": true
+  },
+  {
+   "test": "test_coupon_save10",
+   "ok": true
+  },
+  {
+   "test": "test_coupon_fiveoff_capped",
+   "ok": true
+  },
+  {
+   "test": "test_coupon_replaces_previous_and_validation",
+   "ok": true
+  },
+  {
+   "test": "test_tax",
+   "ok": true
+  },
+  {
+   "test": "test_tax_applied_after_discount_with_rounding",
+   "ok": false,
+   "err": "AssertionError: "
+  },
+  {
+   "test": "test_half_up_rounding",
+   "ok": true
+  },
+  {
+   "test": "test_tax_rate_validation",
+   "ok": true
+  },
+  {
+   "test": "test_summary_keys_and_types",
+   "ok": true
+  }
+ ]
+}

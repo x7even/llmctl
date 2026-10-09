@@ -1,0 +1,39 @@
+{
+ "choices": [
+  {
+   "finish_reason": "stop",
+   "index": 0,
+   "message": {
+    "role": "assistant",
+    "content": "```python\nimport sqlite3\n\n\nclass TodoRepo:\n    def __init__(self, path: str = \":memory:\") -> None:\n        self.conn = sqlite3.connect(path)\n        self.conn.execute(\"PRAGMA foreign_keys = ON\")\n        self.conn.execute(\"\"\"\n            CREATE TABLE IF NOT EXISTS todos (\n                id INTEGER PRIMARY KEY AUTOINCREMENT,\n                title TEXT NOT NULL,\n                priority INTEGER NOT NULL,\n                done BOOLEAN NOT NULL DEFAULT 0\n            )\n        \"\"\")\n        self.conn.commit()\n\n    def add(self, title: str, priority: int = 3) -> int:\n        if not isinstance(priority, int) or isinstance(priority, bool):\n            raise ValueError(\"priority must be an int from 1 to 5\")\n        if priority < 1 or priority > 5:\n            raise ValueError(\"priority must be an int from 1 to 5\")\n        stripped = title.strip()\n        if not stripped:\n            raise ValueError(\"title must not be empty or whitespace-only\")\n        cursor = self.conn.execute(\n            \"INSERT INTO todos (title, priority, done) VALUES (?, ?, 0)\",\n            (stripped, priority)\n        )\n        self.conn.commit()\n        return cursor.lastrowid\n\n    def get(self, todo_id: int) -> dict | None:\n        cursor = self.conn.execute(\n            \"SELECT id, title, priority, done FROM todos WHERE id = ?\",\n            (todo_id,)\n        )\n        row = cursor.fetchone()\n        if row is None:\n            return None\n        return {\n            \"id\": row[0],\n            \"title\": row[1],\n            \"priority\": row[2],\n            \"done\": bool(row[3])\n        }\n\n    def list(self, done: bool | None = None) -> list[dict]:\n        if done is None:\n            cursor = self.conn.execute(\n                \"SELECT id, title, priority, done FROM todos ORDER BY priority ASC, id ASC\"\n            )\n        else:\n            done_val = 1 if done else 0\n            cursor = self.conn.execute(\n                \"SELECT id, title, priority, done FROM todos WHERE done = ? ORDER BY priority ASC, id ASC\",\n                (done_val,)\n            )\n        results = []\n        for row in cursor.fetchall():\n            results.append({\n                \"id\": row[0],\n                \"title\": row[1],\n                \"priority\": row[2],\n                \"done\": bool(row[3])\n            })\n        return results\n\n    def mark_done(self, todo_id: int) -> bool:\n        cursor = self.conn.execute(\n            \"UPDATE todos SET done = 1 WHERE id = ?\",\n            (todo_id,)\n        )\n        self.conn.commit()\n        return cursor.rowcount > 0\n\n    def delete(self, todo_id: int) -> bool:\n        cursor = self.conn.execute(\n            \"DELETE FROM todos WHERE id = ?\",\n            (todo_id,)\n        )\n        self.conn.commit()\n        return cursor.rowcount > 0\n\n    def count(self, done: bool | None = None) -> int:\n        if done is None:\n            cursor = self.conn.execute(\"SELECT COUNT(*) FROM todos\")\n        else:\n            done_val = 1 if done else 0\n            cursor = self.conn.execute(\n                \"SELECT COUNT(*) FROM todos WHERE done = ?\",\n                (done_val,)\n            )\n        return cursor.fetchone()[0]\n\n    def close(self) -> None:\n        self.conn.close()\n```"
+   }
+  }
+ ],
+ "created": 1791556694,
+ "model": "/models/unsloth/Qwen3.8-Flash-Next-GGUF/UD-IQ4_XS/Qwen3.8-Flash-Next-UD-IQ4_XS-00001-of-00003.gguf",
+ "system_fingerprint": "b11098-6fcaa16f4",
+ "object": "chat.completion",
+ "usage": {
+  "completion_tokens": 788,
+  "prompt_tokens": 579,
+  "total_tokens": 1367,
+  "prompt_tokens_details": {
+   "cached_tokens": 575
+  }
+ },
+ "id": "chatcmpl-JvH7t4RK4gNZOKHpzXBJFxrShheHAmuk",
+ "timings": {
+  "cache_n": 575,
+  "prompt_n": 4,
+  "prompt_ms": 358.274,
+  "prompt_per_token_ms": 89.5685,
+  "prompt_per_second": 11.16463935423726,
+  "predicted_n": 788,
+  "predicted_ms": 67406.634,
+  "predicted_per_token_ms": 85.65010673443457,
+  "predicted_per_second": 11.67540868455173,
+  "draft_n": 603,
+  "draft_n_accepted": 586
+ },
+ "_wall_s": 68.15982654000254
+}

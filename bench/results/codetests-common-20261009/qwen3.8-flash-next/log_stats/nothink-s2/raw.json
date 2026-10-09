@@ -1,0 +1,39 @@
+{
+ "choices": [
+  {
+   "finish_reason": "stop",
+   "index": 0,
+   "message": {
+    "role": "assistant",
+    "content": "```python\nimport re\nfrom collections import Counter\nfrom typing import Iterable\n\n# Regular expression to match Common Log Format\n# ip ident user [timestamp] \"METHOD path PROTOCOL\" status bytes\nCLF_PATTERN = re.compile(\n    r'^(\\S+)\\s+'           # ip\n    r'(\\S+)\\s+'            # ident\n    r'(\\S+)\\s+'            # user\n    r'\\[([^\\]]+)\\]\\s+'     # timestamp\n    r'\"(\\S+)\\s+(\\S+)\\s+(\\S+)\"\\s+'  # method, path, protocol\n    r'(\\d{3})\\s+'          # status\n    r'(\\S+)$'              # bytes (could be '-' or a number)\n)\n\nMONTH_MAP = {\n    'Jan': '01', 'Feb': '02', 'Mar': '03', 'Apr': '04',\n    'May': '05', 'Jun': '06', 'Jul': '07', 'Aug': '08',\n    'Sep': '09', 'Oct': '10', 'Nov': '11', 'Dec': '12',\n}\n\n\ndef analyze_log(lines: Iterable[str]) -> dict:\n    total_requests = 0\n    malformed = 0\n    unique_ips = set()\n    status_counts = Counter()\n    bytes_total = 0\n    error_count = 0\n    path_counter = Counter()\n    requests_per_hour = Counter()\n\n    for line in lines:\n        # Strip trailing newline but don't strip leading spaces (they could be part of the format)\n        line = line.rstrip('\\n\\r')\n        \n        match = CLF_PATTERN.match(line)\n        if not match:\n            malformed += 1\n            continue\n\n        ip = match.group(1)\n        ident = match.group(2)\n        user = match.group(3)\n        timestamp = match.group(4)\n        method = match.group(5)\n        path = match.group(6)\n        protocol = match.group(7)\n        status_str = match.group(8)\n        bytes_str = match.group(9)\n\n        # Validate status is numeric (the regex already ensures 3 digits, but double-check)\n        try:\n            status = int(status_str)\n        except ValueError:\n            malformed += 1\n            continue\n\n        # Validate bytes: either '-' or a non-negative integer\n        if bytes_str == '-':\n            bytes_val = 0\n        else:\n            try:\n                bytes_val = int(bytes_str)\n                if bytes_val < 0:\n                    malformed += 1\n                    continue\n            except ValueError:\n                malformed += 1\n                continue\n\n        # Parse timestamp: format is DD/Mon/YYYY:HH:MM:SS +ZZZZ\n        # We need to extract date and hour, ignoring timezone\n        # timestamp looks like: 10/Oct/2026:13:55:36 +0000\n        # Split off the timezone part\n        if ' ' in timestamp:\n            timestamp_part, tz_part = timestamp.rsplit(' ', 1)\n        else:\n            # No timezone? Still might be valid format-wise, but let's try to parse\n            timestamp_part = timestamp\n            tz_part = ''\n\n        # Parse timestamp_part: DD/Mon/YYYY:HH:MM:SS\n        # Split on '/'\n        parts = timestamp_part.split('/')\n        if len(parts) != 3:\n            malformed += 1\n            continue\n        \n        day_str, mon_str, rest = parts\n        # rest is YYYY:HH:MM:SS\n        if ':' not in rest:\n            malformed += 1\n            continue\n        \n        year_hour_min_sec = rest.split(':')\n        if len(year_hour_min_sec) != 4:\n            malformed += 1\n            continue\n        \n        year_str, hour_str, min_str, sec_str = year_hour_min_sec\n\n        # Validate components\n        try:\n            day = int(day_str)\n            year = int(year_str)\n            hour = int(hour_str)\n            min_val = int(min_str)\n            sec_val = int(sec_str)\n        except ValueError:\n            malformed += 1\n            continue\n\n        if mon_str not in MONTH_MAP:\n            malformed += 1\n            continue\n\n        # Basic validation of ranges (optional but good for catching malformed)\n        if not (1 <= day <= 31):\n            malformed += 1\n            continue\n        if not (0 <= hour <= 23):\n            malformed += 1\n            continue\n        if not (0 <= min_val <= 59):\n            malformed += 1\n            continue\n        if not (0 <= sec_val <= 60):  # leap second\n            malformed += 1\n            continue\n\n        mon_num = MONTH_MAP[mon_str]\n        hour_key = f\"{year:04d}-{mon_num}-{day:02d} {hour:02d}\"\n\n        # This line is valid\n        total_requests += 1\n        unique_ips.add(ip)\n        status_counts[status] += 1\n        bytes_total += bytes_val\n\n        if 400 <= status <= 599:\n            error_count += 1\n\n        # Extract path without query string\n        if '?' in path:\n            clean_path = path.split('?', 1)[0]\n        else:\n            clean_path = path\n        path_counter[clean_path] += 1\n\n        requests_per_hour[hour_key] += 1\n\n    # Compute error_rate\n    if total_requests > 0:\n        error_rate = round(error_count / total_requests, 4)\n    else:\n        error_rate = 0.0\n\n    # Compute top_paths: 3 most requested, sorted by count desc, then path asc\n    # Get all paths with counts\n    path_items = list(path_counter.items())\n    # Sort by count descending, then path ascending\n    path_items.sort(key=lambda x: (-x[1], x[0]))\n    top_paths = path_items[:3]\n\n    return {\n        \"total_requests\": total_requests,\n        \"malformed\": malformed,\n        \"unique_ips\": len(unique_ips),\n        \"status_counts\": dict(status_counts),\n        \"bytes_total\": bytes_total,\n        \"error_rate\": error_rate,\n        \"top_paths\": top_paths,\n        \"requests_per_hour\": dict(requests_per_hour),\n    }\n```"
+   }
+  }
+ ],
+ "created": 1791536722,
+ "model": "/models/unsloth/Qwen3.8-Flash-Next-GGUF/UD-IQ4_XS/Qwen3.8-Flash-Next-UD-IQ4_XS-00001-of-00003.gguf",
+ "system_fingerprint": "b11098-6fcaa16f4",
+ "object": "chat.completion",
+ "usage": {
+  "completion_tokens": 1432,
+  "prompt_tokens": 472,
+  "total_tokens": 1904,
+  "prompt_tokens_details": {
+   "cached_tokens": 0
+  }
+ },
+ "id": "chatcmpl-P3KOiU1jDQU6VmTVGd7IHIognrZLEdB5",
+ "timings": {
+  "cache_n": 0,
+  "prompt_n": 472,
+  "prompt_ms": 2805.648,
+  "prompt_per_token_ms": 5.944169491525424,
+  "prompt_per_second": 168.23208043204278,
+  "predicted_n": 1432,
+  "predicted_ms": 125477.417,
+  "predicted_per_token_ms": 87.68512718378756,
+  "predicted_per_second": 11.404442601810969,
+  "draft_n": 1227,
+  "draft_n_accepted": 1023
+ },
+ "_wall_s": 129.29781766499946
+}

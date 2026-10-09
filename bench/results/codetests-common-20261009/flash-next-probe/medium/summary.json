@@ -1,0 +1,19 @@
+{
+ "model": "medium",
+ "rows": [
+  {
+   "task": "log_stats",
+   "mode": "think",
+   "sample": 0,
+   "passed": 11,
+   "total": 11,
+   "full_pass": true,
+   "fatal": null,
+   "finish": "stop",
+   "completion_tokens": 2997,
+   "wall_s": 110.1,
+   "reasoning_chars": 7943,
+   "failed_tests": []
+  }
+ ]
+}
