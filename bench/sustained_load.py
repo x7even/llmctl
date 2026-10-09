@@ -38,6 +38,26 @@ TOPICS = [
 ]
 
 
+_VOCAB = (
+    "river stone market engine signal garden winter copper window letter harbor ledger "
+    "forest bridge candle pattern thunder valley compass ribbon lantern meadow anchor "
+    "quartz saddle timber velvet whisper yellow zephyr amber basalt cobalt dagger ember "
+    "fjord glacier hollow ivory jasper kernel lagoon mosaic nectar orchid prism quiver "
+    "raven summit tundra umber vortex willow xenon yarrow zenith arrow beacon cinder "
+    "dune echo flint grove haven island jungle knoll lotus marble nomad oasis pebble "
+    "quarry reef shadow tower utopia voyage wharf yonder zealot atlas bronze cedar delta"
+).split()
+
+
+def long_prompt(i, words):
+    """Unique filler text (different from the first token on) so prefix caching cannot help."""
+    import random
+    rng = random.Random(i * 7919 + 13)
+    body = " ".join(rng.choice(_VOCAB) + rng.choice(["", "", ",", "."]) for _ in range(words))
+    return ("Below is a long passage of unrelated words. Read it, then answer the question at the end.\n\n"
+            + body + "\n\nQuestion: in two sentences, describe what kind of text this is.")
+
+
 def prompt_for(i):
     t = TOPICS[i % len(TOPICS)]
     return (
@@ -47,6 +67,30 @@ def prompt_for(i):
         "conclude early; continue writing new material until you are stopped. "
         f"(Variant {i}.)"
     )
+
+
+def pct(vals, p):
+    if not vals:
+        return None
+    v = sorted(vals)
+    return v[min(len(v) - 1, int(round(p / 100 * (len(v) - 1))))]
+
+
+def calibrate_words(backend, model, target_tokens):
+    """Probe once to learn tokens-per-word of the filler, return the word count for target_tokens."""
+    probe = 2000
+    body = {"model": model, "max_tokens": 1, "stream": False,
+            "messages": [{"role": "user", "content": long_prompt(999999, probe)}],
+            "chat_template_kwargs": {"enable_thinking": False}}
+    req = urllib.request.Request(backend.rstrip("/") + "/v1/chat/completions", json.dumps(body).encode(),
+                                 {"Content-Type": "application/json"})
+    with urllib.request.urlopen(req, timeout=300) as r:
+        used = json.loads(r.read())["usage"]["prompt_tokens"]
+    overhead = 60  # template + instruction text
+    tpw = (used - overhead) / probe
+    words = int((target_tokens - overhead) / tpw)
+    print(f"calibration: {tpw:.2f} tokens/word -> {words} words ~ {target_tokens} prompt tokens", flush=True)
+    return words
 
 
 def fmt(x, nd=1):
@@ -79,6 +123,9 @@ def read_metrics(base):
         t = r.read().decode()
     return {
         "gen_tokens": metric_sum(t, "vllm:generation_tokens_total"),
+        "prompt_tokens": metric_sum(t, "vllm:prompt_tokens_total"),
+        "pc_hits": metric_sum(t, "vllm:prefix_cache_hits_total"),
+        "pc_queries": metric_sum(t, "vllm:prefix_cache_queries_total"),
         "running": metric_sum(t, "vllm:num_requests_running"),
         "waiting": metric_sum(t, "vllm:num_requests_waiting"),
         "spec_accepted": metric_sum(t, "vllm:spec_decode_num_accepted_tokens_total"),
@@ -133,19 +180,21 @@ class Level:
 
 def worker(wid, level, args, backend, model):
     u = urlparse(backend)
-    i = wid
+    i = wid + level.base  # base differs per level and per run, so prompts never repeat (no prefix-cache hits)
     while not level.stop.is_set():
         i += 1000  # distinct prompt per request
+        text = long_prompt(i, args.prompt_words) if args.prompt_words else prompt_for(i)
         body = {
             "model": model,
-            "messages": [{"role": "user", "content": prompt_for(i)}],
+            "messages": [{"role": "user", "content": text}],
             "max_tokens": args.max_tokens,
-            "min_tokens": args.max_tokens,
             "temperature": 0.7, "top_p": 0.8, "presence_penalty": 1.0,
             "stream": True,
             "stream_options": {"include_usage": True},
             "chat_template_kwargs": {"enable_thinking": False},
         }
+        if not args.free_length:
+            body["min_tokens"] = args.max_tokens  # force the full length (load test, not quality)
         conn = http.client.HTTPConnection(u.hostname, u.port, timeout=args.req_timeout)
         t0 = time.time(); first = None; chunks = 0; usage = None; ok = False
         with level.lock:
@@ -195,6 +244,7 @@ def worker(wid, level, args, backend, model):
 
 def run_level(n, args, backend, model, hwmons, samples_w, out_dir):
     lvl = Level(n)
+    lvl.base = args.seed + n * 100_000_000
     threads = [threading.Thread(target=worker, args=(w, lvl, args, backend, model), daemon=True)
                for w in range(n)]
     t_start = time.time()
@@ -273,7 +323,13 @@ def run_level(n, args, backend, model, hwmons, samples_w, out_dir):
         "spec_accept_rate": acc,
         "requests_started": lvl.started, "requests_completed": len(lvl.completed),
         "requests_cut_at_level_end": lvl.cut, "errors": len(lvl.errors), "error_samples": lvl.errors[:5],
-        "ttft_median_s": sorted(c["ttft"] for c in lvl.completed if c["ttft"])[len(lvl.completed) // 2] if lvl.completed else None,
+        "prompt_tok_s": ((m1["prompt_tokens"] - m0["prompt_tokens"]) / dur) if m1.get("prompt_tokens") is not None and m0.get("prompt_tokens") is not None else None,
+        "prefix_cache_hit_rate": ((m1["pc_hits"] - m0["pc_hits"]) / (m1["pc_queries"] - m0["pc_queries"])) if m1.get("pc_queries") and m1["pc_queries"] > (m0.get("pc_queries") or 0) else None,
+        "req_per_s": len(lvl.completed) / dur,
+        "ttft_p50_s": pct([c["ttft"] for c in lvl.completed if c["ttft"]], 50),
+        "ttft_p95_s": pct([c["ttft"] for c in lvl.completed if c["ttft"]], 95),
+        "latency_p50_s": pct([c["secs"] for c in lvl.completed], 50),
+        "ttft_median_s": pct([c["ttft"] for c in lvl.completed if c["ttft"]], 50),
         "gpu_power_avg_w": pavg, "gpu_power_max_w": pmax, "gpu_temp_max_c": tmax,
     }
     json.dump(res, open(os.path.join(out_dir, f"level-{n:02d}.json"), "w"), indent=1)
@@ -289,6 +345,12 @@ def main():
     ap.add_argument("--levels", default="4,8,12,16")
     ap.add_argument("--duration", type=int, default=330, help="seconds per level")
     ap.add_argument("--max-tokens", type=int, default=16000)
+    ap.add_argument("--prompt-tokens", type=int, default=0,
+                    help="send ~this many unique prompt tokens per request (prefill-heavy test)")
+    ap.add_argument("--seed", type=int, default=int(time.time()) % 1_000_000 * 1000,
+                    help="prompt seed base; default differs every run so a rerun cannot hit the prefix cache")
+    ap.add_argument("--free-length", action="store_true",
+                    help="do not force min_tokens==max_tokens; let the model stop on its own")
     ap.add_argument("--sample", type=float, default=5.0)
     ap.add_argument("--req-timeout", type=int, default=3600)
     ap.add_argument("--out", required=True)
@@ -300,6 +362,7 @@ def main():
         sys.exit("no ready model on the router; load one first (llmctl swap ...)")
     if args.model and model != args.model:
         sys.exit(f"router has {model!r} loaded, expected {args.model!r}")
+    args.prompt_words = calibrate_words(backend, model, args.prompt_tokens) if args.prompt_tokens else 0
     hwmons = gpu_hwmons()
     print(f"backend={backend} model={model} gpus={[n for n, _ in hwmons]}", flush=True)
     f = open(os.path.join(args.out, "samples.csv"), "a", newline="")
@@ -320,6 +383,13 @@ def main():
             print(f"level {n} aborted: {e!r}", flush=True)
             break
     json.dump(results, open(os.path.join(args.out, "summary.json"), "w"), indent=1)
+    if args.prompt_tokens:
+        print("\n| conc | prefill tok/s | decode tok/s | req/s | done | TTFT p50 s | TTFT p95 s | latency p50 s | cache hit | max W per GPU | errors |")
+        print("|---|---|---|---|---|---|---|---|---|---|---|")
+        for r in results:
+            print(f"| {r['concurrency']} | {fmt(r['prompt_tok_s'], 0)} | {fmt(r['avg_tok_s'], 0)} | {fmt(r['req_per_s'], 2)} | "
+                  f"{r['requests_completed']} | {fmt(r['ttft_p50_s'])} | {fmt(r['ttft_p95_s'])} | {fmt(r['latency_p50_s'])} | "
+                  f"{fmt(r['prefix_cache_hit_rate'], 2)} | {[round(x) if x else None for x in r['gpu_power_max_w']]} | {r['errors']} |")
     print("\n| conc | avg tok/s | steady tok/s | per-stream | peak | spec accept | max W per GPU | max C | errors |")
     print("|---|---|---|---|---|---|---|---|---|")
     for r in results:
