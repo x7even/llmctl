@@ -1,0 +1,40 @@
+{
+ "id": "chatcmpl-86f955b47473813f",
+ "object": "chat.completion",
+ "created": 1791531365,
+ "model": "qwen3.8-27b-code",
+ "choices": [
+  {
+   "index": 0,
+   "message": {
+    "role": "assistant",
+    "content": "```python\nimport re\nfrom collections import defaultdict\nfrom typing import Iterable, Dict, List, Tuple\n\n\ndef analyze_log(lines: Iterable[str]) -> dict:\n    \"\"\"\n    Analyse a web server access log in Common Log Format.\n\n    Each valid line looks like:\n        ip ident user [timestamp] \"METHOD path PROTOCOL\" status bytes\n\n    Returns a dict with summary statistics.\n    \"\"\"\n    # Regex to match Common Log Format lines\n    # ip: \\S+\n    # ident: \\S+\n    # user: \\S+\n    # timestamp: [10/Oct/2026:13:55:36 +0000]\n    # request: \"GET /index.html?x=1 HTTP/1.1\"\n    # status: 200\n    # bytes: 2326 or -\n    log_pattern = re.compile(\n        r'^(\\S+)\\s+(\\S+)\\s+(\\S+)\\s+'\n        r'\\[([^\\]]+)\\]\\s+'\n        r'\"(\\S+)\\s+(\\S+)\\s+(\\S+)\"\\s+'\n        r'(\\d+)\\s+'\n        r'(\\d+|-)\\s*$'\n    )\n\n    month_map = {\n        'Jan': 1, 'Feb': 2, 'Mar': 3, 'Apr': 4,\n        'May': 5, 'Jun': 6, 'Jul': 7, 'Aug': 8,\n        'Sep': 9, 'Oct': 10, 'Nov': 11, 'Dec': 12\n    }\n\n    total_requests = 0\n    malformed = 0\n    ips = set()\n    status_counts = defaultdict(int)\n    bytes_total = 0\n    error_count = 0\n    path_counts = defaultdict(int)\n    requests_per_hour = defaultdict(int)\n\n    for line in lines:\n        line = line.rstrip('\\n').rstrip('\\r')\n        if not line.strip():\n            malformed += 1\n            continue\n\n        match = log_pattern.match(line)\n        if not match:\n            malformed += 1\n            continue\n\n        ip, ident, user, timestamp, method, path, protocol, status_str, bytes_str = match.groups()\n\n        # Validate status is numeric (already ensured by regex \\d+, but let's be safe)\n        try:\n            status = int(status_str)\n        except ValueError:\n            malformed += 1\n            continue\n\n        # Parse bytes\n        if bytes_str == '-':\n            byte_count = 0\n        else:\n            try:\n                byte_count = int(bytes_str)\n            except ValueError:\n                malformed += 1\n                continue\n\n        # Parse timestamp to get hour\n        # Format: 10/Oct/2026:13:55:36 +0000\n        # We need YYYY-MM-DD HH\n        try:\n            # Split the timestamp\n            # e.g., \"10/Oct/2026:13:55:36 +0000\"\n            # Remove the timezone part\n            ts_part = timestamp.split(' ')[0] if ' ' in timestamp else timestamp\n            # ts_part is like \"10/Oct/2026:13:55:36\"\n            # Split by / and :\n            parts = ts_part.split('/')\n            if len(parts) != 3:\n                malformed += 1\n                continue\n            day_str = parts[0]\n            month_str = parts[1]\n            rest = parts[2]\n            # rest is like \"2026:13:55:36\"\n            rest_parts = rest.split(':')\n            if len(rest_parts) != 3:\n                malformed += 1\n                continue\n            year_str = rest_parts[0]\n            hour_str = rest_parts[1]\n            minute_str = rest_parts[2]\n\n            # Validate day, year, hour, minute are numeric\n            if not day_str.isdigit() or not year_str.isdigit() or not hour_str.isdigit() or not minute_str.isdigit():\n                malformed += 1\n                continue\n\n            if month_str not in month_map:\n                malformed += 1\n                continue\n\n            year = int(year_str)\n            month = month_map[month_str]\n            day = int(day_str)\n            hour = int(hour_str)\n\n            # Basic validation\n            if not (1 <= day <= 31) or not (0 <= hour <= 23) or not (0 <= int(minute_str) <= 59):\n                malformed += 1\n                continue\n\n            hour_key = f\"{year:04d}-{month:02d}-{day:02d} {hour:02d}\"\n        except (ValueError, IndexError):\n            malformed += 1\n            continue\n\n        # All validations passed\n        total_requests += 1\n        ips.add(ip)\n        status_counts[status] += 1\n        bytes_total += byte_count\n\n        if 400 <= status <= 599:\n            error_count += 1\n\n        # Extract path without query string\n        if '?' in path:\n            clean_path = path.split('?', 1)[0]\n        else:\n            clean_path = path\n        path_counts[clean_path] += 1\n\n        requests_per_hour[hour_key] += 1\n\n    # Calculate error rate\n    if total_requests > 0:\n        error_rate = round(error_count / total_requests, 4)\n    else:\n        error_rate = 0.0\n\n    # Top paths: sort by count descending, then path ascending\n    sorted_paths = sorted(path_counts.items(), key=lambda x: (-x[1], x[0]))\n    top_paths = sorted_paths[:3]\n\n    return {\n        \"total_requests\": total_requests,\n        \"malformed\": malformed,\n        \"unique_ips\": len(ips),\n        \"status_counts\": dict(status_counts),\n        \"bytes_total\": bytes_total,\n        \"error_rate\": error_rate,\n        \"top_paths\": top_paths,\n        \"requests_per_hour\": dict(requests_per_hour),\n    }\n```",
+    "refusal": null,
+    "annotations": null,
+    "audio": null,
+    "function_call": null,
+    "reasoning": null
+   },
+   "logprobs": null,
+   "finish_reason": "stop",
+   "stop_reason": null,
+   "token_ids": null,
+   "routed_experts": null
+  }
+ ],
+ "service_tier": null,
+ "system_fingerprint": "vllm-0.26.0-tp4-0126c26e",
+ "usage": {
+  "prompt_tokens": 472,
+  "total_tokens": 1853,
+  "completion_tokens": 1381,
+  "prompt_tokens_details": null
+ },
+ "prompt_logprobs": null,
+ "prompt_token_ids": null,
+ "prompt_text": null,
+ "kv_transfer_params": null,
+ "ec_transfer_params": null,
+ "metrics": null,
+ "_wall_s": 22.95529503200123
+}

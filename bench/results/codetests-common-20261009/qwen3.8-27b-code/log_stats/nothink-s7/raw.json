@@ -1,0 +1,40 @@
+{
+ "id": "chatcmpl-b67509c166f6e007",
+ "object": "chat.completion",
+ "created": 1791531365,
+ "model": "qwen3.8-27b-code",
+ "choices": [
+  {
+   "index": 0,
+   "message": {
+    "role": "assistant",
+    "content": "```python\n\"\"\"Web server access log analyzer (Common Log Format).\"\"\"\n\nfrom collections import Counter\nfrom datetime import datetime\nfrom typing import Dict, Iterable, List, Tuple\n\n\ndef analyze_log(lines: Iterable[str]) -> dict:\n    \"\"\"Summarise a web server access log in Common Log Format.\n\n    Args:\n        lines: An iterable of log line strings.\n\n    Returns:\n        A dict with keys: total_requests, malformed, unique_ips,\n        status_counts, bytes_total, error_rate, top_paths,\n        requests_per_hour.\n    \"\"\"\n    total_requests = 0\n    malformed = 0\n    ips = set()\n    status_counts: Dict[int, int] = {}\n    bytes_total = 0\n    path_counts: Counter = Counter()\n    hour_counts: Dict[str, int] = {}\n    error_count = 0\n\n    month_map = {\n        \"Jan\": 1, \"Feb\": 2, \"Mar\": 3, \"Apr\": 4,\n        \"May\": 5, \"Jun\": 6, \"Jul\": 7, \"Aug\": 8,\n        \"Sep\": 9, \"Oct\": 10, \"Nov\": 11, \"Dec\": 12,\n    }\n\n    for line in lines:\n        line = line.strip()\n        if not line:\n            malformed += 1\n            continue\n\n        # Try to parse the line\n        parsed = _parse_line(line)\n        if parsed is None:\n            malformed += 1\n            continue\n\n        ip, method, path, protocol, status, nbytes, timestamp_str = parsed\n\n        total_requests += 1\n        ips.add(ip)\n        status_counts[status] = status_counts.get(status, 0) + 1\n        bytes_total += nbytes\n\n        if 400 <= status <= 599:\n            error_count += 1\n\n        # Path without query string\n        clean_path = path.split(\"?\", 1)[0]\n        path_counts[clean_path] += 1\n\n        # Parse timestamp for hour bucket\n        hour_key = _timestamp_to_hour(timestamp_str, month_map)\n        if hour_key is not None:\n            hour_counts[hour_key] = hour_counts.get(hour_key, 0) + 1\n\n    # Error rate\n    if total_requests > 0:\n        error_rate = round(error_count / total_requests, 4)\n    else:\n        error_rate = 0.0\n\n    # Top paths: sort by count desc, then path asc\n    sorted_paths = sorted(path_counts.items(), key=lambda x: (-x[1], x[0]))\n    top_paths: List[Tuple[str, int]] = sorted_paths[:3]\n\n    return {\n        \"total_requests\": total_requests,\n        \"malformed\": malformed,\n        \"unique_ips\": len(ips),\n        \"status_counts\": status_counts,\n        \"bytes_total\": bytes_total,\n        \"error_rate\": error_rate,\n        \"top_paths\": top_paths,\n        \"requests_per_hour\": hour_counts,\n    }\n\n\ndef _parse_line(line: str):\n    \"\"\"Parse a single Common Log Format line.\n\n    Returns a tuple (ip, method, path, protocol, status, nbytes, timestamp_str)\n    or None if the line is malformed.\n    \"\"\"\n    # Expected format:\n    # ip ident user [timestamp] \"METHOD path PROTOCOL\" status bytes\n    # The ident and user fields can be anything (including '-'), but they\n    # are separated by spaces. We need to be careful with the quoted request.\n\n    # Find the bracketed timestamp\n    bracket_start = line.find(\"[\")\n    if bracket_start == -1:\n        return None\n    bracket_end = line.find(\"]\", bracket_start)\n    if bracket_end == -1:\n        return None\n\n    timestamp_str = line[bracket_start + 1:bracket_end]\n\n    # Before the bracket: ip ident user\n    prefix = line[:bracket_start].strip()\n    # Split prefix into at least 3 parts (ip, ident, user)\n    prefix_parts = prefix.split()\n    if len(prefix_parts) < 3:\n        return None\n    ip = prefix_parts[0]\n\n    # After the bracket: \"METHOD path PROTOCOL\" status bytes\n    rest = line[bracket_end + 1:].strip()\n    if not rest.startswith('\"'):\n        return None\n    quote_end = rest.find('\"', 1)\n    if quote_end == -1:\n        return None\n    request = rest[1:quote_end]\n\n    # After the closing quote: status bytes\n    after_quote = rest[quote_end + 1:].strip()\n    after_parts = after_quote.split()\n    if len(after_parts) < 2:\n        return None\n    status_str = after_parts[0]\n    bytes_str = after_parts[1]\n\n    # Validate status\n    try:\n        status = int(status_str)\n    except ValueError:\n        return None\n\n    # Validate bytes\n    if bytes_str == \"-\":\n        nbytes = 0\n    else:\n        try:\n            nbytes = int(bytes_str)\n        except ValueError:\n            return None\n\n    # Parse the request: METHOD path PROTOCOL\n    request_parts = request.split()\n    if len(request_parts) < 2:\n        return None\n    method = request_parts[0]\n    path = request_parts[1]\n    protocol = request_parts[2] if len(request_parts) >= 3 else \"\"\n\n    # Validate timestamp\n    if not _validate_timestamp(timestamp_str):\n        return None\n\n    return (ip, method, path, protocol, status, nbytes, timestamp_str)\n\n\ndef _validate_timestamp(ts: str) -> bool:\n    \"\"\"Check if timestamp looks like DD/Mon/YYYY:HH:MM:SS +ZZZZ.\"\"\"\n    # Expected: 10/Oct/2026:13:55:36 +0000\n    # Format: DD/Mon/YYYY:HH:MM:SS +ZZZZ\n    parts = ts.split(\" \")\n    if len(parts) != 2:\n        return False\n    date_part = parts[0]\n    # offset = parts[1]  # not strictly validated beyond presence\n\n    # date_part should be like DD/Mon/YYYY:HH:MM:SS\n    # Split by '/'\n    slashes = date_part.split(\"/\")\n    if len(slashes) != 3:\n        return False\n    day_str, mon_str, rest = slashes\n    if len(day_str) != 2 or not day_str.isdigit():\n        return False\n    if mon_str not in (\"Jan\",\"Feb\",\"Mar\",\"Apr\",\"May\",\"Jun\",\n                        \"Jul\",\"Aug\",\"Sep\",\"Oct\",\"Nov\",\"Dec\"):\n        return False\n    # rest should be YYYY:HH:MM:SS\n    colon_parts = rest.split(\":\")\n    if len(colon_parts) != 4:\n        return False\n    year_str, hour_str, min_str, sec_str = colon_parts\n    if len(year_str) != 4 or not year_str.isdigit():\n        return False\n    if len(hour_str) != 2 or not hour_str.isdigit():\n        return False\n    if len(min_str) != 2 or not min_str.isdigit():\n        return False\n    if len(sec_str) != 2 or not sec_str.isdigit():\n        return False\n    return True\n\n\ndef _timestamp_to_hour(ts: str, month_map: dict):\n    \"\"\"Convert timestamp string to 'YYYY-MM-DD HH' key, or None.\"\"\"\n    parts = ts.split(\" \")\n    if len(parts) != 2:\n        return None\n    date_part = parts[0]\n    slashes = date_part.split(\"/\")\n    if len(slashes) != 3:\n        return None\n    day_str, mon_str, rest = slashes\n    colon_parts = rest.split(\":\")\n    if len(colon_parts) != 4:\n        return None\n    year_str, hour_str, min_str, sec_str = colon_parts\n    month = month_map.get(mon_str)\n    if month is None:\n        return None\n    return f\"{year_str}-{month:02d}-{day_str} {hour_str}\"\n```",
+    "refusal": null,
+    "annotations": null,
+    "audio": null,
+    "function_call": null,
+    "reasoning": null
+   },
+   "logprobs": null,
+   "finish_reason": "stop",
+   "stop_reason": null,
+   "token_ids": null,
+   "routed_experts": null
+  }
+ ],
+ "service_tier": null,
+ "system_fingerprint": "vllm-0.26.0-tp4-0126c26e",
+ "usage": {
+  "prompt_tokens": 472,
+  "total_tokens": 2301,
+  "completion_tokens": 1829,
+  "prompt_tokens_details": null
+ },
+ "prompt_logprobs": null,
+ "prompt_token_ids": null,
+ "prompt_text": null,
+ "kv_transfer_params": null,
+ "ec_transfer_params": null,
+ "metrics": null,
+ "_wall_s": 31.039977212998565
+}

@@ -1,0 +1,40 @@
+{
+ "id": "chatcmpl-8e7b86ca190a9080",
+ "object": "chat.completion",
+ "created": 1791533022,
+ "model": "qwen3.8-27b-code",
+ "choices": [
+  {
+   "index": 0,
+   "message": {
+    "role": "assistant",
+    "content": "```python\nfrom decimal import Decimal, ROUND_HALF_UP\n\n\nclass Cart:\n    _COUPONS = {\n        \"SAVE10\": (\"percent\", Decimal(\"0.10\")),\n        \"FIVEOFF\": (\"fixed\", Decimal(\"5.00\")),\n    }\n\n    def __init__(self, tax_rate: str | Decimal = \"0\") -> None:\n        if isinstance(tax_rate, str):\n            tax_rate = Decimal(tax_rate)\n        if not isinstance(tax_rate, Decimal):\n            raise ValueError(\"tax_rate must be a str or Decimal\")\n        if tax_rate < 0 or tax_rate > 1:\n            raise ValueError(\"tax_rate must be between 0 and 1 inclusive\")\n        self._tax_rate: Decimal = tax_rate\n        self._items: dict[str, dict[str, Decimal | int]] = {}\n        self._coupon: str | None = None\n\n    def _quantize(self, value: Decimal) -> Decimal:\n        return value.quantize(Decimal(\"0.01\"), rounding=ROUND_HALF_UP)\n\n    def add_item(self, sku: str, price: str | Decimal, qty: int = 1) -> None:\n        if not isinstance(qty, int) or isinstance(qty, bool) or qty < 1:\n            raise ValueError(\"qty must be an int >= 1\")\n        if isinstance(price, str):\n            price = Decimal(price)\n        if not isinstance(price, Decimal):\n            raise ValueError(\"price must be a str or Decimal\")\n        if price < 0:\n            raise ValueError(\"price must be >= 0\")\n\n        if sku in self._items:\n            existing_price = self._items[sku][\"price\"]\n            if existing_price != price:\n                raise ValueError(\n                    f\"Price mismatch for SKU {sku!r}: \"\n                    f\"{existing_price} vs {price}\"\n                )\n            self._items[sku][\"qty\"] += qty\n        else:\n            self._items[sku] = {\"price\": price, \"qty\": qty}\n\n    def remove_item(self, sku: str, qty: int | None = None) -> None:\n        if sku not in self._items:\n            raise KeyError(sku)\n        if qty is None:\n            del self._items[sku]\n            return\n        if not isinstance(qty, int) or isinstance(qty, bool) or qty < 1:\n            raise ValueError(\"qty must be an int >= 1 or None\")\n        current_qty = self._items[sku][\"qty\"]\n        if qty > current_qty:\n            raise ValueError(\n                f\"qty {qty} exceeds quantity in cart {current_qty}\"\n            )\n        if qty == current_qty:\n            del self._items[sku]\n        else:\n            self._items[sku][\"qty\"] = current_qty - qty\n\n    def apply_coupon(self, code: str) -> None:\n        if code not in self._COUPONS:\n            raise ValueError(f\"Unknown coupon code: {code!r}\")\n        self._coupon = code\n\n    def item_count(self) -> int:\n        return sum(line[\"qty\"] for line in self._items.values())\n\n    def _compute_discount(self, subtotal: Decimal) -> Decimal:\n        if self._coupon is None:\n            return Decimal(\"0.00\")\n        kind, value = self._COUPONS[self._coupon]\n        if kind == \"percent\":\n            discount = subtotal * value\n        else:\n            discount = min(value, subtotal)\n        return self._quantize(discount)\n\n    def summary(self) -> dict[str, Decimal]:\n        subtotal = Decimal(\"0\")\n        for line in self._items.values():\n            subtotal += line[\"price\"] * line[\"qty\"]\n\n        discount = self._compute_discount(subtotal)\n        taxable = subtotal - discount\n        tax = self._quantize(taxable * self._tax_rate)\n        total = subtotal - discount + tax\n\n        return {\n            \"subtotal\": self._quantize(subtotal),\n            \"discount\": discount,\n            \"tax\": tax,\n            \"total\": self._quantize(total),\n        }\n```",
+    "refusal": null,
+    "annotations": null,
+    "audio": null,
+    "function_call": null,
+    "reasoning": null
+   },
+   "logprobs": null,
+   "finish_reason": "stop",
+   "stop_reason": null,
+   "token_ids": null,
+   "routed_experts": null
+  }
+ ],
+ "service_tier": null,
+ "system_fingerprint": "vllm-0.26.0-tp4-0126c26e",
+ "usage": {
+  "prompt_tokens": 622,
+  "total_tokens": 1547,
+  "completion_tokens": 925,
+  "prompt_tokens_details": null
+ },
+ "prompt_logprobs": null,
+ "prompt_token_ids": null,
+ "prompt_text": null,
+ "kv_transfer_params": null,
+ "ec_transfer_params": null,
+ "metrics": null,
+ "_wall_s": 42.00518341499992
+}

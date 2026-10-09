@@ -1,0 +1,40 @@
+{
+ "id": "chatcmpl-ab0e63a0fd53a5f2",
+ "object": "chat.completion",
+ "created": 1791531747,
+ "model": "qwen3.8-27b-code",
+ "choices": [
+  {
+   "index": 0,
+   "message": {
+    "role": "assistant",
+    "content": "```python\nimport time\nimport functools\nfrom typing import Callable, Any\n\n\ndef retry(max_attempts: int = 3, delay: float = 1.0, backoff: float = 2.0,\n          exceptions: tuple[type[BaseException], ...] = (Exception,),\n          sleep: Callable[[float], None] = time.sleep) -> Callable:\n    \"\"\"Decorator factory that retries a flaky function with exponential backoff.\"\"\"\n    if max_attempts < 1:\n        raise ValueError(\"max_attempts must be >= 1\")\n    if delay < 0:\n        raise ValueError(\"delay must be >= 0\")\n    if backoff < 1:\n        raise ValueError(\"backoff must be >= 1\")\n\n    def decorator(func: Callable) -> Callable:\n        @functools.wraps(func)\n        def wrapper(*args: Any, **kwargs: Any) -> Any:\n            for attempt in range(1, max_attempts + 1):\n                wrapper.calls += 1\n                try:\n                    return func(*args, **kwargs)\n                except exceptions as e:\n                    if attempt == max_attempts:\n                        raise\n                    wait_time = delay * (backoff ** (attempt - 1))\n                    sleep(wait_time)\n        wrapper.calls = 0\n        return wrapper\n\n    return decorator\n```",
+    "refusal": null,
+    "annotations": null,
+    "audio": null,
+    "function_call": null,
+    "reasoning": null
+   },
+   "logprobs": null,
+   "finish_reason": "stop",
+   "stop_reason": null,
+   "token_ids": null,
+   "routed_experts": null
+  }
+ ],
+ "service_tier": null,
+ "system_fingerprint": "vllm-0.26.0-tp4-0126c26e",
+ "usage": {
+  "prompt_tokens": 433,
+  "total_tokens": 724,
+  "completion_tokens": 291,
+  "prompt_tokens_details": null
+ },
+ "prompt_logprobs": null,
+ "prompt_token_ids": null,
+ "prompt_text": null,
+ "kv_transfer_params": null,
+ "ec_transfer_params": null,
+ "metrics": null,
+ "_wall_s": 9.441160957998363
+}

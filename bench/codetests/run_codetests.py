@@ -226,6 +226,8 @@ def cmd_validate(_):
 
 
 def cmd_run(args):
+    global MAX_TOKENS
+    MAX_TOKENS = args.max_tokens  # recorded in summary.md; was always the 24000 default
     out = Path(args.out)
     out.mkdir(parents=True, exist_ok=True)
     names = [t for t in task_names() if not args.tasks or t in args.tasks.split(",")]

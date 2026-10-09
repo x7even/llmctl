@@ -1,0 +1,40 @@
+{
+ "id": "chatcmpl-82f5bc6dfe2b8c90",
+ "object": "chat.completion",
+ "created": 1791531794,
+ "model": "qwen3.8-27b-code",
+ "choices": [
+  {
+   "index": 0,
+   "message": {
+    "role": "assistant",
+    "content": "```python\nimport time\nfrom functools import wraps\nfrom typing import Callable, Any\n\n\ndef retry(\n    max_attempts: int = 3,\n    delay: float = 1.0,\n    backoff: float = 2.0,\n    exceptions: tuple[type[BaseException], ...] = (Exception,),\n    sleep: Callable[[float], None] = time.sleep,\n) -> Callable:\n    \"\"\"Decorator factory for retrying flaky function calls.\"\"\"\n    if max_attempts < 1:\n        raise ValueError(\"max_attempts must be >= 1\")\n    if delay < 0:\n        raise ValueError(\"delay must be >= 0\")\n    if backoff < 1:\n        raise ValueError(\"backoff must be >= 1\")\n\n    def decorator(func: Callable) -> Callable:\n        @wraps(func)\n        def wrapper(*args: Any, **kwargs: Any) -> Any:\n            last_exception: BaseException | None = None\n            for attempt in range(1, max_attempts + 1):\n                wrapper.calls += 1\n                try:\n                    return func(*args, **kwargs)\n                except exceptions as exc:\n                    last_exception = exc\n                    if attempt < max_attempts:\n                        wait = delay * (backoff ** (attempt - 1))\n                        sleep(wait)\n            # All attempts failed; re-raise the last exception\n            raise last_exception\n\n        wrapper.calls = 0\n        return wrapper\n\n    return decorator\n```",
+    "refusal": null,
+    "annotations": null,
+    "audio": null,
+    "function_call": null,
+    "reasoning": null
+   },
+   "logprobs": null,
+   "finish_reason": "stop",
+   "stop_reason": null,
+   "token_ids": null,
+   "routed_experts": null
+  }
+ ],
+ "service_tier": null,
+ "system_fingerprint": "vllm-0.26.0-tp4-0126c26e",
+ "usage": {
+  "prompt_tokens": 433,
+  "total_tokens": 759,
+  "completion_tokens": 326,
+  "prompt_tokens_details": null
+ },
+ "prompt_logprobs": null,
+ "prompt_token_ids": null,
+ "prompt_text": null,
+ "kv_transfer_params": null,
+ "ec_transfer_params": null,
+ "metrics": null,
+ "_wall_s": 11.187278577999678
+}

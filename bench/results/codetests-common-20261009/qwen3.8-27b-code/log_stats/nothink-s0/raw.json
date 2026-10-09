@@ -1,0 +1,40 @@
+{
+ "id": "chatcmpl-bbce26433c822e25",
+ "object": "chat.completion",
+ "created": 1791531365,
+ "model": "qwen3.8-27b-code",
+ "choices": [
+  {
+   "index": 0,
+   "message": {
+    "role": "assistant",
+    "content": "```python\nimport re\nfrom collections import Counter\nfrom typing import Iterable, Dict, List, Tuple\nfrom datetime import datetime\n\n\ndef analyze_log(lines: Iterable[str]) -> dict:\n    \"\"\"Summarise a web server access log in Common Log Format.\"\"\"\n    \n    # Regex for Common Log Format:\n    # ip ident user [timestamp] \"METHOD path PROTOCOL\" status bytes\n    # ip: \\S+\n    # ident: \\S+\n    # user: \\S+\n    # [timestamp]: \\[([^\\]]+)\\]\n    # \"METHOD path PROTOCOL\": \"(\\S+) (\\S+) (\\S+)\"\n    # status: (\\d+)\n    # bytes: (\\d+|-)\n    \n    log_pattern = re.compile(\n        r'^(\\S+) (\\S+) (\\S+) \\[([^\\]]+)\\] \"(\\S+) (\\S+) (\\S+)\" (\\d+) (\\d+|-)\\s*$'\n    )\n    \n    month_map = {\n        'Jan': 1, 'Feb': 2, 'Mar': 3, 'Apr': 4,\n        'May': 5, 'Jun': 6, 'Jul': 7, 'Aug': 8,\n        'Sep': 9, 'Oct': 10, 'Nov': 11, 'Dec': 12\n    }\n    \n    total_requests = 0\n    malformed = 0\n    unique_ips = set()\n    status_counts: Dict[int, int] = {}\n    bytes_total = 0\n    path_counts: Counter = Counter()\n    hour_counts: Dict[str, int] = {}\n    error_count = 0\n    \n    for line in lines:\n        line = line.strip()\n        if not line:\n            malformed += 1\n            continue\n        \n        match = log_pattern.match(line)\n        if not match:\n            malformed += 1\n            continue\n        \n        ip, ident, user, timestamp, method, path_with_query, protocol, status_str, bytes_str = match.groups()\n        \n        # Validate timestamp format\n        try:\n            # timestamp looks like: 10/Oct/2026:13:55:36 +0000\n            # We need to extract date and time for the hour key\n            # Format: DD/Mon/YYYY:HH:MM:SS +ZZZZ\n            ts_parts = timestamp.split(' ')\n            if len(ts_parts) != 2:\n                malformed += 1\n                continue\n            \n            date_time_part = ts_parts[0]\n            # date_time_part: 10/Oct/2026:13:55:36\n            # Split by '/' and ':'\n            # Format: DD/Mon/YYYY:HH:MM:SS\n            dt_parts = date_time_part.split(':')\n            if len(dt_parts) != 4:\n                malformed += 1\n                continue\n            \n            date_part = dt_parts[0]  # DD/Mon/YYYY\n            time_part = dt_parts[1]  # HH\n            minute_part = dt_parts[2]  # MM\n            second_part = dt_parts[3]  # SS\n            \n            # Validate time parts are numeric\n            if not (time_part.isdigit() and minute_part.isdigit() and second_part.isdigit()):\n                malformed += 1\n                continue\n            \n            # Parse date part: DD/Mon/YYYY\n            date_components = date_part.split('/')\n            if len(date_components) != 3:\n                malformed += 1\n                continue\n            \n            day_str, mon_str, year_str = date_components\n            if not (day_str.isdigit() and year_str.isdigit()):\n                malformed += 1\n                continue\n            \n            if mon_str not in month_map:\n                malformed += 1\n                continue\n            \n            day = int(day_str)\n            month = month_map[mon_str]\n            year = int(year_str)\n            hour = int(time_part)\n            \n            # Validate ranges\n            if not (1 <= day <= 31 and 1 <= month <= 12 and 0 <= hour <= 23):\n                malformed += 1\n                continue\n            \n        except (ValueError, IndexError):\n            malformed += 1\n            continue\n        \n        # Parse status\n        try:\n            status = int(status_str)\n        except ValueError:\n            malformed += 1\n            continue\n        \n        # Parse bytes\n        if bytes_str == '-':\n            bytes_val = 0\n        else:\n            try:\n                bytes_val = int(bytes_str)\n            except ValueError:\n                malformed += 1\n                continue\n        \n        # All valid, now accumulate\n        total_requests += 1\n        unique_ips.add(ip)\n        status_counts[status] = status_counts.get(status, 0) + 1\n        bytes_total += bytes_val\n        \n        if 400 <= status <= 599:\n            error_count += 1\n        \n        # Extract path without query string\n        if '?' in path_with_query:\n            path = path_with_query.split('?', 1)[0]\n        else:\n            path = path_with_query\n        \n        path_counts[path] += 1\n        \n        # Build hour key: YYYY-MM-DD HH\n        hour_key = f\"{year:04d}-{month:02d}-{day:02d} {hour:02d}\"\n        hour_counts[hour_key] = hour_counts.get(hour_key, 0) + 1\n    \n    # Calculate error rate\n    if total_requests > 0:\n        error_rate = round(error_count / total_requests, 4)\n    else:\n        error_rate = 0.0\n    \n    # Get top 3 paths sorted by count descending, then path ascending\n    sorted_paths = sorted(path_counts.items(), key=lambda x: (-x[1], x[0]))\n    top_paths = [(p, c) for p, c in sorted_paths[:3]]\n    \n    return {\n        \"total_requests\": total_requests,\n        \"malformed\": malformed,\n        \"unique_ips\": len(unique_ips),\n        \"status_counts\": status_counts,\n        \"bytes_total\": bytes_total,\n        \"error_rate\": error_rate,\n        \"top_paths\": top_paths,\n        \"requests_per_hour\": hour_counts\n    }\n```",
+    "refusal": null,
+    "annotations": null,
+    "audio": null,
+    "function_call": null,
+    "reasoning": null
+   },
+   "logprobs": null,
+   "finish_reason": "stop",
+   "stop_reason": null,
+   "token_ids": null,
+   "routed_experts": null
+  }
+ ],
+ "service_tier": null,
+ "system_fingerprint": "vllm-0.26.0-tp4-0126c26e",
+ "usage": {
+  "prompt_tokens": 472,
+  "total_tokens": 1851,
+  "completion_tokens": 1379,
+  "prompt_tokens_details": null
+ },
+ "prompt_logprobs": null,
+ "prompt_token_ids": null,
+ "prompt_text": null,
+ "kv_transfer_params": null,
+ "ec_transfer_params": null,
+ "metrics": null,
+ "_wall_s": 23.400377050000316
+}

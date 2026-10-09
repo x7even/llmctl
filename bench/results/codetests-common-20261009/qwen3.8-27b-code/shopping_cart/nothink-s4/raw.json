@@ -1,0 +1,40 @@
+{
+ "id": "chatcmpl-ba4cc46202071371",
+ "object": "chat.completion",
+ "created": 1791533187,
+ "model": "qwen3.8-27b-code",
+ "choices": [
+  {
+   "index": 0,
+   "message": {
+    "role": "assistant",
+    "content": "```python\nfrom decimal import Decimal, ROUND_HALF_UP\n\n\nclass Cart:\n    def __init__(self, tax_rate: str | Decimal = \"0\") -> None:\n        rate = Decimal(tax_rate) if isinstance(tax_rate, str) else tax_rate\n        if rate < Decimal(\"0\") or rate > Decimal(\"1\"):\n            raise ValueError(\"tax_rate must be between 0 and 1 inclusive\")\n        self._tax_rate: Decimal = rate\n        self._items: dict[str, tuple[Decimal, int]] = {}\n        self._coupon: str | None = None\n\n    def add_item(self, sku: str, price: str | Decimal, qty: int = 1) -> None:\n        if not isinstance(qty, int) or isinstance(qty, bool) or qty < 1:\n            raise ValueError(\"qty must be an int >= 1\")\n        p = Decimal(price) if isinstance(price, str) else price\n        if p < Decimal(\"0\"):\n            raise ValueError(\"price must be >= 0\")\n        if sku in self._items:\n            existing_price, existing_qty = self._items[sku]\n            if existing_price != p:\n                raise ValueError(\"price mismatch for existing SKU\")\n            self._items[sku] = (p, existing_qty + qty)\n        else:\n            self._items[sku] = (p, qty)\n\n    def remove_item(self, sku: str, qty: int | None = None) -> None:\n        if sku not in self._items:\n            raise KeyError(f\"SKU {sku!r} not in cart\")\n        if qty is None:\n            del self._items[sku]\n            return\n        if not isinstance(qty, int) or isinstance(qty, bool) or qty < 1:\n            raise ValueError(\"qty must be an int >= 1\")\n        _, current_qty = self._items[sku]\n        if qty > current_qty:\n            raise ValueError(\"qty exceeds quantity in cart\")\n        new_qty = current_qty - qty\n        if new_qty == 0:\n            del self._items[sku]\n        else:\n            price, _ = self._items[sku]\n            self._items[sku] = (price, new_qty)\n\n    def apply_coupon(self, code: str) -> None:\n        if code not in (\"SAVE10\", \"FIVEOFF\"):\n            raise ValueError(f\"Unknown coupon code: {code!r}\")\n        self._coupon = code\n\n    def item_count(self) -> int:\n        return sum(qty for _, qty in self._items.values())\n\n    def summary(self) -> dict[str, Decimal]:\n        subtotal = sum(\n            (price * qty for price, qty in self._items.values()),\n            Decimal(\"0\"),\n        )\n\n        discount = Decimal(\"0\")\n        if self._coupon == \"SAVE10\":\n            discount = subtotal * Decimal(\"0.10\")\n        elif self._coupon == \"FIVEOFF\":\n            discount = min(Decimal(\"5.00\"), subtotal)\n\n        discount = discount.quantize(Decimal(\"0.01\"), rounding=ROUND_HALF_UP)\n        taxable = subtotal - discount\n        tax = (taxable * self._tax_rate).quantize(\n            Decimal(\"0.01\"), rounding=ROUND_HALF_UP\n        )\n        total = subtotal - discount + tax\n\n        return {\n            \"subtotal\": subtotal.quantize(Decimal(\"0.01\"), rounding=ROUND_HALF_UP),\n            \"discount\": discount,\n            \"tax\": tax,\n            \"total\": total,\n        }\n```",
+    "refusal": null,
+    "annotations": null,
+    "audio": null,
+    "function_call": null,
+    "reasoning": null
+   },
+   "logprobs": null,
+   "finish_reason": "stop",
+   "stop_reason": null,
+   "token_ids": null,
+   "routed_experts": null
+  }
+ ],
+ "service_tier": null,
+ "system_fingerprint": "vllm-0.26.0-tp4-0126c26e",
+ "usage": {
+  "prompt_tokens": 622,
+  "total_tokens": 1422,
+  "completion_tokens": 800,
+  "prompt_tokens_details": null
+ },
+ "prompt_logprobs": null,
+ "prompt_token_ids": null,
+ "prompt_text": null,
+ "kv_transfer_params": null,
+ "ec_transfer_params": null,
+ "metrics": null,
+ "_wall_s": 39.01688923599977
+}

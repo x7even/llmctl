@@ -1,0 +1,40 @@
+{
+ "id": "chatcmpl-8ba419c8d4dd3faf",
+ "object": "chat.completion",
+ "created": 1791533269,
+ "model": "qwen3.8-27b-code",
+ "choices": [
+  {
+   "index": 0,
+   "message": {
+    "role": "assistant",
+    "content": "```python\nfrom decimal import Decimal, ROUND_HALF_UP\n\n\nclass Cart:\n    _TWO_PLACES = Decimal(\"0.01\")\n\n    def __init__(self, tax_rate: str | Decimal = \"0\") -> None:\n        rate = Decimal(tax_rate) if isinstance(tax_rate, str) else tax_rate\n        if rate < 0 or rate > 1:\n            raise ValueError(\"tax_rate must be between 0 and 1 inclusive\")\n        self._tax_rate: Decimal = rate\n        # dict: sku -> (Decimal price, int qty)\n        self._items: dict[str, tuple[Decimal, int]] = {}\n        self._coupon: str | None = None\n\n    def _quantize(self, value: Decimal) -> Decimal:\n        return value.quantize(self._TWO_PLACES, rounding=ROUND_HALF_UP)\n\n    def add_item(self, sku: str, price: str | Decimal, qty: int = 1) -> None:\n        if not isinstance(qty, int) or isinstance(qty, bool) or qty < 1:\n            raise ValueError(\"qty must be an int >= 1\")\n        unit_price = Decimal(price) if isinstance(price, str) else price\n        if unit_price < 0:\n            raise ValueError(\"price must be >= 0\")\n        if sku in self._items:\n            existing_price, existing_qty = self._items[sku]\n            if existing_price != unit_price:\n                raise ValueError(\n                    f\"Price for SKU {sku!r} already in cart differs\"\n                )\n            self._items[sku] = (existing_price, existing_qty + qty)\n        else:\n            self._items[sku] = (unit_price, qty)\n\n    def remove_item(self, sku: str, qty: int | None = None) -> None:\n        if sku not in self._items:\n            raise KeyError(sku)\n        if qty is None:\n            del self._items[sku]\n            return\n        if not isinstance(qty, int) or isinstance(qty, bool) or qty < 1:\n            raise ValueError(\"qty must be an int >= 1 or None\")\n        existing_price, existing_qty = self._items[sku]\n        if qty > existing_qty:\n            raise ValueError(\"qty exceeds quantity in cart\")\n        remaining = existing_qty - qty\n        if remaining == 0:\n            del self._items[sku]\n        else:\n            self._items[sku] = (existing_price, remaining)\n\n    def apply_coupon(self, code: str) -> None:\n        if code not in (\"SAVE10\", \"FIVEOFF\"):\n            raise ValueError(f\"Unknown coupon code: {code!r}\")\n        self._coupon = code\n\n    def item_count(self) -> int:\n        return sum(qty for _, qty in self._items.values())\n\n    def _compute_subtotal(self) -> Decimal:\n        return sum(\n            (price * qty for price, qty in self._items.values()),\n            Decimal(\"0\"),\n        )\n\n    def _compute_discount(self, subtotal: Decimal) -> Decimal:\n        if self._coupon is None:\n            return Decimal(\"0\")\n        if self._coupon == \"SAVE10\":\n            return subtotal * Decimal(\"0.10\")\n        if self._coupon == \"FIVEOFF\":\n            return min(Decimal(\"5.00\"), subtotal)\n        return Decimal(\"0\")\n\n    def summary(self) -> dict[str, Decimal]:\n        subtotal = self._compute_subtotal()\n        discount = self._compute_discount(subtotal)\n        tax = (subtotal - discount) * self._tax_rate\n        total = subtotal - discount + tax\n        return {\n            \"subtotal\": self._quantize(subtotal),\n            \"discount\": self._quantize(discount),\n            \"tax\": self._quantize(tax),\n            \"total\": self._quantize(total),\n        }\n```",
+    "refusal": null,
+    "annotations": null,
+    "audio": null,
+    "function_call": null,
+    "reasoning": null
+   },
+   "logprobs": null,
+   "finish_reason": "stop",
+   "stop_reason": null,
+   "token_ids": null,
+   "routed_experts": null
+  }
+ ],
+ "service_tier": null,
+ "system_fingerprint": "vllm-0.26.0-tp4-0126c26e",
+ "usage": {
+  "prompt_tokens": 622,
+  "total_tokens": 1498,
+  "completion_tokens": 876,
+  "prompt_tokens_details": null
+ },
+ "prompt_logprobs": null,
+ "prompt_token_ids": null,
+ "prompt_text": null,
+ "kv_transfer_params": null,
+ "ec_transfer_params": null,
+ "metrics": null,
+ "_wall_s": 45.81396217600013
+}

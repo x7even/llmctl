@@ -846,6 +846,48 @@ models:
         --jinja
     cmdStop: podman stop llmstack-llama-qwen35-122b-q6
 
+  # ─── llama-server: Qwen3.8-Flash-Next UD-IQ4_XS GGUF (125B / 6B active) ──
+  # Best for: strongest single-user agentic coding that fits in 128 GB
+  # Backend: llama-server (Vulkan) built from Unsloth's qwen4exp/mtp llama.cpp
+  #          fork (upstream cannot load arch `qwen4exp`); image is
+  #          localhost/llmstack-llama-qwen4exp:6fcaa16 (containers/llama-server-qwen4exp)
+  # Weights: 93.7 GB (UD-IQ4_XS, 3 shards) + 2.8 GB MTP draft head, split across 4 GPUs
+  # Model:   /mnt/models/llm/unsloth/Qwen3.8-Flash-Next-GGUF/
+  # Note:    Experimental on gfx1201. Exclusive VRAM: unload other models first.
+  qwen3.8-flash-next:
+    name: "Qwen3.8-Flash-Next (UD-IQ4_XS, MTP)"
+    ttl: 0
+    checkEndpoint: /health
+    concurrencyLimit: 4
+    aliases:
+      - flash-next
+      - qwen3.8-flash
+    cmd: |
+      podman run --replace --rm
+        --name llmstack-llama-qwen38-flash-next
+        --device=/dev/dri
+        --group-add keep-groups
+        --network=host
+        -v /mnt/models/llm:/models:ro
+        localhost/llmstack-llama-qwen4exp:6fcaa16
+        -m /models/unsloth/Qwen3.8-Flash-Next-GGUF/UD-IQ4_XS/Qwen3.8-Flash-Next-UD-IQ4_XS-00001-of-00003.gguf
+        -md /models/unsloth/Qwen3.8-Flash-Next-GGUF/MTP/mtp-Qwen3.8-Flash-Next-shared-Q8_0.gguf
+        --spec-type draft-mtp
+        --spec-draft-n-max 3
+        -ngl 999
+        --tensor-split 1,1,1,1
+        --host 127.0.0.1
+        --port ${PORT}
+        --ctx-size 65536
+        --parallel 2
+        --batch-size 1024
+        --ubatch-size 512
+        --cache-type-k q8_0
+        --cache-type-v q8_0
+        --flash-attn on
+        --jinja
+    cmdStop: podman stop llmstack-llama-qwen38-flash-next
+
   # ─── llama-server: Gemma 4 26B-A4B Q8_0 GGUF (vision-capable) ──────────
   # Best for: multimodal tasks (image+text), strong general reasoning, vision QA
   # Only vision-capable profile in the stack — loads mmproj alongside the GGUF
