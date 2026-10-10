@@ -59,7 +59,7 @@ Example output:
 ```
 llama-swap: RUNNING  pid=12345  port=8080
 Loaded models (1):
-  • qwen3.6-35b-code
+  • qwen3.8-27b-code
 
 GPU VRAM:
   GPU[0]  : VRAM Total Memory (B): 34208743424
@@ -80,14 +80,18 @@ llmctl list
 
 Example output:
 ```
-Profiles (7)  [* = loaded]:
-  qwen3-coder-30b-fp8
-  qwen3.6-35b-code *
+Profiles (11)  [* = loaded]:
+  qwen3.8-27b-code *
+  qwen3.8-27b-think
+  qwen3.8-27b-fast
+  qwen3.8-flash-next
+  qwen3.8-27b-code
+  qwen3.6-35b-128k-nomtp
   qwen3.6-35b-fast
-  qwen3.6-35b-512k
-  qwen3.6-35b-q4ks
-  qwen3.5-122b-a10b-q4
-  qwen3.5-122b-a10b-q6
+  gemma4-26b-q8
+  gemma4-12b-q4
+  gemma4-26b-a4b
+  gemma4-26b-fp8
 ```
 
 ---
@@ -97,7 +101,7 @@ Profiles (7)  [* = loaded]:
 Load a model profile and wait until it is ready to serve requests.
 
 ```
-llmctl swap qwen3.6-35b-code
+llmctl swap qwen3.8-27b-code
 ```
 
 - Sends a warm-up chat completion request (max_tokens=1) which causes
@@ -109,8 +113,8 @@ llmctl swap qwen3.6-35b-code
   (`.vllm-cache/`) and take ~2–3 min.
 - GGUF cold start: ~5 s (35B) or 90–180 s (122B, first disk read)
 
-**Aliases work:** `llmctl swap qwen3.6` is equivalent to
-`llmctl swap qwen3.6-35b-code` if `qwen3.6` is listed as an alias.
+**Aliases work:** `llmctl swap qwen3.8` is equivalent to
+`llmctl swap qwen3.8-27b-code` if `qwen3.8` is listed as an alias.
 
 ---
 
@@ -140,16 +144,16 @@ llmctl pick
 
 With `fzf`:
 ```
-Load model ›  qwen3.6-35b-code
-              qwen3.6-35b-fast
+Load model ›  qwen3.8-27b-code
+              qwen3.8-27b-think
               ...
 ```
 
 Without `fzf`:
 ```
 Available profiles:
-   1) qwen3-coder-30b-fp8
-   2) qwen3.6-35b-code
+   1) qwen3.8-27b-code
+   2) qwen3.8-27b-think
    ...
 Select [number]:
 ```
@@ -167,7 +171,7 @@ Tail logs.
 llmctl logs
 
 # Tail a specific model's container log (vLLM or llama-server output)
-llmctl logs qwen3.6-35b-code
+llmctl logs qwen3.8-27b-code
 ```
 
 Without a profile argument, tails `~/.local/share/llmstack/llama-swap.log`
@@ -186,7 +190,7 @@ Tails it with `podman logs -f`.
 Run the concurrent benchmark against a loaded profile.
 
 ```
-llmctl bench qwen3.6-35b-code
+llmctl bench qwen3.8-27b-code
 ```
 
 Wraps `bench/concurrent_bench.py`. Prints aggregate tok/s, TTFT, and per-GPU VRAM.
@@ -195,11 +199,11 @@ Used to establish throughput baselines and detect regressions after config chang
 For a full sweep across all prompt sizes and concurrency levels:
 ```bash
 python3 bench/concurrent_bench.py \
-  --model qwen3.6-35b-code \
+  --model qwen3.8-27b-code \
   --sweep 1,2,4,8,16 \
   --prompt all \
   --no-thinking \
-  --save bench/baselines/qwen3.6-35b-code-$(date +%Y%m%d).json
+  --save bench/baselines/qwen3.8-27b-code-$(date +%Y%m%d).json
 ```
 
 ---

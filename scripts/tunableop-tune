@@ -1,10 +1,10 @@
 #!/usr/bin/env bash
-# Offline TunableOp tuning pass for qwen3.6-27b-code.
+# Offline TunableOp tuning pass for qwen3.8-27b-code.
 #
 # Runs vLLM with PYTORCH_TUNABLEOP_TUNING=1 (online tuning enabled) outside
 # llama-swap so there is no health-check timeout. All GEMM shapes encountered
 # during CUDA graph capture are benchmarked and the winning algorithm is saved
-# to .vllm-cache/tunableop-qwen3.6-27b-code{0..3}.csv.
+# to .vllm-cache/tunableop-qwen3.8-27b-code{0..3}.csv.
 #
 # Expected runtime: 30-90 minutes depending on how many shapes are cached
 # already. If the CSV files are empty (fresh) expect ~60 min. If partially
@@ -17,7 +17,7 @@
 # Usage:
 #   llmctl unload            # free GPU memory first
 #   scripts/tunableop-tune   # run this script (blocks until startup complete)
-#   llmctl swap qwen3.6-27b-code   # normal production use
+#   llmctl swap qwen3.8-27b-code   # normal production use
 
 set -euo pipefail
 
@@ -25,9 +25,9 @@ LLMSTACK_DIR="$(cd "$(dirname "$0")/.." && pwd)"
 CONTAINER_NAME="llmstack-tunableop-tune-27b"
 PORT=9199   # dedicated port, not conflicting with llama-swap
 
-echo "=== TunableOp offline tuning pass for qwen3.6-27b-code ==="
+echo "=== TunableOp offline tuning pass for qwen3.8-27b-code ==="
 echo "    LLMSTACK_DIR: $LLMSTACK_DIR"
-echo "    Cache files: $LLMSTACK_DIR/.vllm-cache/tunableop-qwen3.6-27b-code{0..3}.csv"
+echo "    Cache files: $LLMSTACK_DIR/.vllm-cache/tunableop-qwen3.8-27b-code{0..3}.csv"
 echo "    Expected runtime: 30-90 minutes"
 echo ""
 echo "Starting container (will block until Application startup complete) ..."
@@ -50,13 +50,13 @@ podman run --rm \
     -e TORCH_BLAS_PREFER_HIPBLASLT=1 \
     -e PYTORCH_TUNABLEOP_ENABLED=1 \
     -e PYTORCH_TUNABLEOP_TUNING=1 \
-    -e PYTORCH_TUNABLEOP_FILENAME=/root/.cache/vllm/tunableop-qwen3.6-27b-code.csv \
+    -e PYTORCH_TUNABLEOP_FILENAME=/root/.cache/vllm/tunableop-qwen3.8-27b-code.csv \
     --entrypoint="" \
     docker.io/vllm/vllm-openai-rocm:v0.26.0 \
-    vllm serve /models/Qwen3.6-27B-FP8 \
+    vllm serve /models/Qwen3.8-27B-FP8 \
         --host 127.0.0.1 \
         --port "$PORT" \
-        --served-model-name qwen3.6-27b-code \
+        --served-model-name qwen3.8-27b-code \
         --dtype auto \
         --tensor-parallel-size 4 \
         --max-model-len 131072 \
@@ -96,12 +96,12 @@ while true; do
         podman stop "$CONTAINER_NAME" 2>/dev/null || true
         echo ""
         echo "CSV files written:"
-        ls -lh "$LLMSTACK_DIR/.vllm-cache/tunableop-qwen3.6-27b-code"*.csv 2>/dev/null || echo "  (none found)"
+        ls -lh "$LLMSTACK_DIR/.vllm-cache/tunableop-qwen3.8-27b-code"*.csv 2>/dev/null || echo "  (none found)"
         echo ""
         echo "Row counts (header=5, data rows = total-5):"
-        wc -l "$LLMSTACK_DIR/.vllm-cache/tunableop-qwen3.6-27b-code"*.csv 2>/dev/null || true
+        wc -l "$LLMSTACK_DIR/.vllm-cache/tunableop-qwen3.8-27b-code"*.csv 2>/dev/null || true
         echo ""
-        echo "Done. Run 'llmctl swap qwen3.6-27b-code' to load with full TunableOp cache."
+        echo "Done. Run 'llmctl swap qwen3.8-27b-code' to load with full TunableOp cache."
         exit 0
     fi
     sleep 10

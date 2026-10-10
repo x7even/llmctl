@@ -4,7 +4,7 @@ OpenAI-compatible LLM serving stack for **concurrent agent use**.
 Designed for: Claude Code · OpenCode · MCP testing · agent frameworks · raw API clients.
 
 Reference hardware: 1–4× AMD Radeon AI PRO R9700 (gfx1201, 32 GB each) — `scripts/configure` auto-detects your GPU count and patches the config accordingly. See [Hardware compatibility](#hardware-compatibility) for details.  
-Backends: **vLLM 0.24.0** (FP8/AWQ/safetensors, PagedAttention, high concurrency) + **llama-server Vulkan** (GGUF models)  
+Backends: **vLLM 0.26.0** (FP8/AWQ/safetensors, PagedAttention, high concurrency) + **llama-server Vulkan** (GGUF models)  
 Router: **llama-swap** — one OpenAI endpoint, models loaded on demand by the `model` field
 
 ---
@@ -42,12 +42,12 @@ scripts/configure
 llmctl up
 
 # 5. Load a model and wait until ready
-llmctl swap qwen3.6-35b-code
+llmctl swap qwen3.8-27b-code
 
 # 6. Make a request
 curl http://localhost:8080/v1/chat/completions \
   -H "Content-Type: application/json" \
-  -d '{"model":"qwen3.6-35b-code","messages":[{"role":"user","content":"Write a Python quicksort"}]}'
+  -d '{"model":"qwen3.8-27b-code","messages":[{"role":"user","content":"Write a Python quicksort"}]}'
 
 # 7. Open the TUI control panel (optional)
 llmpanel
@@ -79,36 +79,33 @@ llmpanel
 
 | Profile | Backend | VRAM | Context | Best for |
 |---------|---------|------|---------|---------|
-| `qwen3.6-35b-code` | vLLM TP=4 + MTP | ~35 GB | 262K | Claude Code, OpenCode, agentic coding — highest quality |
-| `qwen3.6-35b-fast` | vLLM TP=4 | ~35 GB | 262K | Low-latency chat; thinking disabled by default |
-| `qwen3.6-35b-512k` | vLLM TP=4 + MTP + YaRN | ~35 GB | 512K | Large codebase ingestion, long documents |
-| `qwen3.6-35b-32k` / `-64k` / `-128k` | vLLM TP=4 + MTP | ~35 GB | 32K–128K | Context-bounded variants of the code profile; smaller KV pool, faster warmup |
-| `qwen3.6-35b-128k-nomtp` | vLLM TP=4 | ~35 GB | 128K | Parallel agent fleets — beats MTP at conc≥8 with 2.6× better ITL (see docs/models.md) |
-| `qwen3.6-35b-awq` | vLLM TP=4, AWQ Int4 | ~20 GB | 262K | Quality/VRAM tradeoff; leaves headroom for large KV cache |
-| `qwen3.6-27b-fp8` | vLLM TP=4 | ~29 GB | 262K | Dense model; highest SWE-bench (77.2 vs 73.4 for MoE) |
-| `qwen3.6-27b-q4km` | llama-server Vulkan | ~17 GB | 32K | Dense Q4 GGUF; minimal VRAM footprint |
-| `qwen3.6-35b-q4ks` | llama-server Vulkan | ~20 GB | 32K | Fast GGUF; low VRAM; good serial latency |
-| `qwen3-coder-30b-fp8` | vLLM TP=4 | ~30 GB | 32K | Legacy code model; retained as baseline reference |
-| `qwen3.5-122b-a10b-q4` | llama-server Vulkan | ~73 GB | 32K | Heavyweight reasoning; one-off queries |
-| `qwen3.5-122b-a10b-q6` | llama-server Vulkan | ~98 GB | 16K | Maximum quality (tight VRAM budget) |
+| `qwen3.8-27b-code` | vLLM TP=4 + MTP | ~31 GB + KV | 131K | **Default.** Claude Code, OpenCode, agentic coding; thinking on (medium effort) |
+| `qwen3.8-27b-think` | vLLM TP=4 | ~31 GB + KV | 131K | Same model without MTP — better for parallel agent fleets |
+| `qwen3.8-27b-fast` | vLLM TP=4 + MTP | ~31 GB + KV | 131K | Thinking off by default — quick answers, bulk work |
+| `qwen3.8-flash-next` | llama-server Vulkan | ~81 GB | 262K (2 slots) | Qwen3.8-Flash-Next 125B (6B active), UD-IQ4_XS GGUF; vLLM path in progress |
+| `qwen3.6-35b-code` | vLLM TP=4 + MTP | ~35 GB | 131K | Previous generation (MoE, 3B active) — MTP + thinking |
+| `qwen3.6-35b-128k-nomtp` | vLLM TP=4 | ~35 GB | 131K | Previous generation — thinking, no MTP, high concurrency |
+| `qwen3.6-35b-fast` | vLLM TP=4 | ~35 GB | 262K | Previous generation — thinking disabled by default |
 | `gemma4-26b-a4b` | vLLM TP=4, BF16 | ~123 GB | 128K | High-concurrency; **528 tok/s conc=16**; vision; exclusive VRAM |
+| `gemma4-26b-fp8` | vLLM TP=4, FP8 | — | 262K | Long-context Gemma 4 agent serving |
 | `gemma4-26b-q8` | llama-server Vulkan | ~32 GB | 32K | Vision-capable; 154 tok/s conc=8; co-loadable |
 | `gemma4-12b-q4` | llama-server Vulkan | ~13 GB | 32K | Lightest vision option; co-loadable with any profile |
+
+Older Qwen profiles (3.6-27B, 3.6-35B 32K/64K/128K/512K/AWQ/GGUF, Qwen3-Coder-30B,
+Qwen3.5-122B) were removed from the shipped config; their benchmark data is kept in
+`docs/models.md` and the profiles can be restored from git history.
 
 **Aliases** (short names that route to the same profile):
 
 | Alias | Resolves to |
 |-------|-------------|
+| `qwen3.8`, `qwen3.8-27b`, `27b-3.8` | `qwen3.8-27b-code` |
+| `27b-think` | `qwen3.8-27b-think` |
+| `27b-fast`, `qwen3.8-nothink` | `qwen3.8-27b-fast` |
+| `flash-next`, `qwen3.8-flash` | `qwen3.8-flash-next` |
 | `qwen3.6`, `qwen3.6-35b`, `qwen3.6-35b-fp8` | `qwen3.6-35b-code` |
+| `35b-nomtp` | `qwen3.6-35b-128k-nomtp` |
 | `qwen3.6-fast`, `qwen3.6-nothin` | `qwen3.6-35b-fast` |
-| `qwen3.6-512k`, `qwen3.6-long` | `qwen3.6-35b-512k` |
-| `qwen3.6-awq`, `qwen3.6-q4` | `qwen3.6-35b-awq` |
-| `qwen3.6-27b`, `qwen3.6-dense` | `qwen3.6-27b-fp8` |
-| `qwen3.6-27b-gguf`, `qwen3.6-27b-q4` | `qwen3.6-27b-q4km` |
-| `qwen3.6-gguf` | `qwen3.6-35b-q4ks` |
-| `qwen3-coder`, `coder` | `qwen3-coder-30b-fp8` |
-| `qwen3.5-122b`, `122b` | `qwen3.5-122b-a10b-q4` |
-| `qwen3.5-122b-q6`, `122b-q6` | `qwen3.5-122b-a10b-q6` |
 | `gemma4`, `gemma4-26b`, `gemma4-moe`, `gemma4-vision` | `gemma4-26b-q8` |
 | `gemma4-vllm`, `gemma4-concurrent` | `gemma4-26b-a4b` |
 
@@ -118,19 +115,17 @@ See `docs/models.md` for benchmark data, architecture details, and tuning notes.
 
 ## Benchmarks at a glance
 
-Measured on 4× R9700 (128 GB total), vLLM 0.22.1, no-thinking unless noted, MTP enabled where noted.
+Measured on 4× R9700 (128 GB total), no-thinking unless noted, MTP enabled where noted (Qwen3.8 on vLLM 0.26.0; older rows on vLLM 0.22.1).
 Metric: decode tok/s.
 
 | Profile | serial | conc=4 | conc=8 | conc=16 |
 |---------|--------|--------|--------|---------|
+| `qwen3.8-27b-code` (medium-256, MTP)² | 66 | 194 | **361** | 549 |
 | `gemma4-26b-a4b` (medium-256, BF16, thinking on¹)² | 53 | 167 | 287 | **528** |
 | `qwen3.6-35b-code` (xlarge-2048, MTP)² | 43 | 155 | **335** | 651 |
 | `qwen3.6-35b-code` (medium-256, MTP)² | 43 | 145 | **261** | 481 |
-| `qwen3.6-35b-awq` (medium-256)² | 92 | — | **250** | — |
 | `qwen3.6-35b-fp8` no-MTP (medium-256)² | 69 | — | **222** | — |
 | `gemma4-26b-q8` (medium-256, Q8 GGUF, thinking on¹) | 66 | 117 | **154** | — |
-| `qwen3-coder-30b-fp8` (medium-256)² | 39 | — | **158** | — |
-| `qwen3.6-27b-fp8` (medium-256)² | 23 | 125 | **153** | — |
 | `gemma4-12b-q4` (medium-256, Q4 GGUF, thinking on¹) | 36 | 81 | **109** | — |
 
 ¹ Gemma 4 IT activates extended reasoning by default. The table numbers come from the original thinking-on baselines (2026-06-13). No-thinking baselines (2026-06-18) show that `chat_template_kwargs: {enable_thinking: false}` successfully suppresses `<think>` output, but does NOT meaningfully improve throughput — differences between thinking-on and no-thinking runs are within session-to-session noise (~0–6%). Both baseline sets are kept in `bench/baselines/`; see `bench/CLAUDE.md` for the dual-baseline convention.
@@ -168,10 +163,10 @@ Full reference: [`docs/llmctl.md`](docs/llmctl.md)
 llmctl status
 
 # Switch between models
-llmctl swap qwen3.6-35b-code     # quality-first (MTP, 262K context)
-llmctl swap qwen3.6-35b-fast     # same model, thinking off by default
-llmctl swap qwen3.6-35b-512k     # 512K context (YaRN)
-llmctl swap qwen3.5-122b         # heavyweight reasoning
+llmctl swap qwen3.8-27b-code     # default: MTP + thinking, best single-stream latency
+llmctl swap qwen3.8-27b-think    # no MTP — better for many parallel agents
+llmctl swap qwen3.8-27b-fast     # thinking off
+llmctl swap flash-next           # Qwen3.8-Flash-Next 125B (GGUF)
 llmctl swap gemma4               # Gemma 4 26B Q8 vision (alias → gemma4-26b-q8)
 llmctl swap gemma4-vllm          # Gemma 4 26B BF16 vLLM — highest concurrent tok/s
 
@@ -179,10 +174,10 @@ llmctl swap gemma4-vllm          # Gemma 4 26B BF16 vLLM — highest concurrent 
 llmctl unload
 
 # Benchmark the loaded model
-llmctl bench qwen3.6-35b-code
+llmctl bench qwen3.8-27b-code
 
 # Tail model startup logs (useful during first boot)
-llmctl logs qwen3.6-35b-code
+llmctl logs qwen3.8-27b-code
 
 # Interactive picker (requires fzf)
 llmctl pick
@@ -320,7 +315,7 @@ What it adjusts in `config/models.yaml`:
 | `--tensor-split` (llama-server) | Set to `1,1,...` matching GPU count (removed for 1 GPU) |
 | `--enable-expert-parallel` | Removed when GPU count is 1 |
 
-**VRAM limits** — the 122B models won't fit on fewer than 3 GPUs (Q4, ~73 GB) or 4 GPUs (Q6, ~98 GB). The script warns if your GPU count is below the minimum; those profiles should be removed from `models.yaml` in that case.
+**VRAM limits** — `qwen3.8-flash-next` (~81 GB) won't fit on fewer than 3 GPUs. The script warns if your GPU count is below the minimum; those profiles should be removed from `models.yaml` in that case.
 
 ---
 

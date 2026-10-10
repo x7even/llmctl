@@ -2,7 +2,7 @@
 # llama-swap docs: https://github.com/mostlygeek/llama-swap
 #
 # How routing works:
-#   Client sends:  POST /v1/chat/completions  {"model": "qwen3-coder-30b-fp8", ...}
+#   Client sends:  POST /v1/chat/completions  {"model": "qwen3.8-27b-code", ...}
 #   llama-swap:    looks up the profile, starts the backend if needed, proxies
 #
 # To add a model:
@@ -20,7 +20,8 @@
 #   docker.io/vllm/vllm-openai-rocm:v0.26.0
 # Never reference the moving :latest tag. Version bumps happen deliberately —
 # canary first, then update all refs at once (validation record and bench
-# results: docs/upgrade-plan-2026-07.md).
+# results: docs/upgrade-plan-2026-07.md). v0.31.0 was canaried in 2026-10 and held
+# back — conc=8/16 decode is 6-9% below v0.26.0 (docs/upgrade-plan-2026-10.md).
 # Rollback anchor: localhost/vllm-openai-rocm:v0.22.1-baseline stays on disk —
 # revert a profile by swapping its ref back.
 # CLIENT NOTE: vLLM 0.24.0 renames the chat reasoning field from
@@ -29,128 +30,31 @@
 healthCheckTimeout: 2100  # seconds; conservative ceiling, not the expected wait — measured
 # v0.26.0 first boots (4 profiles, 2026-07-27) all landed at ~2-3 min (see CLAUDE.md
 # "vLLM cold start"). Kept high as headroom for profiles not covered by that measurement
-# (256K/512K YaRN contexts, dense 27B). Warm starts ~2-3 min.
+# (dense 27B, long contexts). Warm starts ~2-3 min.
 startPort: 9100           # llama-swap assigns backends ports starting here
 globalTTL: 0              # 0 = never auto-unload (set per-model below)
 
 models:
 
-  # ─── vLLM: Qwen3.6-27B FP8 (dense, code-optimised) ─────────────────────
-  # Best for: code generation — highest quality in the Qwen3.6 family for code
-  #           (SWE-bench 77.2 vs 35B-A3B's 73.4)
-  # Backend: vLLM via pinned AMD official image (see header pin)
-  # VRAM:    ~29 GB across 4 GPUs (~7.5 GB each) — dense model, no MoE sparsity
-  # Note:    No MTP draft head; thinking ON by default
-  qwen3.6-27b-fp8:
-    name: "Qwen3.6-27B-FP8 (code)"
-    ttl: 43200
-    checkEndpoint: /health
-    concurrencyLimit: 64
-    aliases:
-      - qwen3.6-27b
-      - qwen3.6-dense
-    cmd: |
-      podman run --replace --rm
-        --name llmstack-vllm-${MODEL_ID}
-        --device=/dev/kfd
-        --device=/dev/dri
-        --group-add keep-groups
-        --security-opt seccomp=unconfined
-        --security-opt apparmor=unconfined
-        --ipc=private
-        --shm-size=32g
-        --network=host
-        -v /mnt/models/llm:/models:ro
-        -v /home/xin/ai/llmstack/.vllm-cache:/root/.cache/vllm
-        -v /home/xin/ai/llmstack/.triton-cache:/root/.triton/cache
-        -e HSA_ENABLE_SDMA=0
-        -e TORCH_BLAS_PREFER_HIPBLASLT=1
-        --entrypoint=""
-        docker.io/vllm/vllm-openai-rocm:v0.26.0
-        vllm serve /models/Qwen3.6-27B-FP8
-        --host 127.0.0.1
-        --port ${PORT}
-        --served-model-name qwen3.6-27b-fp8
-        --dtype auto
-        --tensor-parallel-size 4
-        --max-num-seqs 32
-        --max-num-batched-tokens 32768
-        --kv-cache-dtype fp8
-        --gpu-memory-utilization 0.92
-        --enable-prefix-caching
-        --enable-chunked-prefill
-        --trust-remote-code
-        --reasoning-parser qwen3
-        --enable-auto-tool-choice
-        --tool-call-parser qwen3_xml
-        --cudagraph-capture-sizes 1 2 4 8 16 32
-    cmdStop: podman stop llmstack-vllm-${MODEL_ID}
-
-  # ─── vLLM: Qwen3.6-27B FP8 (code-optimised, MTP) ───────────────────────
-  # Best for: code generation, agent tool calls, refactoring
-  #           Highest SWE-bench in Qwen3.6 family (77.2 vs 35B-A3B 73.4)
-  #           Dense 27B — all parameters active per token (vs 3B active for 35B MoE)
-  # VRAM:    ~29 GB weights + ~85 GB BF16 KV pool across 4 GPUs
-  # MTP:     Enabled via bundled mtp.safetensors — speculative 2 tokens ahead
-  # Context: 131072 tokens (BF16 KV — no FP8 calibration, cold start ~5 min)
-  qwen3.6-27b-code:
-    name: "Qwen3.6-27B FP8 (code, MTP)"
-    ttl: 0
-    checkEndpoint: /health
-    concurrencyLimit: 64
-    aliases:
-      - 27b-code
-    cmd: |
-      podman run --replace --rm
-        --name llmstack-vllm-${MODEL_ID}
-        --device=/dev/kfd
-        --device=/dev/dri
-        --group-add keep-groups
-        --security-opt seccomp=unconfined
-        --security-opt apparmor=unconfined
-        --ipc=private
-        --shm-size=32g
-        --network=host
-        -v /mnt/models/llm:/models:ro
-        -v /home/xin/ai/llmstack/.vllm-cache:/root/.cache/vllm
-        -v /home/xin/ai/llmstack/.triton-cache:/root/.triton/cache
-        -e HSA_ENABLE_SDMA=0
-        -e TORCH_BLAS_PREFER_HIPBLASLT=1
-        --entrypoint=""
-        docker.io/vllm/vllm-openai-rocm:v0.26.0
-        vllm serve /models/Qwen3.6-27B-FP8
-        --host 127.0.0.1
-        --port ${PORT}
-        --served-model-name qwen3.6-27b-code
-        --dtype auto
-        --tensor-parallel-size 4
-        --max-model-len 131072
-        --max-num-seqs 32
-        --max-num-batched-tokens 32768
-        --gpu-memory-utilization 0.95
-        --enable-prefix-caching
-        --enable-chunked-prefill
-        --trust-remote-code
-        --reasoning-parser qwen3
-        --enable-auto-tool-choice
-        --tool-call-parser qwen3_xml
-        --speculative-config '{"method": "mtp", "num_speculative_tokens": 2}'
-        --cudagraph-capture-sizes 1 2 4 8 16 32
-    cmdStop: podman stop llmstack-vllm-${MODEL_ID}
-
-  # ─── vLLM: Qwen3.8-27B FP8 (dense, MTP) ────────────────────────────────
-  # Successor to qwen3.6-27b-code (released 2026-08-14, Apache 2.0).
-  # Official Qwen/Qwen3.8-27B-FP8 — 30.9 GB incl. bundled mtp.safetensors.
-  # Dense 27B, 262144 native context, vision, thinking on by default;
-  # reasoning_effort (xhigh/medium/low) is a per-request parameter.
-  # Settings mirror qwen3.6-27b-code until benchmarked; untested on vLLM 0.26.0
-  # at first commit — check `llmctl logs qwen3.8-27b-code` on first boot.
+  # ─── vLLM: Qwen3.8-27B FP8 — the default model family ───────────────────
+  # Official Qwen/Qwen3.8-27B-FP8 (released 2026-08-14, Apache 2.0) — 30.9 GB
+  # incl. bundled mtp.safetensors. Dense 27B, 262144 native context, vision.
+  # Three profiles share one checkpoint and differ only in MTP and the
+  # server-side default chat-template kwargs (every one can still be
+  # overridden per request via chat_template_kwargs):
+  #   qwen3.8-27b-code   MTP + thinking (medium effort)  — interactive / coding
+  #   qwen3.8-27b-think  no MTP + thinking (medium)      — parallel agent fleets
+  #   qwen3.8-27b-fast   MTP + thinking off              — quick answers, bulk
+  # The template's own default is reasoning_effort=xhigh, which on this model
+  # produces very long or runaway think blocks; medium finishes our code tasks
+  # in 2-8k tokens, so the thinking profiles default to medium.
   qwen3.8-27b-code:
-    name: "Qwen3.8-27B FP8 (code, MTP)"
+    name: "Qwen3.8-27B FP8 (code, MTP, thinking)"
     ttl: 0
     checkEndpoint: /health
     concurrencyLimit: 64
     aliases:
+      - qwen3.8
       - 27b-3.8
       - qwen3.8-27b
     cmd: |
@@ -187,27 +91,22 @@ models:
         --reasoning-parser qwen3
         --enable-auto-tool-choice
         --tool-call-parser qwen3_xml
+        --default-chat-template-kwargs '{"reasoning_effort": "medium"}'
         --speculative-config '{"method": "mtp", "num_speculative_tokens": 2}'
         --cudagraph-capture-sizes 1 2 4 8 16 32
     cmdStop: podman stop llmstack-vllm-${MODEL_ID}
 
-  # ─── vLLM: Qwen3.6-27B BF16 (code-optimised, full precision) ───────────
-  # Best for: highest quality code generation — full BF16 precision, zero quantization error
-  #           Same SWE-bench architecture as -fp8 but no W8A8 approximation in dense layers
-  #           Useful when FP8 kernel sub-optimality is suspected of affecting quality
-  # VRAM:    ~54 GB weights + ~67 GB BF16 KV pool across 4 GPUs
-  # Decode:  ~half tok/s vs FP8 variant (reads 2× weight bytes per step)
-  #          No "sub-optimal FP8 kernel" warnings — BF16 GEMMs are fully tuned on ROCm/RDNA4
-  # Context: 131072 tokens (BF16 KV, cold start ~5 min)
-  # Weights: /mnt/models/llm/Qwen3.6-27B  (hf download Qwen/Qwen3.6-27B)
-  qwen3.6-27b-code-f16:
-    name: "Qwen3.6-27B BF16 (code, full precision)"
+  # ─── vLLM: Qwen3.8-27B FP8 — thinking, no MTP (parallel agent fleets) ────
+  # Same as qwen3.8-27b-code without speculative decoding. MTP helps a single
+  # stream but its draft/verify work costs throughput once the batch is full;
+  # use this profile when many agents run at once.
+  qwen3.8-27b-think:
+    name: "Qwen3.8-27B FP8 (thinking, no MTP)"
     ttl: 0
     checkEndpoint: /health
-    concurrencyLimit: 32
+    concurrencyLimit: 64
     aliases:
-      - 27b-f16
-      - 27b-bf16
+      - 27b-think
     cmd: |
       podman run --replace --rm
         --name llmstack-vllm-${MODEL_ID}
@@ -226,167 +125,81 @@ models:
         -e TORCH_BLAS_PREFER_HIPBLASLT=1
         --entrypoint=""
         docker.io/vllm/vllm-openai-rocm:v0.26.0
-        vllm serve /models/Qwen3.6-27B
+        vllm serve /models/Qwen3.8-27B-FP8
         --host 127.0.0.1
         --port ${PORT}
-        --served-model-name qwen3.6-27b-code-f16
+        --served-model-name qwen3.8-27b-think
         --dtype auto
         --tensor-parallel-size 4
         --max-model-len 131072
         --max-num-seqs 32
         --max-num-batched-tokens 32768
-        --gpu-memory-utilization 0.92
+        --gpu-memory-utilization 0.95
         --enable-prefix-caching
         --enable-chunked-prefill
         --trust-remote-code
         --reasoning-parser qwen3
         --enable-auto-tool-choice
         --tool-call-parser qwen3_xml
+        --default-chat-template-kwargs '{"reasoning_effort": "medium"}'
+        --cudagraph-capture-sizes 1 2 4 8 16 32
+    cmdStop: podman stop llmstack-vllm-${MODEL_ID}
+
+  # ─── vLLM: Qwen3.8-27B FP8 — thinking off, MTP (quick answers, bulk) ─────
+  qwen3.8-27b-fast:
+    name: "Qwen3.8-27B FP8 (fast, MTP, no thinking)"
+    ttl: 0
+    checkEndpoint: /health
+    concurrencyLimit: 64
+    aliases:
+      - 27b-fast
+      - qwen3.8-nothink
+    cmd: |
+      podman run --replace --rm
+        --name llmstack-vllm-${MODEL_ID}
+        --device=/dev/kfd
+        --device=/dev/dri
+        --group-add keep-groups
+        --security-opt seccomp=unconfined
+        --security-opt apparmor=unconfined
+        --ipc=private
+        --shm-size=32g
+        --network=host
+        -v /mnt/models/llm:/models:ro
+        -v /home/xin/ai/llmstack/.vllm-cache:/root/.cache/vllm
+        -v /home/xin/ai/llmstack/.triton-cache:/root/.triton/cache
+        -e HSA_ENABLE_SDMA=0
+        -e TORCH_BLAS_PREFER_HIPBLASLT=1
+        --entrypoint=""
+        docker.io/vllm/vllm-openai-rocm:v0.26.0
+        vllm serve /models/Qwen3.8-27B-FP8
+        --host 127.0.0.1
+        --port ${PORT}
+        --served-model-name qwen3.8-27b-fast
+        --dtype auto
+        --tensor-parallel-size 4
+        --max-model-len 131072
+        --max-num-seqs 32
+        --max-num-batched-tokens 32768
+        --gpu-memory-utilization 0.95
+        --enable-prefix-caching
+        --enable-chunked-prefill
+        --trust-remote-code
+        --reasoning-parser qwen3
+        --enable-auto-tool-choice
+        --tool-call-parser qwen3_xml
+        --default-chat-template-kwargs '{"enable_thinking": false}'
         --speculative-config '{"method": "mtp", "num_speculative_tokens": 2}'
         --cudagraph-capture-sizes 1 2 4 8 16 32
     cmdStop: podman stop llmstack-vllm-${MODEL_ID}
 
-  # ─── llama-server: Qwen3.6-27B Q4_K_M GGUF ─────────────────────────────
-  # Best for: code tasks where VRAM headroom matters; Q4 vs FP8 quality comparison
-  # Backend: llama-server (Vulkan) across 4 R9700s
-  # VRAM:    ~17 GB across 4 GPUs (~4.5 GB each) — leaves large KV cache headroom
-  qwen3.6-27b-q4km:
-    name: "Qwen3.6-27B (Q4_K_M)"
-    ttl: 43200
-    checkEndpoint: /health
-    concurrencyLimit: 16
-    aliases:
-      - qwen3.6-27b-gguf
-      - qwen3.6-27b-q4
-    cmd: |
-      podman run --replace --rm
-        --name llmstack-llama-${MODEL_ID}
-        --device=/dev/dri
-        --group-add keep-groups
-        --network=host
-        -v /mnt/models/llm:/models:ro
-        localhost/llmstack-llama:latest
-        -m /models/unsloth/Qwen3.6-27B-GGUF/Qwen3.6-27B-Q4_K_M.gguf
-        -ngl 999
-        --tensor-split 1,1,1,1
-        --host 127.0.0.1
-        --port ${PORT}
-        --ctx-size 32768
-        --batch-size 1024
-        --ubatch-size 512
-        --parallel 8
-        --cache-type-k q8_0
-        --cache-type-v q8_0
-        --jinja
-    cmdStop: podman stop llmstack-llama-${MODEL_ID}
-
-  # ─── vLLM: Qwen3-Coder-30B-A3B-Instruct FP8 ────────────────────────────
-  # Best for: code generation, agent tool calls, Claude Code / OpenCode serving
-  # Backend: vLLM via pinned AMD official image (see header pin)
-  # VRAM:    ~30 GB spread across 4 GPUs (~7.5 GB each)
-  # Model:   /mnt/models/llm/Qwen3-Coder-30B-A3B-Instruct-FP8/  (safetensors, local)
-  # Note:    No bundled MTP head (no speculative decoding)
-  qwen3-coder-30b-fp8:
-    name: "Qwen3-Coder-30B-A3B-Instruct-FP8"
-    ttl: 43200
-    checkEndpoint: /health
-    concurrencyLimit: 64
-    aliases:
-      - qwen3-coder
-      - coder
-    cmd: |
-      podman run --replace --rm
-        --name llmstack-vllm-${MODEL_ID}
-        --device=/dev/kfd
-        --device=/dev/dri
-        --group-add keep-groups
-        --security-opt seccomp=unconfined
-        --security-opt apparmor=unconfined
-        --ipc=private
-        --shm-size=32g
-        --network=host
-        -v /mnt/models/llm:/models:ro
-        -v /home/xin/ai/llmstack/.vllm-cache:/root/.cache/vllm
-        -v /home/xin/ai/llmstack/.triton-cache:/root/.triton/cache
-        -e HSA_ENABLE_SDMA=0
-        -e TORCH_BLAS_PREFER_HIPBLASLT=1
-        --entrypoint=""
-        docker.io/vllm/vllm-openai-rocm:v0.26.0
-        vllm serve /models/Qwen3-Coder-30B-A3B-Instruct-FP8
-        --host 127.0.0.1
-        --port ${PORT}
-        --served-model-name qwen3-coder-30b-fp8
-        --dtype auto
-        --tensor-parallel-size 4
-        --enable-expert-parallel
-        --max-num-seqs 32
-        --max-num-batched-tokens 32768
-        --gpu-memory-utilization 0.97
-        --enable-prefix-caching
-        --enable-chunked-prefill
-        --trust-remote-code
-        --cudagraph-capture-sizes 1 2 4 8 16 32
-    cmdStop: podman stop llmstack-vllm-${MODEL_ID}
-
-  # ─── vLLM: Qwen3.6-35B-A3B AWQ Int4 ────────────────────────────────────
-  # Best for: benchmarking Q4 vs FP8 quality/throughput tradeoff
-  # Backend: vLLM via pinned AMD official image (see header pin), AWQ quantization
-  # VRAM:    ~20 GB across 4 GPUs (~5 GB each) — leaves headroom for large KV cache
-  # Note:    No MTP head; no speculative decoding
-  qwen3.6-35b-awq:
-    name: "Qwen3.6-35B-A3B-AWQ (Int4)"
-    ttl: 43200
-    checkEndpoint: /health
-    concurrencyLimit: 64
-    aliases:
-      - qwen3.6-awq
-      - qwen3.6-q4
-    cmd: |
-      podman run --replace --rm
-        --name llmstack-vllm-${MODEL_ID}
-        --device=/dev/kfd
-        --device=/dev/dri
-        --group-add keep-groups
-        --security-opt seccomp=unconfined
-        --security-opt apparmor=unconfined
-        --ipc=private
-        --shm-size=32g
-        --network=host
-        -v /mnt/models/llm:/models:ro
-        -v /home/xin/ai/llmstack/.vllm-cache:/root/.cache/vllm
-        -v /home/xin/ai/llmstack/.triton-cache:/root/.triton/cache
-        -e HSA_ENABLE_SDMA=0
-        -e TORCH_BLAS_PREFER_HIPBLASLT=1
-        --entrypoint=""
-        docker.io/vllm/vllm-openai-rocm:v0.26.0
-        vllm serve /models/QuantTrio/Qwen3.6-35B-A3B-AWQ
-        --host 127.0.0.1
-        --port ${PORT}
-        --served-model-name qwen3.6-35b-awq
-        --dtype auto
-        --quantization awq
-        --tensor-parallel-size 4
-        --max-num-seqs 32
-        --max-num-batched-tokens 32768
-        --kv-cache-dtype fp8
-        --gpu-memory-utilization 0.92
-        --enable-prefix-caching
-        --enable-chunked-prefill
-        --trust-remote-code
-        --reasoning-parser qwen3
-        --enable-auto-tool-choice
-        --tool-call-parser qwen3_xml
-        --cudagraph-capture-sizes 1 2 4 8 16 32
-    cmdStop: podman stop llmstack-vllm-${MODEL_ID}
-
-  # ─── vLLM: Qwen3.6-35B-A3B FP8 — Code profile (quality-first + MTP) ────
+  # ─── vLLM: Qwen3.6-35B-A3B FP8 — previous generation, MTP + thinking ────
   # Best for: Claude Code, OpenCode, agentic coding — highest quality output
   # Backend: vLLM via pinned AMD official image (see header pin)
   # VRAM:    ~35 GB across 4 GPUs + ~3 GB MTP draft head overhead (~9.5 GB each)
   # MTP:     speculative decoding via bundled mtp.safetensors draft head
   #          Mathematically lossless — main model verifies all tokens
   #          Pre-MTP baseline (no-thinking): serial=43, conc=8=261, conc=16=481 tok/s
-  #          Fresh MTP conc=8 baseline pending
   # Context: 131072 tokens (BF16 KV — no FP8 calibration, fast cold start ~2-3 min)
   # Note:    thinking ON by default; --reasoning-parser strips <think> from content
   #          Uses AMD official image — Qwen3_5MoeForConditionalGeneration requires 0.22.1+
@@ -438,146 +251,8 @@ models:
         --cudagraph-capture-sizes 1 2 4 8 16 32
     cmdStop: podman stop llmstack-vllm-${MODEL_ID}
 
-  # ─── vLLM: Qwen3.6-35B-A3B FP8 — 32K context (fast warmup, MCP/tool use) ────
-  # Clone of qwen3.6-35b-code at 32K — fastest warmup, for short tool-call sessions
-  qwen3.6-35b-32k:
-    name: "Qwen3.6-35B-A3B-FP8 (32K)"
-    ttl: 0
-    checkEndpoint: /health
-    concurrencyLimit: 64
-    cmd: |
-      podman run --replace --rm
-        --name llmstack-vllm-${MODEL_ID}
-        --device=/dev/kfd
-        --device=/dev/dri
-        --group-add keep-groups
-        --security-opt seccomp=unconfined
-        --security-opt apparmor=unconfined
-        --ipc=private
-        --shm-size=32g
-        --network=host
-        -v /mnt/models/llm:/models:ro
-        -v /home/xin/ai/llmstack/.vllm-cache:/root/.cache/vllm
-        -v /home/xin/ai/llmstack/.triton-cache:/root/.triton/cache
-        -e HSA_ENABLE_SDMA=0
-        -e TORCH_BLAS_PREFER_HIPBLASLT=1
-        --entrypoint=""
-        docker.io/vllm/vllm-openai-rocm:v0.26.0
-        vllm serve /models/Qwen3.6-35B-A3B-FP8
-        --host 127.0.0.1
-        --port ${PORT}
-        --served-model-name qwen3.6-35b-32k
-        --dtype auto
-        --tensor-parallel-size 4
-        --enable-expert-parallel
-        --max-num-seqs 32
-        --max-num-batched-tokens 32768
-        --max-model-len 32768
-        --gpu-memory-utilization 0.92
-        --enable-prefix-caching
-        --enable-chunked-prefill
-        --trust-remote-code
-        --reasoning-parser qwen3
-        --enable-auto-tool-choice
-        --tool-call-parser qwen3_xml
-        --speculative-config '{"method": "mtp", "num_speculative_tokens": 2}'
-        --cudagraph-capture-sizes 1 2 4 8 16 32
-    cmdStop: podman stop llmstack-vllm-${MODEL_ID}
-
-  # ─── vLLM: Qwen3.6-35B-A3B FP8 — 64K context ───────────────────────────────
-  # Clone of qwen3.6-35b-code at 64K
-  qwen3.6-35b-64k:
-    name: "Qwen3.6-35B-A3B-FP8 (64K)"
-    ttl: 0
-    checkEndpoint: /health
-    concurrencyLimit: 64
-    cmd: |
-      podman run --replace --rm
-        --name llmstack-vllm-${MODEL_ID}
-        --device=/dev/kfd
-        --device=/dev/dri
-        --group-add keep-groups
-        --security-opt seccomp=unconfined
-        --security-opt apparmor=unconfined
-        --ipc=private
-        --shm-size=32g
-        --network=host
-        -v /mnt/models/llm:/models:ro
-        -v /home/xin/ai/llmstack/.vllm-cache:/root/.cache/vllm
-        -v /home/xin/ai/llmstack/.triton-cache:/root/.triton/cache
-        -e HSA_ENABLE_SDMA=0
-        -e TORCH_BLAS_PREFER_HIPBLASLT=1
-        --entrypoint=""
-        docker.io/vllm/vllm-openai-rocm:v0.26.0
-        vllm serve /models/Qwen3.6-35B-A3B-FP8
-        --host 127.0.0.1
-        --port ${PORT}
-        --served-model-name qwen3.6-35b-64k
-        --dtype auto
-        --tensor-parallel-size 4
-        --enable-expert-parallel
-        --max-num-seqs 32
-        --max-num-batched-tokens 32768
-        --max-model-len 65536
-        --gpu-memory-utilization 0.92
-        --enable-prefix-caching
-        --enable-chunked-prefill
-        --trust-remote-code
-        --reasoning-parser qwen3
-        --enable-auto-tool-choice
-        --tool-call-parser qwen3_xml
-        --speculative-config '{"method": "mtp", "num_speculative_tokens": 2}'
-        --cudagraph-capture-sizes 1 2 4 8 16 32
-    cmdStop: podman stop llmstack-vllm-${MODEL_ID}
-
-  # ─── vLLM: Qwen3.6-35B-A3B FP8 — 128K context ──────────────────────────────
-  # Clone of qwen3.6-35b-code at 128K (same max-model-len as code, explicit alias)
-  qwen3.6-35b-128k:
-    name: "Qwen3.6-35B-A3B-FP8 (128K)"
-    ttl: 0
-    checkEndpoint: /health
-    concurrencyLimit: 64
-    cmd: |
-      podman run --replace --rm
-        --name llmstack-vllm-${MODEL_ID}
-        --device=/dev/kfd
-        --device=/dev/dri
-        --group-add keep-groups
-        --security-opt seccomp=unconfined
-        --security-opt apparmor=unconfined
-        --ipc=private
-        --shm-size=32g
-        --network=host
-        -v /mnt/models/llm:/models:ro
-        -v /home/xin/ai/llmstack/.vllm-cache:/root/.cache/vllm
-        -v /home/xin/ai/llmstack/.triton-cache:/root/.triton/cache
-        -e HSA_ENABLE_SDMA=0
-        -e TORCH_BLAS_PREFER_HIPBLASLT=1
-        --entrypoint=""
-        docker.io/vllm/vllm-openai-rocm:v0.26.0
-        vllm serve /models/Qwen3.6-35B-A3B-FP8
-        --host 127.0.0.1
-        --port ${PORT}
-        --served-model-name qwen3.6-35b-128k
-        --dtype auto
-        --tensor-parallel-size 4
-        --enable-expert-parallel
-        --max-num-seqs 32
-        --max-num-batched-tokens 32768
-        --max-model-len 131072
-        --gpu-memory-utilization 0.92
-        --enable-prefix-caching
-        --enable-chunked-prefill
-        --trust-remote-code
-        --reasoning-parser qwen3
-        --enable-auto-tool-choice
-        --tool-call-parser qwen3_xml
-        --speculative-config '{"method": "mtp", "num_speculative_tokens": 2}'
-        --cudagraph-capture-sizes 1 2 4 8 16 32
-    cmdStop: podman stop llmstack-vllm-${MODEL_ID}
-
   # ─── vLLM: Qwen3.6-35B-A3B FP8 — 128K, no MTP (high-concurrency serving) ───
-  # Same as qwen3.6-35b-128k but WITHOUT speculative decoding. Measured on
+  # Same as qwen3.6-35b-code but WITHOUT speculative decoding. Measured on
   # vLLM 0.24.0 (2026-07-07, this hardware): at concurrency 8 no-MTP is faster
   # than MTP (329.7 vs 312.4 output tok/s) with far better inter-token latency
   # (ITL p50 19.0 vs 49.5 ms). MTP wins single-stream (69.0 vs ~59 tok/s
@@ -685,166 +360,6 @@ models:
         --chat-template /templates/qwen3.6-no-think.jinja
         --cudagraph-capture-sizes 1 2 4 8 16 32
     cmdStop: podman stop llmstack-vllm-${MODEL_ID}
-
-  # ─── vLLM: Qwen3.6-35B-A3B FP8 — 512K context (YaRN RoPE extension) ────────
-  # Best for: large codebase ingestion, long document analysis, repo-wide context
-  # Context: 524288 tokens via YaRN RoPE scaling (factor=2.0 on native 262144 base)
-  #   Tested: correct needle retrieval at 420K tokens ✓
-  # VRAM:    ~35 GB model + KV cache for 512K fills VRAM quickly. With 4 GPUs @
-  #   0.92 util each, ~26 GB available for KV. At BF16 KV, ~5.3M tokens capacity
-  #   across the 10 full-attention layers — 512K should fit with room to spare.
-  # MTP:     included; speculative head is small relative to the KV overhead
-  # Warning: cold start slightly longer at 512K due to RoPE recalc on first load
-  #          Do not use for short queries — full 262K ctx profile is more efficient
-  qwen3.6-35b-512k:
-    name: "Qwen3.6-35B-A3B-FP8 (512K context)"
-    ttl: 0
-    checkEndpoint: /health
-    concurrencyLimit: 16
-    aliases:
-      - qwen3.6-512k
-      - qwen3.6-long
-    cmd: |
-      podman run --replace --rm
-        --name llmstack-vllm-${MODEL_ID}
-        --device=/dev/kfd
-        --device=/dev/dri
-        --group-add keep-groups
-        --security-opt seccomp=unconfined
-        --security-opt apparmor=unconfined
-        --ipc=private
-        --shm-size=32g
-        --network=host
-        -v /mnt/models/llm:/models:ro
-        -v /home/xin/ai/llmstack/.vllm-cache:/root/.cache/vllm
-        -v /home/xin/ai/llmstack/.triton-cache:/root/.triton/cache
-        -e HSA_ENABLE_SDMA=0
-        -e VLLM_ALLOW_LONG_MAX_MODEL_LEN=1
-        -e TORCH_BLAS_PREFER_HIPBLASLT=1
-        --entrypoint=""
-        docker.io/vllm/vllm-openai-rocm:v0.26.0
-        vllm serve /models/Qwen3.6-35B-A3B-FP8
-        --host 127.0.0.1
-        --port ${PORT}
-        --served-model-name qwen3.6-35b-512k
-        --dtype auto
-        --tensor-parallel-size 4
-        --enable-expert-parallel
-        --max-num-seqs 16
-        --max-num-batched-tokens 65536
-        --max-model-len 524288
-        --kv-cache-dtype fp8
-        --gpu-memory-utilization 0.92
-        --enable-prefix-caching
-        --enable-chunked-prefill
-        --trust-remote-code
-        --reasoning-parser qwen3
-        --hf-overrides '{"text_config": {"rope_scaling": {"type": "yarn", "factor": 2.0, "original_max_position_embeddings": 262144}}}'
-        --speculative-config '{"method": "mtp", "num_speculative_tokens": 2}'
-        --cudagraph-capture-sizes 1 2 4 8 16 32
-    cmdStop: podman stop llmstack-vllm-${MODEL_ID}
-
-  # ─── llama-server: Qwen3.6-35B-A3B GGUF UD-Q4_K_S (unsloth) ───────────
-  # Best for: fast coding queries, lower latency than FP8 at low concurrency
-  # Backend: llama-server Vulkan, single-file GGUF
-  # VRAM:    ~20 GB across 4 GPUs (~5 GB each) — generous KV cache headroom
-  # Model:   /mnt/models/llm/unsloth/Qwen3.6-35B-A3B-GGUF/
-  qwen3.6-35b-q4ks:
-    name: "Qwen3.6-35B-A3B (UD-Q4_K_S)"
-    ttl: 43200
-    checkEndpoint: /health
-    concurrencyLimit: 12
-    aliases:
-      - qwen3.6-gguf
-    cmd: |
-      podman run --replace --rm
-        --name llmstack-llama-${MODEL_ID}
-        --device=/dev/dri
-        --group-add keep-groups
-        --network=host
-        -v /mnt/models/llm:/models:ro
-        localhost/llmstack-llama:latest
-        -m /models/unsloth/Qwen3.6-35B-A3B-GGUF/Qwen3.6-35B-A3B-UD-Q4_K_S.gguf
-        -ngl 999
-        --tensor-split 1,1,1,1
-        --host 127.0.0.1
-        --port ${PORT}
-        --ctx-size 32768
-        --batch-size 1024
-        --ubatch-size 512
-        --parallel 8
-        --cache-type-k q8_0
-        --cache-type-v q8_0
-        --jinja
-    cmdStop: podman stop llmstack-llama-${MODEL_ID}
-
-  # ─── llama-server: Qwen3.5-122B-A10B GGUF Q4_K_M ───────────────────────
-  # Best for: highest quality reasoning, one-off heavyweight queries
-  # Backend: llama-server (Vulkan) with tensor-split across 4 R9700s
-  # VRAM:    ~73 GB across 4 GPUs (~18 GB each)
-  # Note:    Cold start ~90s; lower concurrency than vLLM backends
-  # Model:   /mnt/models/llm/lmstudio-community/Qwen3.5-122B-A10B-GGUF/  (split GGUF)
-  qwen3.5-122b-a10b-q4:
-    name: "Qwen3.5-122B-A10B (Q4_K_M)"
-    ttl: 43200
-    checkEndpoint: /health
-    concurrencyLimit: 8
-    aliases:
-      - qwen3.5-122b
-      - qwen3.5-122b-a10b
-      - 122b
-    cmd: |
-      podman run --replace --rm
-        --name llmstack-llama-qwen35-122b-q4
-        --device=/dev/dri
-        --group-add keep-groups
-        --network=host
-        -v /mnt/models/llm:/models:ro
-        localhost/llmstack-llama:latest
-        -m /models/lmstudio-community/Qwen3.5-122B-A10B-GGUF/Qwen3.5-122B-A10B-Q4_K_M-00001-of-00002.gguf
-        -ngl 999
-        --tensor-split 1,1,1,1
-        --host 127.0.0.1
-        --port ${PORT}
-        --ctx-size 32768
-        --batch-size 512
-        --ubatch-size 512
-        --cache-type-k q8_0
-        --cache-type-v q8_0
-        --jinja
-    cmdStop: podman stop llmstack-llama-qwen35-122b-q4
-
-  # ─── llama-server: Qwen3.5-122B-A10B GGUF Q6_K ─────────────────────────
-  # Higher quality variant (~98 GB) — tighter VRAM budget, limit context
-  qwen3.5-122b-a10b-q6:
-    name: "Qwen3.5-122B-A10B (Q6_K)"
-    ttl: 43200
-    checkEndpoint: /health
-    concurrencyLimit: 6
-    unlisted: false
-    aliases:
-      - qwen3.5-122b-q6
-      - 122b-q6
-    cmd: |
-      podman run --replace --rm
-        --name llmstack-llama-qwen35-122b-q6
-        --device=/dev/dri
-        --group-add keep-groups
-        --network=host
-        -v /mnt/models/llm:/models:ro
-        localhost/llmstack-llama:latest
-        -m /models/lmstudio-community/Qwen3.5-122B-A10B-GGUF/Qwen3.5-122B-A10B-Q6_K-00001-of-00003.gguf
-        -ngl 999
-        --tensor-split 1,1,1,1
-        --host 127.0.0.1
-        --port ${PORT}
-        --ctx-size 16384
-        --batch-size 512
-        --ubatch-size 512
-        --cache-type-k q8_0
-        --cache-type-v q8_0
-        --jinja
-    cmdStop: podman stop llmstack-llama-qwen35-122b-q6
 
   # ─── llama-server: Qwen3.8-Flash-Next UD-IQ4_XS GGUF (125B / 6B active) ──
   # Best for: strongest single-user agentic coding that fits in 128 GB

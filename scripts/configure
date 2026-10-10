@@ -34,8 +34,7 @@ DEFAULT_CONFIG = REPO_ROOT / "config" / "models.yaml"
 # Models that require a minimum number of GPUs due to VRAM size.
 # (profile_id, min_gpus, reason)
 VRAM_MINIMUMS = [
-    ("qwen3.5-122b-a10b-q6", 4, "~98 GB — requires 4×32 GB GPUs"),
-    ("qwen3.5-122b-a10b-q4", 3, "~73 GB — requires at least 3×32 GB GPUs"),
+    ("qwen3.8-flash-next", 3, "~81 GB — requires at least 3×32 GB GPUs"),
 ]
 
 

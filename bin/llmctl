@@ -391,7 +391,7 @@ def cmd_logs(args):
                 subprocess.run(["podman", "logs", "-f", name])
                 return
         # Also try the fixed-name containers from models.yaml
-        for fixed in (f"llmstack-llama-qwen35-122b-q4", f"llmstack-llama-qwen35-122b-q6"):
+        for fixed in ("llmstack-llama-qwen38-flash-next",):
             if target in fixed:
                 subprocess.run(["podman", "logs", "-f", fixed])
                 return

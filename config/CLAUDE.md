@@ -109,19 +109,27 @@ All vLLM profiles must use the same **pinned** tag: `docker.io/vllm/vllm-openai-
 Never reference the moving `:latest` tag — it silently changes what vLLM version
 production runs. Version bumps happen deliberately: canary first, then update the
 pin everywhere at once (models.yaml, this file, root CLAUDE.md, scripts/) — see
-docs/upgrade-plan-2026-07.md. Rollback anchor: `localhost/vllm-openai-rocm:v0.22.1-baseline`.
+docs/upgrade-plan-2026-07.md (v0.26.0) and docs/upgrade-plan-2026-10.md (v0.31.0 canary,
+held). Rollback anchor: `localhost/vllm-openai-rocm:v0.22.1-baseline`.
 
 ### MTP requires the draft head file
 
 Speculative MTP (`--speculative-config '{"method":"mtp","num_speculative_tokens":2}'`)
 requires `mtp.safetensors` to be bundled with the model weights. Not all checkpoints
 include it. If the file is missing, vLLM logs an error and falls back to standard decode.
-Qwen3.6-35B-FP8-Instruct from Qwen HF includes it; raw PT files may not.
+The official Qwen3.8-27B-FP8 and Qwen3.6-35B-A3B-FP8 checkpoints include it; raw PT files may not.
 
 ### GGUF qwen35moe in vLLM: not supported
 
 `ValueError: GGUF model with architecture qwen35moe is not supported yet.`
 Use llama-server (Vulkan) for all GGUF files. Use vLLM for safetensors only.
+
+### Per-profile chat-template defaults
+
+Use `--default-chat-template-kwargs '<json>'` to set server-side template defaults
+(the Qwen3.8-27B profiles use it: `{"reasoning_effort": "medium"}` for the thinking profiles,
+`{"enable_thinking": false}` for `-fast`). It is merged with each request's own
+`chat_template_kwargs`, and the request wins — so clients can still override per call.
 
 ---
 

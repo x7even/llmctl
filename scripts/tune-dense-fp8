@@ -70,8 +70,8 @@ echo "Config files written:"
 ls -1 "$OUTPUT_DIR"/*.json 2>/dev/null | sed 's|.*/||' | sed 's/^/  /'
 echo ""
 echo "To activate these configs, add the following volume mounts to each"
-echo "affected vLLM profile in config/models.yaml (qwen3.6-27b-fp8 and"
-echo "qwen3.6-27b-code). Insert them alongside the existing -v mounts:"
+echo "affected vLLM profile in config/models.yaml (the qwen3.8-27b-* profiles)."
+echo "Insert them alongside the existing -v mounts:"
 echo ""
 
 CONFIGS_PATH="/usr/local/lib/python3.12/dist-packages/vllm/model_executor/layers/quantization/utils/configs"
@@ -82,8 +82,8 @@ for json_file in "$OUTPUT_DIR"/*.json; do
 done
 
 echo ""
-echo "Then restart: llmctl down && llmctl up && llmctl swap qwen3.6-27b-code"
-echo "Verify:       llmctl logs qwen3.6-27b-code | grep 'Using configuration'"
+echo "Then restart: llmctl down && llmctl up && llmctl swap qwen3.8-27b-code"
+echo "Verify:       llmctl logs qwen3.8-27b-code | grep 'Using configuration'"
 echo ""
 echo "Each matched shape should log: 'Using configuration from ...R9700...'"
 echo "instead of: 'Using default W8A8 Block FP8 kernel config. Performance might be sub-optimal!'"

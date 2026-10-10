@@ -17,20 +17,20 @@
 
 ```bash
 python3 bench/concurrent_bench.py \
-  --model qwen3.6-35b-code \
+  --model qwen3.8-27b-code \
   --url http://127.0.0.1:8080/v1/chat/completions \
   --sweep 1,2,4,8,16 \
   --prompt all \
   --no-thinking \
   --requests 16 \
-  --save bench/baselines/qwen3.6-35b-code-v0.22.1-nothink.json
+  --save bench/baselines/qwen3.8-27b-code-v0.26.0-nothink.json
 ```
 
 ### Quick sanity check
 
 ```bash
 python3 bench/concurrent_bench.py \
-  --model qwen3.6-35b-code \
+  --model qwen3.8-27b-code \
   --no-thinking
 ```
 
@@ -98,8 +98,8 @@ level gives stable statistics. 32 is better for publication-quality comparisons.
 ### Note what's different in the filename
 
 ```
-qwen3.6-35b-code-v0.22.1-nothink.json     ← good
-qwen3.6-35b-code.json                      ← ambiguous
+qwen3.8-27b-code-v0.26.0-nothink.json     ← good
+qwen3.8-27b-code.json                      ← ambiguous
 ```
 
 ---
@@ -132,17 +132,17 @@ qwen3.6-35b-code.json                      ← ambiguous
 **MTP effect:** Multi-Token Prediction boosts tok/s mainly at conc ≥ 4. At conc=1,
 MTP overhead can slightly reduce serial tok/s if the draft hit rate is low.
 
-**Expected baselines for `qwen3.6-35b-code` (medium-256, vLLM 0.22.1, no-thinking, MTP, 32 req/level):**
+**Expected baselines for `qwen3.8-27b-code` (medium-256, vLLM 0.26.0, no-thinking, MTP, 32 req/level):**
 
-| conc | tok/s | TTFT (ms) |
-|------|-------|----------|
-| 1    | 52    | ~200 |
-| 2    | 94    | ~250 |
-| 4    | 155   | ~500 |
-| 8    | 259   | ~1500 |
-| 16   | 478   | ~3500 |
+| conc | tok/s |
+|------|-------|
+| 1    | 66    |
+| 2    | 113   |
+| 4    | 194   |
+| 8    | 361   |
+| 16   | 549   |
 
-If conc=8 drops below ~200 tok/s, something is wrong — check VRAM, container
+If conc=8 drops below ~300 tok/s, something is wrong — check VRAM, container
 restart, or whether CUDA graph capture ran correctly.
 
 **Important:** conc=8 and conc=16 numbers are only meaningful with `--requests 32`
@@ -159,16 +159,15 @@ bench/baselines/<profile-id>-<version>[-<variant>].json
 
 Examples:
 ```
-qwen3.6-35b-code-v0.22.1-nothink.json      ← main baseline
-qwen3.6-35b-code-v0.20.0-nothink.json      ← old version for comparison
-qwen3.6-35b-awq-v0.20.0-nothink.json       ← different quant
-qwen3.6-27b-fp8-v0.22.1.json               ← FP8 dense
+qwen3.8-27b-code-v0.26.0-nothink.json      ← main baseline
+qwen3.6-35b-code-v0.22.1-nothink.json      ← previous-generation reference
+qwen3.6-35b-awq-v0.20.0-nothink.json       ← archived profile, kept for history
 ```
 
 Commit new baselines alongside the config or code change that motivated them.
 Commit message should include the headline numbers, e.g.:
 ```
-bench: add qwen3.6-35b-code vLLM 0.22.1 baseline (conc=8: 261 tok/s)
+bench: add qwen3.8-27b-code vLLM 0.26.0 baseline (conc=8: 361 tok/s)
 ```
 
 ---

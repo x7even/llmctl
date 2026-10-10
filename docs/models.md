@@ -47,6 +47,38 @@ run `llmctl logs <profile>` and wait for "Application startup complete." before 
 
 ## Profiles
 
+### Qwen3.8-27B FP8 — the default family (`qwen3.8-27b-code` / `-think` / `-fast`)
+
+Official `Qwen/Qwen3.8-27B-FP8` (Apache 2.0, 30.9 GB including the bundled MTP head).
+Dense 27B, 262 144 native context (served at 131 072), vision-capable, tool calls via the
+`qwen3_xml` parser, reasoning via the `qwen3` parser. One checkpoint, three profiles:
+
+| Profile | MTP | Thinking default | Use for |
+|---|---|---|---|
+| `qwen3.8-27b-code` | yes (2 draft tokens) | on, `reasoning_effort=medium` | interactive coding, Claude Code / OpenCode |
+| `qwen3.8-27b-think` | no | on, `reasoning_effort=medium` | many parallel agents (no draft/verify overhead) |
+| `qwen3.8-27b-fast` | yes | off (`enable_thinking=false`) | quick answers, bulk and batch work |
+
+Per-profile defaults are set server-side with `--default-chat-template-kwargs`; any request can
+override them with its own `chat_template_kwargs` (the request wins). The model's own template
+default is `reasoning_effort=xhigh`, which produces very long or runaway think blocks, so the thinking
+profiles default to `medium` (finishes typical code tasks in roughly 2–8k tokens).
+
+Decode throughput, `medium-256`, `--no-thinking`, 32 requests per level, vLLM 0.26.0, MTP on:
+
+| serial | conc=1 | conc=2 | conc=4 | conc=8 | conc=16 |
+|---|---|---|---|---|---|
+| 66 | 66 | 113 | 194 | 361 | 549 |
+
+Comparison against Qwen3.6-27B: `bench/benchmark-qwen3.8-vs-3.6-27b-2026-10-05.md`
+(throughput is equal; Qwen3.8 was weaker on the expression-evaluator task).
+
+### Qwen3.6-35B — retained previous generation (`qwen3.6-35b-code`, `-128k-nomtp`, `-fast`)
+
+Three Qwen3.6-35B-A3B FP8 MoE profiles stay in `config/models.yaml` as a reference set: MTP +
+thinking (`-code`), thinking without MTP (`-128k-nomtp`), and thinking off (`-fast`). The sections
+below describe them in detail.
+
 ### `qwen3.6-35b-code` — primary coding assistant
 
 **Aliases:** `qwen3.6`, `qwen3.6-35b`, `qwen3.6-35b-fp8`
@@ -121,6 +153,15 @@ extended reasoning is unnecessary overhead.
   verification cost slightly hurts throughput when draft hit rate is low.
 
 ---
+
+---
+
+## Archived profiles (removed from `config/models.yaml`)
+
+The profiles below are no longer shipped in the config. They are documented here because
+their benchmark data is still referenced elsewhere, and they can be restored from git history
+(`git log -- config/models.yaml`). From the 32K/64K/128K group only `qwen3.6-35b-128k-nomtp`
+is still in the config.
 
 ### `qwen3.6-35b-512k` — deep context / large codebase
 

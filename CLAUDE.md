@@ -156,7 +156,7 @@ The locally-built image (`localhost/llmstack-vllm:latest`) uses vLLM 0.10.2rc2 w
 transformers 5.7.0.dev0. Transformers 5.x removed `all_special_tokens_extended`, which
 causes `AttributeError` on Qwen3 models at startup. **Do not use this image.**
 
-All vLLM profiles must use: `docker.io/vllm/vllm-openai-rocm:v0.26.0` (vLLM 0.26.0, ROCm 7.2.3). Pinned tag policy: never reference the moving `:latest` tag — bump the pin here, in config/models.yaml, config/CLAUDE.md, and scripts/ together after canary validation (see docs/upgrade-plan-2026-07.md)
+All vLLM profiles must use: `docker.io/vllm/vllm-openai-rocm:v0.26.0` (vLLM 0.26.0, ROCm 7.2.3). Pinned tag policy: never reference the moving `:latest` tag — bump the pin here, in config/models.yaml, config/CLAUDE.md, and scripts/ together after canary validation (see docs/upgrade-plan-2026-07.md; the 2026-10 v0.31.0 canary was held back for a conc=8/16 throughput regression — docs/upgrade-plan-2026-10.md)
 
 ### FP8 kernel config — MoE experts are tuned, dense layers are not
 
@@ -227,46 +227,46 @@ See `tui/CLAUDE.md` for architecture and coding conventions.
 
 | Profile | Backend | VRAM | Active params | Notes |
 |---------|---------|------|--------------|-------|
-| `qwen3.6-35b-code` | vLLM + MTP | ~35 GB | 3B (MoE) | Primary; thinking ON; 262K ctx |
-| `qwen3.6-35b-fast` | vLLM | ~35 GB | 3B (MoE) | Thinking OFF by default |
-| `qwen3.6-35b-512k` | vLLM + MTP + YaRN | ~35 GB | 3B (MoE) | 512K ctx via RoPE scaling |
-| `qwen3.6-35b-awq` | vLLM AWQ | ~20 GB | 3B (MoE) | Int4; no expert-parallel |
-| `qwen3.6-27b-fp8` | vLLM | ~29 GB | 27B (dense) | Highest SWE-bench (77.2); no MTP |
-| `qwen3.6-27b-code` ✓ | vLLM + MTP | ~29 GB | 27B (dense) | MTP; 131K ctx; 381 tok/s @ conc=8 |
-| `qwen3.6-27b-q4km` | llama-server | ~17 GB | 27B (dense) | GGUF; low VRAM |
-| `qwen3.6-35b-q4ks` | llama-server | ~20 GB | 3B (MoE) | GGUF; fast cold start |
-| `qwen3-coder-30b-fp8` | vLLM | ~30 GB | 3B (MoE) | Legacy baseline only |
-| `qwen3.5-122b-a10b-q4` | llama-server | ~73 GB | 10B (MoE) | Heavyweight; single-user |
-| `qwen3.5-122b-a10b-q6` | llama-server | ~98 GB | 10B (MoE) | Max quality; tight VRAM |
+| `qwen3.8-27b-code` ✓ | vLLM + MTP | ~31 GB + KV | 27B (dense) | **Default.** Thinking (medium effort); 131K ctx; 361 tok/s @ conc=8 |
+| `qwen3.8-27b-think` | vLLM | ~31 GB + KV | 27B (dense) | Thinking, no MTP — parallel agent fleets |
+| `qwen3.8-27b-fast` | vLLM + MTP | ~31 GB + KV | 27B (dense) | Thinking OFF by default |
+| `qwen3.8-flash-next` | llama-server (Vulkan) | ~81 GB | 6B (MoE, 125B) | UD-IQ4_XS GGUF, custom llama.cpp fork; vLLM path under evaluation |
+| `qwen3.6-35b-code` | vLLM + MTP | ~35 GB | 3B (MoE) | Previous gen, MTP + thinking |
+| `qwen3.6-35b-128k-nomtp` | vLLM | ~35 GB | 3B (MoE) | Previous gen, thinking, no MTP |
+| `qwen3.6-35b-fast` | vLLM | ~35 GB | 3B (MoE) | Previous gen, thinking OFF |
 | `gemma4-26b-a4b` ✓ | vLLM BF16 | ~123 GB | 4B (MoE) | 528 tok/s @ conc=16; exclusive VRAM |
+| `gemma4-26b-fp8` | vLLM FP8 | — | 4B (MoE) | Long-context Gemma 4 |
 | `gemma4-26b-q8` ✓ | llama-server + mmproj | ~32 GB | 4B (MoE) | **Vision**; alias `gemma4` |
 | `gemma4-12b-q4` ✓ | llama-server + mmproj | ~13 GB | 12B (dense) | Lightest vision; co-loadable |
 
-Use aliases for common swaps: `llmctl swap qwen3.6` (→ code), `llmctl swap 122b` (→ Q4), `llmctl swap gemma4` (→ 26B Q8 vision), `llmctl swap gemma4-vllm` (→ 26B vLLM).
+Qwen3.8 is the norm; the three Qwen3.6-35B profiles are kept as an MTP / thinking / no-thinking
+reference set. Older profiles (Qwen3.6-27B, Qwen3.6-35B AWQ/512K/GGUF variants, Qwen3-Coder-30B,
+Qwen3.5-122B) were removed from `config/models.yaml`; restore from git history if needed.
+
+Use aliases for common swaps: `llmctl swap qwen3.8` (→ 27b-code), `llmctl swap 27b-fast`, `llmctl swap 27b-think`,
+`llmctl swap flash-next`, `llmctl swap gemma4` (→ 26B Q8 vision), `llmctl swap gemma4-vllm` (→ 26B vLLM).
 ✓ = on disk and benchmarked
 
 ---
 
 ## Benchmark baselines summary
 
-All measured on 4× R9700, vLLM 0.22.1, `--no-thinking`, MTP where noted.
-`medium-256` prompt, decode tok/s:
+`medium-256` prompt, decode tok/s, `--no-thinking`, 4× R9700, MTP where noted. Qwen3.8 row measured
+on vLLM 0.26.0 (2026-10); older rows on vLLM 0.22.1.
 
 | Profile | serial | conc=8 | conc=16 |
 |---------|--------|--------|---------|
+| qwen3.8-27b-code (MTP, 131K ctx) | 66 | 361 | 549 |
 | qwen3.6-35b-code (MTP, MI300X defaults) | 43 | 261 | 481 |
-| qwen3.6-35b-awq | 92 | 250 | — |
 | qwen3.6-35b-fp8 no-MTP | 69 | 222 | — |
-| qwen3.6-27b-fp8 | 23 | 153 | — |
-| qwen3.6-27b-code (MTP, 131K ctx) | 67 | 381 | 629 |
-| qwen3-coder-30b-fp8 | 39 | 158 | — |
 | gemma4-26b-a4b (vLLM BF16) | 53.4 | 287.1 | **528.2** |
 | gemma4-26b-q8 (GGUF, llama-server) | 65.5 | 153.9 | 135.8 |
 | gemma4-12b-q4 (GGUF, llama-server) | 36.1 | 108.9 | 94.8 |
 
-**Note:** R9700-tuned MoE configs (-33% at conc=8) were reverted; all 35b profiles now
-use MI300X defaults which outperform at concurrent load. The 261 tok/s figure above was
-measured before MTP was added — a fresh conc=8 baseline for 35b-code is pending.
+Baselines for removed profiles remain in `docs/models.md` and `bench/baselines/`.
+
+**Note:** R9700-tuned MoE configs (-33% at conc=8) were reverted; all 35b profiles use MI300X
+defaults, which outperform at concurrent load.
 
 Full data across all prompt sizes: `bench/CLAUDE.md` and `bench/baselines/`.
 
