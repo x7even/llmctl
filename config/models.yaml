@@ -406,6 +406,73 @@ models:
         --jinja
     cmdStop: podman stop llmstack-llama-qwen38-flash-next
 
+  # ─── vLLM: Qwen3.8-Flash-Next W4A16 (AutoRound INT4) + FP8 PLE table ─────
+  # Best for: many concurrent agents on Flash-Next. Same model as the GGUF
+  #          profile above but TP4 + expert-parallel instead of layer-split, so
+  #          decode scales with concurrency (conc=8: 149 tok/s aggregate vs ~34
+  #          for llama-server at 4 streams). Single-stream is on par (~55 tok/s vs ~50).
+  # Image:   NIGHTLY, pinned by commit. Arch `Qwen4Exp` landed in vLLM after
+  #          v0.29 and v0.31.0 rejects the compressed-tensors PLE table; move to
+  #          a tagged release once one ships with the same support.
+  # Weights: 121 GB checkpoint, ~19 GiB/GPU on device; the 51B-param PLE (n-gram
+  #          embedding) table stays in pinned host RAM (~13 GB per rank, ~51 GB
+  #          total), hence --ulimit memlock=-1:-1 (rootless podman default is ~23 GiB).
+  # Notes:   MTP (runtime/mtp-int4-g32 draft, 2 tokens) accepts ~2.0 tokens/step
+  #          but gave no throughput gain and cost 40% of KV capacity: left off.
+  #          VLLM_ROCM_USE_AITER=0: AITER has no Qwen4Exp path, Triton kernels used.
+  #          --cudagraph-capture-sizes is 1 2 4 8, NOT the usual 1 2 4 8 16 32: on this
+  #          model larger captured sizes slow low-batch decode (medium-256 decode tok/s,
+  #          serial/conc8/conc16: sizes<=8 ~52/148/209, <=16 ~37/122/231, <=32 ~27/128/227).
+  #          Agents are mostly low-concurrency, so single-stream wins; batches >8 run uncaptured.
+  #          Exclusive VRAM: unload other models first.
+  qwen3.8-flash-next-vllm:
+    name: "Qwen3.8-Flash-Next W4A16 (vLLM, TP4+EP)"
+    ttl: 0
+    checkEndpoint: /health
+    concurrencyLimit: 32
+    aliases:
+      - flash-next-vllm
+    cmd: |
+      podman run --replace --rm
+        --name llmstack-vllm-${MODEL_ID}
+        --device=/dev/kfd
+        --device=/dev/dri
+        --group-add keep-groups
+        --security-opt seccomp=unconfined
+        --security-opt apparmor=unconfined
+        --ipc=private
+        --shm-size=32g
+        --ulimit memlock=-1:-1
+        --network=host
+        -v /mnt/models/llm:/models:ro
+        -v /home/xin/ai/llmstack/.vllm-cache:/root/.cache/vllm
+        -v /home/xin/ai/llmstack/.triton-cache:/root/.triton/cache
+        -e HSA_ENABLE_SDMA=0
+        -e TORCH_BLAS_PREFER_HIPBLASLT=1
+        -e VLLM_ROCM_USE_AITER=0
+        --entrypoint=""
+        docker.io/vllm/vllm-openai-rocm:nightly-8cbd5d03006c33185f402249ff2b448efd594986
+        vllm serve /models/albucino/Qwen3.8-Flash-Next-W4A16-FP8PLE
+        --host 127.0.0.1
+        --port ${PORT}
+        --served-model-name qwen3.8-flash-next-vllm
+        --tensor-parallel-size 4
+        --enable-expert-parallel
+        --language-model-only
+        --load-format safetensors
+        --max-model-len 131072
+        --max-num-seqs 32
+        --max-num-batched-tokens 8192
+        --gpu-memory-utilization 0.90
+        --enable-prefix-caching
+        --enable-chunked-prefill
+        --trust-remote-code
+        --reasoning-parser qwen3
+        --enable-auto-tool-choice
+        --tool-call-parser qwen3_coder
+        --cudagraph-capture-sizes 1 2 4 8
+    cmdStop: podman stop llmstack-vllm-${MODEL_ID}
+
   # ─── llama-server: Gemma 4 26B-A4B Q8_0 GGUF (vision-capable) ──────────
   # Best for: multimodal tasks (image+text), strong general reasoning, vision QA
   # Only vision-capable profile in the stack — loads mmproj alongside the GGUF

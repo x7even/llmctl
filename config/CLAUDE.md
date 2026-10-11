@@ -58,6 +58,10 @@ At ~5 ms each = 10+ minutes just for graph capture, every startup.
 With 6 explicit sizes = 13 s capture, with negligible throughput loss
 (batches > 32 fall back to eager, which is rare in practice).
 
+**Measured exception:** `qwen3.8-flash-next-vllm` uses `1 2 4 8` because larger captured
+sizes cut its single-stream decode by 30–50% (see docs/models.md). Keep an explicit short
+list either way; never omit the flag.
+
 ### 3. Persistent cache volume mounts
 
 ```yaml

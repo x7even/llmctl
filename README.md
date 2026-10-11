@@ -82,7 +82,8 @@ llmpanel
 | `qwen3.8-27b-code` | vLLM TP=4 + MTP | ~31 GB + KV | 131K | **Default.** Claude Code, OpenCode, agentic coding; thinking on (medium effort) |
 | `qwen3.8-27b-think` | vLLM TP=4 | ~31 GB + KV | 131K | Same model without MTP — better for parallel agent fleets |
 | `qwen3.8-27b-fast` | vLLM TP=4 + MTP | ~31 GB + KV | 131K | Thinking off by default — quick answers, bulk work |
-| `qwen3.8-flash-next` | llama-server Vulkan | ~81 GB | 262K (2 slots) | Qwen3.8-Flash-Next 125B (6B active), UD-IQ4_XS GGUF; vLLM path in progress |
+| `qwen3.8-flash-next` | llama-server Vulkan | ~81 GB | 262K (2 slots) | Qwen3.8-Flash-Next 125B (6B active), UD-IQ4_XS GGUF; single-user. For concurrent agents use `qwen3.8-flash-next-vllm` |
+| `qwen3.8-flash-next-vllm` | vLLM TP=4 + EP (nightly image) | ~19 GB/GPU + ~13 GB pinned host RAM/rank | 131K | Same model, W4A16 INT4; decode scales with concurrency (**149 tok/s conc=8** vs ~34 for GGUF at 4 streams). Needs `memlock` unlimited; exclusive VRAM |
 | `qwen3.6-35b-code` | vLLM TP=4 + MTP | ~35 GB | 131K | Previous generation (MoE, 3B active) — MTP + thinking |
 | `qwen3.6-35b-128k-nomtp` | vLLM TP=4 | ~35 GB | 131K | Previous generation — thinking, no MTP, high concurrency |
 | `qwen3.6-35b-fast` | vLLM TP=4 | ~35 GB | 262K | Previous generation — thinking disabled by default |
@@ -103,6 +104,7 @@ Qwen3.5-122B) were removed from the shipped config; their benchmark data is kept
 | `27b-think` | `qwen3.8-27b-think` |
 | `27b-fast`, `qwen3.8-nothink` | `qwen3.8-27b-fast` |
 | `flash-next`, `qwen3.8-flash` | `qwen3.8-flash-next` |
+| `flash-next-vllm` | `qwen3.8-flash-next-vllm` |
 | `qwen3.6`, `qwen3.6-35b`, `qwen3.6-35b-fp8` | `qwen3.6-35b-code` |
 | `35b-nomtp` | `qwen3.6-35b-128k-nomtp` |
 | `qwen3.6-fast`, `qwen3.6-nothin` | `qwen3.6-35b-fast` |
@@ -166,7 +168,8 @@ llmctl status
 llmctl swap qwen3.8-27b-code     # default: MTP + thinking, best single-stream latency
 llmctl swap qwen3.8-27b-think    # no MTP — better for many parallel agents
 llmctl swap qwen3.8-27b-fast     # thinking off
-llmctl swap flash-next           # Qwen3.8-Flash-Next 125B (GGUF)
+llmctl swap flash-next           # Qwen3.8-Flash-Next 125B (GGUF, single user)
+llmctl swap flash-next-vllm      # Qwen3.8-Flash-Next 125B (vLLM TP4+EP, concurrent agents)
 llmctl swap gemma4               # Gemma 4 26B Q8 vision (alias → gemma4-26b-q8)
 llmctl swap gemma4-vllm          # Gemma 4 26B BF16 vLLM — highest concurrent tok/s
 
