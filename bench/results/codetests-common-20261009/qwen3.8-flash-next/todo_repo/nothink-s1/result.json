@@ -1,0 +1,53 @@
+{
+ "passed": 11,
+ "total": 11,
+ "fatal": null,
+ "timed_out": false,
+ "stderr_tail": "",
+ "tests": [
+  {
+   "test": "test_add_and_get",
+   "ok": true
+  },
+  {
+   "test": "test_title_stripped_and_validated",
+   "ok": true
+  },
+  {
+   "test": "test_priority_validation",
+   "ok": true
+  },
+  {
+   "test": "test_special_characters_roundtrip",
+   "ok": true
+  },
+  {
+   "test": "test_list_order_by_priority_then_id",
+   "ok": true
+  },
+  {
+   "test": "test_list_filter_by_done",
+   "ok": true
+  },
+  {
+   "test": "test_mark_done",
+   "ok": true
+  },
+  {
+   "test": "test_delete_and_no_id_reuse",
+   "ok": true
+  },
+  {
+   "test": "test_count",
+   "ok": true
+  },
+  {
+   "test": "test_persistence_across_instances",
+   "ok": true
+  },
+  {
+   "test": "test_empty_repo",
+   "ok": true
+  }
+ ]
+}

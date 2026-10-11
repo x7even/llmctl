@@ -1,0 +1,40 @@
+{
+ "id": "chatcmpl-89bf8a2185746f99",
+ "object": "chat.completion",
+ "created": 1791531815,
+ "model": "qwen3.8-27b-code",
+ "choices": [
+  {
+   "index": 0,
+   "message": {
+    "role": "assistant",
+    "content": "```python\n\"\"\"A retry decorator factory for calling flaky functions.\"\"\"\n\nfrom functools import wraps\nfrom typing import Callable\nimport time\n\n\ndef retry(\n    max_attempts: int = 3,\n    delay: float = 1.0,\n    backoff: float = 2.0,\n    exceptions: tuple[type[BaseException], ...] = (Exception,),\n    sleep: Callable[[float], None] = time.sleep,\n) -> Callable:\n    \"\"\"\n    A decorator factory that retries a function on specified exceptions.\n\n    Args:\n        max_attempts: Maximum number of attempts to call the function.\n        delay: Initial delay in seconds before the first retry.\n        backoff: Multiplier for the delay after each retry.\n        exceptions: Tuple of exception types that should trigger a retry.\n        sleep: Callable to use for sleeping (defaults to time.sleep).\n\n    Returns:\n        A decorator that wraps the function with retry logic.\n    \"\"\"\n    if max_attempts < 1:\n        raise ValueError(\"max_attempts must be at least 1\")\n    if delay < 0:\n        raise ValueError(\"delay must be non-negative\")\n    if backoff < 1:\n        raise ValueError(\"backoff must be at least 1\")\n\n    def decorator(func: Callable) -> Callable:\n        @wraps(func)\n        def wrapper(*args, **kwargs):\n            last_exception = None\n            for attempt in range(1, max_attempts + 1):\n                try:\n                    result = func(*args, **kwargs)\n                    wrapper.calls += 1\n                    return result\n                except exceptions as e:\n                    last_exception = e\n                    wrapper.calls += 1\n                    if attempt < max_attempts:\n                        wait_time = delay * (backoff ** (attempt - 1))\n                        sleep(wait_time)\n            raise last_exception\n\n        wrapper.calls = 0\n        return wrapper\n\n    return decorator\n```",
+    "refusal": null,
+    "annotations": null,
+    "audio": null,
+    "function_call": null,
+    "reasoning": null
+   },
+   "logprobs": null,
+   "finish_reason": "stop",
+   "stop_reason": null,
+   "token_ids": null,
+   "routed_experts": null
+  }
+ ],
+ "service_tier": null,
+ "system_fingerprint": "vllm-0.26.0-tp4-0126c26e",
+ "usage": {
+  "prompt_tokens": 433,
+  "total_tokens": 855,
+  "completion_tokens": 422,
+  "prompt_tokens_details": null
+ },
+ "prompt_logprobs": null,
+ "prompt_token_ids": null,
+ "prompt_text": null,
+ "kv_transfer_params": null,
+ "ec_transfer_params": null,
+ "metrics": null,
+ "_wall_s": 14.98424690200045
+}

@@ -56,7 +56,7 @@ already be running (`llmctl up`).
 ╭─ Inference ──────────────────────────╮╭─ GPU ──────────────────────────────╮
 │ Inference                            ││ GPU                                │
 │ ────────────────────────────────     ││ ────────────────────────────────   │
-│   qwen3.6-35b-code  (:9104)  [● ACTIVE]   VRAM used/tot GB  VRAM%  Use%  Temp
+│   qwen3.8-27b-code  (:9104)  [● ACTIVE]   VRAM used/tot GB  VRAM%  Use%  Temp
 │   Running: 2  Waiting: 0  KV: 12.3% ││   0   33.0 /  34.2     97%   99%   72°C
 │   Decode: 387 tok/s  TTFT: 0.84s    ││   1   32.3 /  34.2     94%  100%   74°C
 │   refreshed 0s ago                  ││   2   32.4 /  34.2     95%   98%   71°C
@@ -64,17 +64,17 @@ already be running (`llmctl up`).
 ╭─ Models ──────────╮╭─ Config ────────╯───────────────────────────────────────╮
 │ Models            ││ Config                                                  │
 │ ──────────────    ││ ──────────────────────────────────────────────────────  │
-│   qwen3-coder...  ││ # qwen3.6-35b-code                                     │
-│ ▶ qwen3.6-35b-... ●  name: Qwen3.6-35B-A3B-FP8 (code)                      │
+│   qwen3.8-27b-... ││ # qwen3.8-27b-code                                     │
+│ ▶ qwen3.8-27b-... ●  name: Qwen3.8-27B FP8 (code)                      │
 │   qwen3.6-35b-... ││ ttl: 600                                               │
 │   qwen3.6-35b-... ││ concurrencyLimit: 64                                   │
 │   qwen3.6-35b-... ││ aliases:                                               │
-│   qwen3.5-122b... ││   - qwen3.6                                            │
+│   qwen3.8-flash.. ││   - qwen3.8                                            │
 ╰───────────────────╯╰─────────────────────────────────────────────────────────╯
 ╭─ Logs ─────────────────────────────────────────────────────────────────────╮
 │ Logs                                                                       │
 │ ────────────────────────────────────────────────────────────────────────   │
-│ 2026-05-06 12:34:01 starting backend qwen3.6-35b-code on :9104            │
+│ 2026-05-06 12:34:01 starting backend qwen3.8-27b-code on :9104            │
 │ 2026-05-06 12:34:58 backend healthy                                        │
 ╰────────────────────────────────────────────────────────────────────────────╯
  [tab] panel  [f] fullscreen  [↑↓/jk] nav  [s/↵] swap  [u] unload  [p] poll:1s  [r] reload  [q] quit

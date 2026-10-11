@@ -1,0 +1,64 @@
+{
+ "passed": 0,
+ "total": 11,
+ "fatal": null,
+ "timed_out": false,
+ "stderr_tail": "",
+ "tests": [
+  {
+   "test": "test_add_and_get",
+   "ok": false,
+   "err": "AttributeError: module 'solution' has no attribute 'TodoRepo'"
+  },
+  {
+   "test": "test_title_stripped_and_validated",
+   "ok": false,
+   "err": "AttributeError: module 'solution' has no attribute 'TodoRepo'"
+  },
+  {
+   "test": "test_priority_validation",
+   "ok": false,
+   "err": "AttributeError: module 'solution' has no attribute 'TodoRepo'"
+  },
+  {
+   "test": "test_special_characters_roundtrip",
+   "ok": false,
+   "err": "AttributeError: module 'solution' has no attribute 'TodoRepo'"
+  },
+  {
+   "test": "test_list_order_by_priority_then_id",
+   "ok": false,
+   "err": "AttributeError: module 'solution' has no attribute 'TodoRepo'"
+  },
+  {
+   "test": "test_list_filter_by_done",
+   "ok": false,
+   "err": "AttributeError: module 'solution' has no attribute 'TodoRepo'"
+  },
+  {
+   "test": "test_mark_done",
+   "ok": false,
+   "err": "AttributeError: module 'solution' has no attribute 'TodoRepo'"
+  },
+  {
+   "test": "test_delete_and_no_id_reuse",
+   "ok": false,
+   "err": "AttributeError: module 'solution' has no attribute 'TodoRepo'"
+  },
+  {
+   "test": "test_count",
+   "ok": false,
+   "err": "AttributeError: module 'solution' has no attribute 'TodoRepo'"
+  },
+  {
+   "test": "test_persistence_across_instances",
+   "ok": false,
+   "err": "AttributeError: module 'solution' has no attribute 'TodoRepo'"
+  },
+  {
+   "test": "test_empty_repo",
+   "ok": false,
+   "err": "AttributeError: module 'solution' has no attribute 'TodoRepo'"
+  }
+ ]
+}

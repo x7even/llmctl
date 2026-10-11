@@ -1,0 +1,39 @@
+{
+ "choices": [
+  {
+   "finish_reason": "stop",
+   "index": 0,
+   "message": {
+    "role": "assistant",
+    "content": "```python\nimport functools\nimport time\nfrom typing import Callable, TypeVar, Any\n\nT = TypeVar('T')\n\n\ndef retry(max_attempts: int = 3, delay: float = 1.0, backoff: float = 2.0,\n          exceptions: tuple[type[BaseException], ...] = (Exception,),\n          sleep: Callable[[float], None] = time.sleep) -> Callable:\n    \"\"\"\n    A decorator factory for retrying flaky functions.\n    \n    Args:\n        max_attempts: Maximum number of attempts (must be >= 1).\n        delay: Initial delay in seconds before the first retry (must be >= 0).\n        backoff: Multiplier for the delay on each subsequent retry (must be >= 1).\n        exceptions: Tuple of exception types to catch and retry on.\n        sleep: Function to call for sleeping (defaults to time.sleep).\n    \n    Returns:\n        A decorator that wraps a function with retry logic.\n    \n    Raises:\n        ValueError: If max_attempts < 1, delay < 0, or backoff < 1.\n    \"\"\"\n    if max_attempts < 1:\n        raise ValueError(\"max_attempts must be >= 1\")\n    if delay < 0:\n        raise ValueError(\"delay must be >= 0\")\n    if backoff < 1:\n        raise ValueError(\"backoff must be >= 1\")\n\n    def decorator(func: Callable[..., T]) -> Callable[..., T]:\n        @functools.wraps(func)\n        def wrapper(*args: Any, **kwargs: Any) -> T:\n            last_exception = None\n            for attempt in range(1, max_attempts + 1):\n                try:\n                    result = func(*args, **kwargs)\n                    wrapper.calls += 1\n                    return result\n                except exceptions as e:\n                    wrapper.calls += 1\n                    last_exception = e\n                    if attempt < max_attempts:\n                        sleep_time = delay * (backoff ** (attempt - 1))\n                        sleep(sleep_time)\n                # If exception is not in exceptions, it propagates immediately\n            # All attempts failed, re-raise the last exception\n            raise last_exception\n        wrapper.calls = 0\n        return wrapper\n    return decorator\n```"
+   }
+  }
+ ],
+ "created": 1791542500,
+ "model": "/models/unsloth/Qwen3.8-Flash-Next-GGUF/UD-IQ4_XS/Qwen3.8-Flash-Next-UD-IQ4_XS-00001-of-00003.gguf",
+ "system_fingerprint": "b11098-6fcaa16f4",
+ "object": "chat.completion",
+ "usage": {
+  "completion_tokens": 497,
+  "prompt_tokens": 433,
+  "total_tokens": 930,
+  "prompt_tokens_details": {
+   "cached_tokens": 429
+  }
+ },
+ "id": "chatcmpl-9aYvf04Ugu2Y1WkjpDarMwBtkWMKkfO4",
+ "timings": {
+  "cache_n": 429,
+  "prompt_n": 4,
+  "prompt_ms": 367.805,
+  "prompt_per_token_ms": 91.95125,
+  "prompt_per_second": 10.875327959108766,
+  "predicted_n": 497,
+  "predicted_ms": 44857.391,
+  "predicted_per_token_ms": 90.43828830645162,
+  "predicted_per_second": 11.05726367367197,
+  "draft_n": 402,
+  "draft_n_accepted": 365
+ },
+ "_wall_s": 45.59223650099739
+}

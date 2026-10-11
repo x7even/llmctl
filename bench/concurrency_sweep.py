@@ -6,14 +6,14 @@ and the per-agent degradation curve.
 
 Usage:
   python3 bench/concurrency_sweep.py
-  python3 bench/concurrency_sweep.py --model qwen3.6-27b-code --save bench/baselines/27b-concurrency-sweep.json
+  python3 bench/concurrency_sweep.py --model qwen3.8-27b-code --save bench/baselines/27b-concurrency-sweep.json
 """
 import argparse, json, sys, time
 from concurrent.futures import ThreadPoolExecutor, as_completed
 import requests
 
 URL     = "http://127.0.0.1:8080/v1/chat/completions"
-MODEL   = "qwen3.6-27b-code"
+MODEL   = "qwen3.8-27b-code"
 LEVELS  = [1, 2, 4, 8, 16, 24, 32, 40, 48, 56, 64]
 MAX_TOKENS = 1000
 

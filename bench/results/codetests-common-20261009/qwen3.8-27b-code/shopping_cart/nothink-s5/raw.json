@@ -1,0 +1,40 @@
+{
+ "id": "chatcmpl-91eabf3d42a64255",
+ "object": "chat.completion",
+ "created": 1791533227,
+ "model": "qwen3.8-27b-code",
+ "choices": [
+  {
+   "index": 0,
+   "message": {
+    "role": "assistant",
+    "content": "```python\nfrom decimal import Decimal, ROUND_HALF_UP\n\n\nclass Cart:\n    _COUPONS = {\n        \"SAVE10\": (\"percent\", Decimal(\"0.10\")),\n        \"FIVEOFF\": (\"fixed\", Decimal(\"5.00\")),\n    }\n\n    def __init__(self, tax_rate: str | Decimal = \"0\") -> None:\n        rate = Decimal(tax_rate)\n        if rate < 0 or rate > 1:\n            raise ValueError(\"tax_rate must be between 0 and 1 inclusive\")\n        self._tax_rate = rate\n        self._items: dict[str, tuple[Decimal, int]] = {}\n        self._coupon: str | None = None\n\n    def add_item(self, sku: str, price: str | Decimal, qty: int = 1) -> None:\n        if not isinstance(qty, int) or isinstance(qty, bool) or qty < 1:\n            raise ValueError(\"qty must be an int >= 1\")\n        p = Decimal(price) if isinstance(price, str) else price\n        if p < 0:\n            raise ValueError(\"price must be >= 0\")\n        if sku in self._items:\n            existing_price, existing_qty = self._items[sku]\n            if existing_price != p:\n                raise ValueError(\"price conflict for existing SKU\")\n            self._items[sku] = (existing_price, existing_qty + qty)\n        else:\n            self._items[sku] = (p, qty)\n\n    def remove_item(self, sku: str, qty: int | None = None) -> None:\n        if sku not in self._items:\n            raise KeyError(sku)\n        if qty is None:\n            del self._items[sku]\n            return\n        if not isinstance(qty, int) or isinstance(qty, bool) or qty < 1:\n            raise ValueError(\"qty must be an int >= 1\")\n        existing_price, existing_qty = self._items[sku]\n        if qty > existing_qty:\n            raise ValueError(\"qty exceeds quantity in cart\")\n        remaining = existing_qty - qty\n        if remaining == 0:\n            del self._items[sku]\n        else:\n            self._items[sku] = (existing_price, remaining)\n\n    def apply_coupon(self, code: str) -> None:\n        if code not in self._COUPONS:\n            raise ValueError(f\"unknown coupon code: {code}\")\n        self._coupon = code\n\n    def item_count(self) -> int:\n        return sum(qty for _, qty in self._items.values())\n\n    def summary(self) -> dict[str, Decimal]:\n        subtotal = sum(\n            (price * qty for price, qty in self._items.values()),\n            Decimal(\"0\"),\n        )\n\n        discount = Decimal(\"0\")\n        if self._coupon is not None:\n            kind, value = self._COUPONS[self._coupon]\n            if kind == \"percent\":\n                discount = subtotal * value\n            else:  # fixed\n                discount = min(value, subtotal)\n\n        taxable = subtotal - discount\n        tax = taxable * self._tax_rate\n\n        def round_cents(d: Decimal) -> Decimal:\n            return d.quantize(Decimal(\"0.01\"), rounding=ROUND_HALF_UP)\n\n        subtotal_r = round_cents(subtotal)\n        discount_r = round_cents(discount)\n        tax_r = round_cents(tax)\n        total_r = subtotal_r - discount_r + tax_r\n\n        return {\n            \"subtotal\": subtotal_r,\n            \"discount\": discount_r,\n            \"tax\": tax_r,\n            \"total\": total_r,\n        }\n```",
+    "refusal": null,
+    "annotations": null,
+    "audio": null,
+    "function_call": null,
+    "reasoning": null
+   },
+   "logprobs": null,
+   "finish_reason": "stop",
+   "stop_reason": null,
+   "token_ids": null,
+   "routed_experts": null
+  }
+ ],
+ "service_tier": null,
+ "system_fingerprint": "vllm-0.26.0-tp4-0126c26e",
+ "usage": {
+  "prompt_tokens": 622,
+  "total_tokens": 1443,
+  "completion_tokens": 821,
+  "prompt_tokens_details": null
+ },
+ "prompt_logprobs": null,
+ "prompt_token_ids": null,
+ "prompt_text": null,
+ "kv_transfer_params": null,
+ "ec_transfer_params": null,
+ "metrics": null,
+ "_wall_s": 42.22360805799872
+}

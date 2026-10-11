@@ -1,0 +1,39 @@
+{
+ "choices": [
+  {
+   "finish_reason": "stop",
+   "index": 0,
+   "message": {
+    "role": "assistant",
+    "content": "```python\nimport sqlite3\nimport os\n\n\nclass TodoRepo:\n    def __init__(self, path: str = \":memory:\") -> None:\n        self.path = path\n        self.conn = sqlite3.connect(path)\n        self.conn.row_factory = sqlite3.Row\n        self._create_table()\n\n    def _create_table(self) -> None:\n        cursor = self.conn.cursor()\n        cursor.execute(\"\"\"\n            CREATE TABLE IF NOT EXISTS todos (\n                id INTEGER PRIMARY KEY AUTOINCREMENT,\n                title TEXT NOT NULL,\n                priority INTEGER NOT NULL,\n                done INTEGER NOT NULL DEFAULT 0\n            )\n        \"\"\")\n        self.conn.commit()\n\n    def add(self, title: str, priority: int = 3) -> int:\n        if not isinstance(priority, int) or isinstance(priority, bool):\n            raise ValueError(\"priority must be an integer\")\n        if priority < 1 or priority > 5:\n            raise ValueError(\"priority must be between 1 and 5\")\n        \n        stripped_title = title.strip()\n        if not stripped_title:\n            raise ValueError(\"title cannot be empty or whitespace-only\")\n        \n        cursor = self.conn.cursor()\n        cursor.execute(\n            \"INSERT INTO todos (title, priority, done) VALUES (?, ?, ?)\",\n            (stripped_title, priority, 0)\n        )\n        self.conn.commit()\n        return cursor.lastrowid\n\n    def get(self, todo_id: int) -> dict | None:\n        cursor = self.conn.cursor()\n        cursor.execute(\"SELECT id, title, priority, done FROM todos WHERE id = ?\", (todo_id,))\n        row = cursor.fetchone()\n        if row is None:\n            return None\n        return {\n            \"id\": row[\"id\"],\n            \"title\": row[\"title\"],\n            \"priority\": row[\"priority\"],\n            \"done\": bool(row[\"done\"])\n        }\n\n    def list(self, done: bool | None = None) -> list[dict]:\n        cursor = self.conn.cursor()\n        if done is None:\n            cursor.execute(\"SELECT id, title, priority, done FROM todos ORDER BY priority ASC, id ASC\")\n        else:\n            done_val = 1 if done else 0\n            cursor.execute(\n                \"SELECT id, title, priority, done FROM todos WHERE done = ? ORDER BY priority ASC, id ASC\",\n                (done_val,)\n            )\n        results = []\n        for row in cursor.fetchall():\n            results.append({\n                \"id\": row[\"id\"],\n                \"title\": row[\"title\"],\n                \"priority\": row[\"priority\"],\n                \"done\": bool(row[\"done\"])\n            })\n        return results\n\n    def mark_done(self, todo_id: int) -> bool:\n        cursor = self.conn.cursor()\n        cursor.execute(\"UPDATE todos SET done = 1 WHERE id = ?\", (todo_id,))\n        self.conn.commit()\n        return cursor.rowcount > 0\n\n    def delete(self, todo_id: int) -> bool:\n        cursor = self.conn.cursor()\n        cursor.execute(\"DELETE FROM todos WHERE id = ?\", (todo_id,))\n        self.conn.commit()\n        return cursor.rowcount > 0\n\n    def count(self, done: bool | None = None) -> int:\n        cursor = self.conn.cursor()\n        if done is None:\n            cursor.execute(\"SELECT COUNT(*) FROM todos\")\n        else:\n            done_val = 1 if done else 0\n            cursor.execute(\"SELECT COUNT(*) FROM todos WHERE done = ?\", (done_val,))\n        row = cursor.fetchone()\n        return row[0]\n\n    def close(self) -> None:\n        self.conn.commit()\n        self.conn.close()\n```"
+   }
+  }
+ ],
+ "created": 1791556557,
+ "model": "/models/unsloth/Qwen3.8-Flash-Next-GGUF/UD-IQ4_XS/Qwen3.8-Flash-Next-UD-IQ4_XS-00001-of-00003.gguf",
+ "system_fingerprint": "b11098-6fcaa16f4",
+ "object": "chat.completion",
+ "usage": {
+  "completion_tokens": 819,
+  "prompt_tokens": 579,
+  "total_tokens": 1398,
+  "prompt_tokens_details": {
+   "cached_tokens": 575
+  }
+ },
+ "id": "chatcmpl-rUzrj7Br9LLPo8hzZMHY4a5EU6GGxw3F",
+ "timings": {
+  "cache_n": 575,
+  "prompt_n": 4,
+  "prompt_ms": 367.149,
+  "prompt_per_token_ms": 91.78725,
+  "prompt_per_second": 10.894759348384444,
+  "predicted_n": 819,
+  "predicted_ms": 71184.213,
+  "predicted_per_token_ms": 87.0222652811736,
+  "predicted_per_second": 11.491311985144796,
+  "draft_n": 639,
+  "draft_n_accepted": 606
+ },
+ "_wall_s": 71.9405673729998
+}

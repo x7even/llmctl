@@ -1,0 +1,52 @@
+# llama-server (Vulkan) built from Unsloth's qwen4exp/mtp fork — Qwen3.8-Flash-Next
+#
+# Qwen3.8-Flash-Next uses the `qwen4exp` architecture (n-gram embedding table +
+# MTP head), which upstream llama.cpp does not load yet ("unknown model
+# architecture 'qwen4exp'"). Unsloth's fork carries the support:
+#   https://unsloth.ai/docs/models/qwen3.8-next
+# Pinned to a commit so rebuilds are reproducible; bump once the arch lands
+# upstream and switch back to containers/llama-server/.
+#
+# Same runtime base as containers/llama-server (Mesa 26 RADV for gfx1201).
+#
+# Build (base image FIRST if it doesn't exist yet, see containers/llama-vulkan-base):
+#   podman build -t localhost/llmstack-llama-qwen4exp:6fcaa16 containers/llama-server-qwen4exp/
+
+ARG LLAMA_REF=6fcaa16f4b360649933a54d1f91ad40ed35c0e11
+
+# ── Stage 1: Build llama-server + llama-bench ───────────────────────────────
+FROM ubuntu:24.04 AS builder
+ARG LLAMA_REF
+
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    ca-certificates git cmake build-essential pkg-config \
+    libvulkan-dev glslang-tools libshaderc-dev glslc \
+    && rm -rf /var/lib/apt/lists/*
+
+# Blobless clone keeps the commit graph so the build number is meaningful.
+RUN git clone --filter=blob:none --branch qwen4exp/mtp \
+        https://github.com/danielhanchen/llama.cpp /llama.cpp \
+    && git -C /llama.cpp checkout "${LLAMA_REF}"
+
+WORKDIR /llama.cpp
+
+RUN cmake -B build \
+    -DGGML_VULKAN=ON \
+    -DCMAKE_BUILD_TYPE=Release \
+    -DBUILD_SHARED_LIBS=OFF \
+    -DLLAMA_BUILD_TESTS=OFF \
+    -DLLAMA_BUILD_EXAMPLES=OFF
+
+RUN cmake --build build --parallel "$(nproc)" --target llama-server llama-bench
+
+# ── Stage 2: Runtime image with working RADV for gfx1201 ────────────────────
+FROM localhost/llama-vulkan-bleeding:mesa26
+
+RUN apt-get update && apt-get install -y --no-install-recommends libgomp1 \
+    && rm -rf /var/lib/apt/lists/*
+
+COPY --from=builder /llama.cpp/build/bin/llama-server /usr/local/bin/llama-server
+COPY --from=builder /llama.cpp/build/bin/llama-bench  /usr/local/bin/llama-bench
+
+WORKDIR /
+ENTRYPOINT ["/usr/local/bin/llama-server"]

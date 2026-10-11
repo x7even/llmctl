@@ -1,0 +1,40 @@
+{
+ "id": "chatcmpl-88e98f393c1d6b2f",
+ "object": "chat.completion",
+ "created": 1791531365,
+ "model": "qwen3.8-27b-code",
+ "choices": [
+  {
+   "index": 0,
+   "message": {
+    "role": "assistant",
+    "content": "```python\nimport re\nfrom collections import defaultdict\nfrom typing import Iterable, Dict, List, Tuple\n\n# Common Log Format regex\n# ip ident user [timestamp] \"METHOD path PROTOCOL\" status bytes\n_LOG_PATTERN = re.compile(\n    r'^(\\S+)\\s+'          # ip\n    r'(\\S+)\\s+'           # ident\n    r'(\\S+)\\s+'           # user\n    r'\\[([^\\]]+)\\]\\s+'    # timestamp\n    r'\"([^\"]*)\"\\s+'       # request line\n    r'(\\d{3})\\s+'         # status\n    r'(\\d+|-)\\s*$'        # bytes\n)\n\n# Timestamp format: 10/Oct/2026:13:55:36 +0000\n_TS_PATTERN = re.compile(\n    r'^(\\d{2})/([A-Za-z]{3})/(\\d{4}):(\\d{2}):(\\d{2}):(\\d{2})\\s+[+-]\\d{4}$'\n)\n\n_MONTH_MAP = {\n    'Jan': '01', 'Feb': '02', 'Mar': '03', 'Apr': '04',\n    'May': '05', 'Jun': '06', 'Jul': '07', 'Aug': '08',\n    'Sep': '09', 'Oct': '10', 'Nov': '11', 'Dec': '12'\n}\n\n\ndef analyze_log(lines: Iterable[str]) -> dict:\n    total_requests = 0\n    malformed = 0\n    unique_ips = set()\n    status_counts: Dict[int, int] = defaultdict(int)\n    bytes_total = 0\n    error_count = 0\n    path_counts: Dict[str, int] = defaultdict(int)\n    requests_per_hour: Dict[str, int] = defaultdict(int)\n\n    for line in lines:\n        line = line.rstrip('\\n').rstrip('\\r')\n        if not line:\n            malformed += 1\n            continue\n\n        m = _LOG_PATTERN.match(line)\n        if not m:\n            malformed += 1\n            continue\n\n        ip, ident, user, timestamp, request_line, status_str, bytes_str = m.groups()\n\n        # Validate timestamp\n        ts_match = _TS_PATTERN.match(timestamp)\n        if not ts_match:\n            malformed += 1\n            continue\n\n        # Validate request line: should have METHOD path PROTOCOL\n        parts = request_line.split()\n        if len(parts) < 2:\n            malformed += 1\n            continue\n\n        # status is already validated as 3 digits by regex\n        status = int(status_str)\n\n        # bytes\n        if bytes_str == '-':\n            byte_val = 0\n        else:\n            byte_val = int(bytes_str)\n\n        # Count valid\n        total_requests += 1\n        unique_ips.add(ip)\n        status_counts[status] += 1\n        bytes_total += byte_val\n\n        if 400 <= status <= 599:\n            error_count += 1\n\n        # Extract path (without query string)\n        # parts[1] is the path\n        raw_path = parts[1]\n        if '?' in raw_path:\n            path = raw_path.split('?', 1)[0]\n        else:\n            path = raw_path\n        path_counts[path] += 1\n\n        # Extract hour from timestamp\n        day, mon, year, hour, minute, second = ts_match.groups()\n        mon_str = _MONTH_MAP.get(mon)\n        if mon_str is None:\n            malformed += 1\n            total_requests -= 1\n            # We already incremented total_requests, so we need to revert\n            # But this shouldn't happen since _TS_PATTERN matches [A-Za-z]{3}\n            # and we check against the map. Let's handle it properly.\n            # Actually, let's restructure: validate month before counting.\n            # For now, continue to next iteration logic\n            # We need to undo the increments above\n            unique_ips.discard(ip)\n            status_counts[status] -= 1\n            if status_counts[status] == 0:\n                del status_counts[status]\n            bytes_total -= byte_val\n            if 400 <= status <= 599:\n                error_count -= 1\n            path_counts[path] -= 1\n            if path_counts[path] == 0:\n                del path_counts[path]\n            malformed += 1\n            continue\n\n        hour_key = f\"{year}-{mon_str}-{day} {hour}\"\n        requests_per_hour[hour_key] += 1\n\n    # Calculate error rate\n    if total_requests > 0:\n        error_rate = round(error_count / total_requests, 4)\n    else:\n        error_rate = 0.0\n\n    # Top paths: sort by count descending, then path ascending\n    sorted_paths = sorted(path_counts.items(), key=lambda x: (-x[1], x[0]))\n    top_paths = sorted_paths[:3]\n\n    return {\n        \"total_requests\": total_requests,\n        \"malformed\": malformed,\n        \"unique_ips\": len(unique_ips),\n        \"status_counts\": dict(status_counts),\n        \"bytes_total\": bytes_total,\n        \"error_rate\": error_rate,\n        \"top_paths\": top_paths,\n        \"requests_per_hour\": dict(requests_per_hour),\n    }\n```",
+    "refusal": null,
+    "annotations": null,
+    "audio": null,
+    "function_call": null,
+    "reasoning": null
+   },
+   "logprobs": null,
+   "finish_reason": "stop",
+   "stop_reason": null,
+   "token_ids": null,
+   "routed_experts": null
+  }
+ ],
+ "service_tier": null,
+ "system_fingerprint": "vllm-0.26.0-tp4-0126c26e",
+ "usage": {
+  "prompt_tokens": 472,
+  "total_tokens": 1678,
+  "completion_tokens": 1206,
+  "prompt_tokens_details": null
+ },
+ "prompt_logprobs": null,
+ "prompt_token_ids": null,
+ "prompt_text": null,
+ "kv_transfer_params": null,
+ "ec_transfer_params": null,
+ "metrics": null,
+ "_wall_s": 20.554049007001595
+}

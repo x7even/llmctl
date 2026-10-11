@@ -1,0 +1,69 @@
+{
+ "passed": 0,
+ "total": 12,
+ "fatal": "import failed: SyntaxError: '(' was never closed (solution.py, line 8)",
+ "timed_out": false,
+ "stderr_tail": "",
+ "tests": [
+  {
+   "test": "test_success_first_try",
+   "ok": false,
+   "err": "import failed: SyntaxError: '(' was never closed (solution.py, line 8)"
+  },
+  {
+   "test": "test_retries_then_succeeds",
+   "ok": false,
+   "err": "import failed: SyntaxError: '(' was never closed (solution.py, line 8)"
+  },
+  {
+   "test": "test_exhausts_and_raises_last",
+   "ok": false,
+   "err": "import failed: SyntaxError: '(' was never closed (solution.py, line 8)"
+  },
+  {
+   "test": "test_backoff_sequence",
+   "ok": false,
+   "err": "import failed: SyntaxError: '(' was never closed (solution.py, line 8)"
+  },
+  {
+   "test": "test_unlisted_exception_propagates_immediately",
+   "ok": false,
+   "err": "import failed: SyntaxError: '(' was never closed (solution.py, line 8)"
+  },
+  {
+   "test": "test_listed_tuple_of_exceptions",
+   "ok": false,
+   "err": "import failed: SyntaxError: '(' was never closed (solution.py, line 8)"
+  },
+  {
+   "test": "test_default_exceptions_cover_exception_subclasses",
+   "ok": false,
+   "err": "import failed: SyntaxError: '(' was never closed (solution.py, line 8)"
+  },
+  {
+   "test": "test_max_attempts_one",
+   "ok": false,
+   "err": "import failed: SyntaxError: '(' was never closed (solution.py, line 8)"
+  },
+  {
+   "test": "test_parameter_validation",
+   "ok": false,
+   "err": "import failed: SyntaxError: '(' was never closed (solution.py, line 8)"
+  },
+  {
+   "test": "test_preserves_metadata",
+   "ok": false,
+   "err": "import failed: SyntaxError: '(' was never closed (solution.py, line 8)"
+  },
+  {
+   "test": "test_calls_counter_accumulates",
+   "ok": false,
+   "err": "import failed: SyntaxError: '(' was never closed (solution.py, line 8)"
+  },
+  {
+   "test": "test_independent_decorated_functions",
+   "ok": false,
+   "err": "import failed: SyntaxError: '(' was never closed (solution.py, line 8)"
+  }
+ ]
+}

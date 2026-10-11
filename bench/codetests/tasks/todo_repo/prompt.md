@@ -1,0 +1,26 @@
+Write a Python module implementing a `TodoRepo` class that stores to-do items in SQLite. Standard library only (`sqlite3`).
+
+```python
+class TodoRepo:
+    def __init__(self, path: str = ":memory:") -> None: ...
+    def add(self, title: str, priority: int = 3) -> int: ...
+    def get(self, todo_id: int) -> dict | None: ...
+    def list(self, done: bool | None = None) -> list[dict]: ...
+    def mark_done(self, todo_id: int) -> bool: ...
+    def delete(self, todo_id: int) -> bool: ...
+    def count(self, done: bool | None = None) -> int: ...
+    def close(self) -> None: ...
+```
+
+Behaviour:
+
+1. The constructor opens (or creates) the SQLite database at `path` and creates its table if it does not exist yet, so reopening an existing file keeps its data.
+2. `add(title, priority=3)` inserts an item that is not done and returns its new integer id. Ids start at 1 and increase. `title` is stripped of surrounding whitespace; an empty or whitespace-only title raises `ValueError`. `priority` must be an int from 1 (highest) to 5 (lowest), otherwise `ValueError`. Titles may contain any characters (quotes, semicolons, unicode, ...) and must be stored exactly as given after stripping.
+3. `get(todo_id)` returns a dict `{"id": int, "title": str, "priority": int, "done": bool}` or `None` if there is no such item. `done` is a real `bool`.
+4. `list(done=None)` returns all items as such dicts ordered by priority ascending, then id ascending. With `done=True` / `done=False` only items in that state are returned.
+5. `mark_done(todo_id)` marks the item done and returns `True`; it returns `False` if the id does not exist. Marking an already-done item again also returns `True`.
+6. `delete(todo_id)` removes the item and returns `True`, or `False` if it does not exist. Ids of deleted items are never reused.
+7. `count(done=None)` returns the number of items, optionally filtered the same way as `list`.
+8. `close()` closes the connection. Changes made before `close()` must be committed, so another `TodoRepo` opened on the same file afterwards sees them.
+
+Output requirements: reply with **one** Python code block containing the complete module. No explanation outside the code block.

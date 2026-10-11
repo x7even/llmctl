@@ -1,0 +1,92 @@
+import sqlite3
+from typing import Optional
+
+
+class TodoRepo:
+    def __init__(self, path: str = ":memory:") -> None:
+        self._conn = sqlite3.connect(path)
+        self._conn.row_factory = sqlite3.Row
+        self._conn.execute(
+            """
+            CREATE TABLE IF NOT EXISTS todos (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                title TEXT NOT NULL,
+                priority INTEGER NOT NULL,
+                done INTEGER NOT NULL DEFAULT 0
+            )
+            """
+        )
+        self._conn.commit()
+
+    def add(self, title: str, priority: int = 3) -> int:
+        stripped = title.strip()
+        if not stripped:
+            raise ValueError("title must not be empty or whitespace-only")
+        if not isinstance(priority, int) or isinstance(priority, bool):
+            raise ValueError("priority must be an integer")
+        if priority < 1 or priority > 5:
+            raise ValueError("priority must be between 1 and 5")
+        cur = self._conn.execute(
+            "INSERT INTO todos (title, priority, done) VALUES (?, ?, 0)",
+            (stripped, priority),
+        )
+        self._conn.commit()
+        return cur.lastrowid
+
+    def get(self, todo_id: int) -> Optional[dict]:
+        row = self._conn.execute(
+            "SELECT id, title, priority, done FROM todos WHERE id = ?",
+            (todo_id,),
+        ).fetchone()
+        if row is None:
+            return None
+        return {
+            "id": row["id"],
+            "title": row["title"],
+            "priority": row["priority"],
+            "done": bool(row["done"]),
+        }
+
+    def list(self, done: Optional[bool] = None) -> list[dict]:
+        query = "SELECT id, title, priority, done FROM todos"
+        params: tuple = ()
+        if done is not None:
+            query += " WHERE done = ?"
+            params = (1 if done else 0,)
+        query += " ORDER BY priority ASC, id ASC"
+        rows = self._conn.execute(query, params).fetchall()
+        return [
+            {
+                "id": r["id"],
+                "title": r["title"],
+                "priority": r["priority"],
+                "done": bool(r["done"]),
+            }
+            for r in rows
+        ]
+
+    def mark_done(self, todo_id: int) -> bool:
+        cur = self._conn.execute(
+            "UPDATE todos SET done = 1 WHERE id = ?",
+            (todo_id,),
+        )
+        self._conn.commit()
+        return cur.rowcount > 0
+
+    def delete(self, todo_id: int) -> bool:
+        cur = self._conn.execute("DELETE FROM todos WHERE id = ?", (todo_id,))
+        self._conn.commit()
+        return cur.rowcount > 0
+
+    def count(self, done: Optional[bool] = None) -> int:
+        query = "SELECT COUNT(*) FROM todos"
+        params: tuple = ()
+        if done is not None:
+            query += " WHERE done = ?"
+            params = (1 if done else 0,)
+        row = self._conn.execute(query, params).fetchone()
+        return row[0]
+
+    def close(self) -> None:
+        self._conn.commit()
+        self._conn.close()

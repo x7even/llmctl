@@ -1,0 +1,40 @@
+{
+ "id": "chatcmpl-99d822476e9e6b0a",
+ "object": "chat.completion",
+ "created": 1791531365,
+ "model": "qwen3.8-27b-code",
+ "choices": [
+  {
+   "index": 0,
+   "message": {
+    "role": "assistant",
+    "content": "```python\n\"\"\"Module for analysing web server access logs in Common Log Format.\"\"\"\n\nfrom collections import Counter\nfrom typing import Dict, Iterable, List, Tuple\nimport re\nfrom datetime import datetime\n\n# Regex for a Common Log Format line:\n# ip ident user [timestamp] \"METHOD path PROTOCOL\" status bytes\n_CLF_PATTERN = re.compile(\n    r'^(\\S+)\\s+'          # ip\n    r'(\\S+)\\s+'           # ident\n    r'(\\S+)\\s+'           # user\n    r'\\[([^\\]]+)\\]\\s+'    # timestamp\n    r'\"(\\S+)\\s+'          # method\n    r'(\\S+)\\s+'           # path\n    r'(\\S+)\"\\s+'          # protocol\n    r'(\\d{3})\\s+'         # status (3 digits)\n    r'(\\S+)\\s*$'          # bytes\n)\n\n_MONTH_MAP = {\n    'Jan': 1, 'Feb': 2, 'Mar': 3, 'Apr': 4,\n    'May': 5, 'Jun': 6, 'Jul': 7, 'Aug': 8,\n    'Sep': 9, 'Oct': 10, 'Nov': 11, 'Dec': 12,\n}\n\n\ndef _parse_timestamp(ts: str) -> str:\n    \"\"\"\n    Parse a timestamp like '10/Oct/2026:13:55:36 +0000'\n    and return 'YYYY-MM-DD HH' ignoring the timezone offset.\n    Returns None if parsing fails.\n    \"\"\"\n    # Expected format: DD/Mon/YYYY:HH:MM:SS +ZZZZ\n    parts = ts.split(' ')\n    if len(parts) < 1:\n        return None\n    date_part = parts[0]\n    # date_part should be like 10/Oct/2026:13:55:36\n    try:\n        # Split by '/' and ':'\n        # Format: day/month/year:hour:minute:second\n        slash_parts = date_part.split('/')\n        if len(slash_parts) != 3:\n            return None\n        day_str = slash_parts[0]\n        month_str = slash_parts[1]\n        year_time_str = slash_parts[2]\n        \n        if month_str not in _MONTH_MAP:\n            return None\n        \n        month = _MONTH_MAP[month_str]\n        \n        colon_parts = year_time_str.split(':')\n        if len(colon_parts) != 4:\n            return None\n        \n        year_str = colon_parts[0]\n        hour_str = colon_parts[1]\n        \n        day = int(day_str)\n        year = int(year_str)\n        hour = int(hour_str)\n        \n        if not (1 <= day <= 31):\n            return None\n        if not (1 <= month <= 12):\n            return None\n        if not (0 <= hour <= 23):\n            return None\n        \n        return f\"{year:04d}-{month:02d}-{day:02d} {hour:02d}\"\n    except (ValueError, IndexError):\n        return None\n\n\ndef analyze_log(lines: Iterable[str]) -> dict:\n    \"\"\"\n    Summarise a web server access log in Common Log Format.\n    \n    Args:\n        lines: An iterable of log lines.\n        \n    Returns:\n        A dict with keys:\n        - \"total_requests\": number of valid lines.\n        - \"malformed\": number of malformed lines.\n        - \"unique_ips\": number of distinct client IPs among valid lines.\n        - \"status_counts\": dict mapping each integer status code to count.\n        - \"bytes_total\": sum of the bytes fields of valid lines.\n        - \"error_rate\": fraction of valid lines with status 400-599, rounded to 4 decimals.\n        - \"top_paths\": list of 3 most requested (path, count) tuples.\n        - \"requests_per_hour\": dict mapping \"YYYY-MM-DD HH\" to count.\n    \"\"\"\n    total_requests = 0\n    malformed = 0\n    ips = set()\n    status_counts: Dict[int, int] = {}\n    bytes_total = 0\n    error_count = 0\n    path_counter: Counter = Counter()\n    hour_counter: Dict[str, int] = {}\n\n    for line in lines:\n        line = line.strip()\n        if not line:\n            malformed += 1\n            continue\n\n        match = _CLF_PATTERN.match(line)\n        if not match:\n            malformed += 1\n            continue\n\n        ip, ident, user, timestamp, method, path, protocol, status_str, bytes_str = match.groups()\n\n        # Validate status is numeric (regex already ensures 3 digits, but let's be safe)\n        try:\n            status = int(status_str)\n        except ValueError:\n            malformed += 1\n            continue\n\n        # Validate bytes field\n        if bytes_str == '-':\n            bytes_val = 0\n        else:\n            try:\n                bytes_val = int(bytes_str)\n            except ValueError:\n                malformed += 1\n                continue\n\n        # Validate timestamp\n        hour_key = _parse_timestamp(timestamp)\n        if hour_key is None:\n            malformed += 1\n            continue\n\n        # All validations passed\n        total_requests += 1\n        ips.add(ip)\n        \n        status_counts[status] = status_counts.get(status, 0) + 1\n        bytes_total += bytes_val\n        \n        if 400 <= status <= 599:\n            error_count += 1\n        \n        # Strip query string from path\n        if '?' in path:\n            clean_path = path.split('?', 1)[0]\n        else:\n            clean_path = path\n        \n        path_counter[clean_path] += 1\n        hour_counter[hour_key] = hour_counter.get(hour_key, 0) + 1\n\n    # Calculate error rate\n    if total_requests > 0:\n        error_rate = round(error_count / total_requests, 4)\n    else:\n        error_rate = 0.0\n\n    # Top 3 paths: sort by count descending, then path ascending\n    sorted_paths = sorted(path_counter.items(), key=lambda x: (-x[1], x[0]))\n    top_paths: List[Tuple[str, int]] = sorted_paths[:3]\n\n    return {\n        \"total_requests\": total_requests,\n        \"malformed\": malformed,\n        \"unique_ips\": len(ips),\n        \"status_counts\": status_counts,\n        \"bytes_total\": bytes_total,\n        \"error_rate\": error_rate,\n        \"top_paths\": top_paths,\n        \"requests_per_hour\": hour_counter,\n    }\n```",
+    "refusal": null,
+    "annotations": null,
+    "audio": null,
+    "function_call": null,
+    "reasoning": null
+   },
+   "logprobs": null,
+   "finish_reason": "stop",
+   "stop_reason": null,
+   "token_ids": null,
+   "routed_experts": null
+  }
+ ],
+ "service_tier": null,
+ "system_fingerprint": "vllm-0.26.0-tp4-0126c26e",
+ "usage": {
+  "prompt_tokens": 472,
+  "total_tokens": 1982,
+  "completion_tokens": 1510,
+  "prompt_tokens_details": null
+ },
+ "prompt_logprobs": null,
+ "prompt_token_ids": null,
+ "prompt_text": null,
+ "kv_transfer_params": null,
+ "ec_transfer_params": null,
+ "metrics": null,
+ "_wall_s": 25.88372498300123
+}

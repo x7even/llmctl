@@ -76,9 +76,9 @@ fi
 
 # ── 3. vLLM backend ─────────────────────────────────────────────────────────
 echo ""
-echo "3/5  vLLM backend: qwen3.6-35b-code"
-echo "     Loading model — warm start 2–3 min, first cold-start 18–20 min ..."
-RESP=$(chat "qwen3.6-35b-code" "Reply with exactly one word: ready" 5 600)
+echo "3/5  vLLM backend: qwen3.8-27b-fast"
+echo "     Loading model — warm start 2–4 min, first cold start ~5 min ..."
+RESP=$(chat "qwen3.8-27b-fast" "Reply with exactly one word: ready" 5 900)
 if echo "${RESP}" | grep -q '"content"' 2>/dev/null; then
     CONTENT=$(echo "${RESP}" | extract_content)
     pass "vLLM responded: ${CONTENT}"
@@ -100,9 +100,9 @@ if [[ "${SKIP_GGUF}" -eq 1 ]]; then
     echo "4/5  GGUF backend: SKIPPED (--skip-gguf)"
 else
     echo ""
-    echo "4/5  llama.cpp backend: qwen3.6-35b-q4ks"
-    echo "     Loading model — cold-start ~5 s (GGUF) ..."
-    RESP=$(chat "qwen3.6-35b-q4ks" "Reply with exactly one word: ready" 5 600)
+    echo "4/5  llama.cpp backend: gemma4-12b-q4"
+    echo "     Loading model — cold start under a minute (GGUF) ..."
+    RESP=$(chat "gemma4-12b-q4" "Reply with exactly one word: ready" 5 600)
     if echo "${RESP}" | grep -q '"content"' 2>/dev/null; then
         CONTENT=$(echo "${RESP}" | extract_content)
         pass "llama-server responded: ${CONTENT}"

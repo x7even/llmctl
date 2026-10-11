@@ -1,0 +1,19 @@
+{
+ "model": "medium-unsloth",
+ "rows": [
+  {
+   "task": "log_stats",
+   "mode": "think",
+   "sample": 0,
+   "passed": 11,
+   "total": 11,
+   "full_pass": true,
+   "fatal": null,
+   "finish": "stop",
+   "completion_tokens": 3779,
+   "wall_s": 129.7,
+   "reasoning_chars": 10750,
+   "failed_tests": []
+  }
+ ]
+}

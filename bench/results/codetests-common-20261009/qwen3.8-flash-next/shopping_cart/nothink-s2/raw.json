@@ -1,0 +1,39 @@
+{
+ "choices": [
+  {
+   "finish_reason": "stop",
+   "index": 0,
+   "message": {
+    "role": "assistant",
+    "content": "```python\nfrom decimal import Decimal, ROUND_HALF_UP\nfrom typing import Optional\n\n\nclass Cart:\n    def __init__(self, tax_rate: str | Decimal = \"0\") -> None:\n        if isinstance(tax_rate, str):\n            tax_rate = Decimal(tax_rate)\n        elif not isinstance(tax_rate, Decimal):\n            tax_rate = Decimal(str(tax_rate))\n        \n        if tax_rate < Decimal(\"0\") or tax_rate > Decimal(\"1\"):\n            raise ValueError(\"tax_rate must be between 0 and 1 inclusive\")\n        \n        self._tax_rate = tax_rate\n        self._items: dict[str, tuple[Decimal, int]] = {}  # sku -> (price, quantity)\n        self._coupon: Optional[str] = None\n\n    def add_item(self, sku: str, price: str | Decimal, qty: int = 1) -> None:\n        if not isinstance(qty, int) or qty < 1:\n            raise ValueError(\"qty must be an int >= 1\")\n        \n        if isinstance(price, str):\n            price = Decimal(price)\n        elif not isinstance(price, Decimal):\n            price = Decimal(str(price))\n        \n        if price < Decimal(\"0\"):\n            raise ValueError(\"price must be >= 0\")\n        \n        if sku in self._items:\n            existing_price, existing_qty = self._items[sku]\n            if existing_price != price:\n                raise ValueError(\"price differs from existing price for this SKU\")\n            self._items[sku] = (existing_price, existing_qty + qty)\n        else:\n            self._items[sku] = (price, qty)\n\n    def remove_item(self, sku: str, qty: Optional[int] = None) -> None:\n        if sku not in self._items:\n            raise KeyError(f\"SKU '{sku}' not in cart\")\n        \n        current_price, current_qty = self._items[sku]\n        \n        if qty is None:\n            # Remove entire line\n            del self._items[sku]\n        else:\n            if not isinstance(qty, int) or qty < 1:\n                raise ValueError(\"qty must be >= 1\")\n            if qty > current_qty:\n                raise ValueError(\"qty cannot exceed quantity in cart\")\n            new_qty = current_qty - qty\n            if new_qty == 0:\n                del self._items[sku]\n            else:\n                self._items[sku] = (current_price, new_qty)\n\n    def apply_coupon(self, code: str) -> None:\n        if code not in (\"SAVE10\", \"FIVEOFF\"):\n            raise ValueError(f\"Invalid coupon code: {code}\")\n        self._coupon = code\n\n    def item_count(self) -> int:\n        return sum(qty for _, qty in self._items.values())\n\n    def summary(self) -> dict[str, Decimal]:\n        # Calculate subtotal\n        subtotal = Decimal(\"0\")\n        for price, qty in self._items.values():\n            subtotal += price * Decimal(qty)\n        \n        # Calculate discount\n        discount = Decimal(\"0\")\n        if self._coupon == \"SAVE10\":\n            discount = subtotal * Decimal(\"0.10\")\n            discount = discount.quantize(Decimal(\"0.01\"), rounding=ROUND_HALF_UP)\n        elif self._coupon == \"FIVEOFF\":\n            discount = Decimal(\"5.00\")\n            if discount > subtotal:\n                discount = subtotal\n            discount = discount.quantize(Decimal(\"0.01\"), rounding=ROUND_HALF_UP)\n        \n        # Calculate tax\n        taxable_amount = subtotal - discount\n        tax = taxable_amount * self._tax_rate\n        tax = tax.quantize(Decimal(\"0.01\"), rounding=ROUND_HALF_UP)\n        \n        # Calculate total\n        total = subtotal - discount + tax\n        total = total.quantize(Decimal(\"0.01\"), rounding=ROUND_HALF_UP)\n        \n        # Ensure all values are properly quantized\n        subtotal = subtotal.quantize(Decimal(\"0.01\"), rounding=ROUND_HALF_UP)\n        discount = discount.quantize(Decimal(\"0.01\"), rounding=ROUND_HALF_UP)\n        tax = tax.quantize(Decimal(\"0.01\"), rounding=ROUND_HALF_UP)\n        \n        return {\n            \"subtotal\": subtotal,\n            \"discount\": discount,\n            \"tax\": tax,\n            \"total\": total,\n        }\n```"
+   }
+  }
+ ],
+ "created": 1791550116,
+ "model": "/models/unsloth/Qwen3.8-Flash-Next-GGUF/UD-IQ4_XS/Qwen3.8-Flash-Next-UD-IQ4_XS-00001-of-00003.gguf",
+ "system_fingerprint": "b11098-6fcaa16f4",
+ "object": "chat.completion",
+ "usage": {
+  "completion_tokens": 976,
+  "prompt_tokens": 622,
+  "total_tokens": 1598,
+  "prompt_tokens_details": {
+   "cached_tokens": 618
+  }
+ },
+ "id": "chatcmpl-ZZiKyEaFVzf9qyZgw95HrF1ah0rWi172",
+ "timings": {
+  "cache_n": 618,
+  "prompt_n": 4,
+  "prompt_ms": 365.355,
+  "prompt_per_token_ms": 91.33875,
+  "prompt_per_second": 10.948255805996906,
+  "predicted_n": 976,
+  "predicted_ms": 87028.588,
+  "predicted_per_token_ms": 89.26009025641027,
+  "predicted_per_second": 11.20321520096362,
+  "draft_n": 762,
+  "draft_n_accepted": 724
+ },
+ "_wall_s": 87.81157044200154
+}

@@ -5,11 +5,11 @@ Measures: prefill throughput, decode throughput, TTFT, latency under concurrency
 
 Usage:
   python3 bench/concurrent_bench.py                              # defaults
-  python3 bench/concurrent_bench.py --model qwen3-coder-30b-fp8
+  python3 bench/concurrent_bench.py --model qwen3.8-27b-code
   python3 bench/concurrent_bench.py --sweep 2,4,8,12,16 --requests-per-level 16
   python3 bench/concurrent_bench.py --quick                      # fast smoke bench
   python3 bench/concurrent_bench.py --no-thinking                # disable Qwen3 thinking mode
-  llmctl bench qwen3-coder-30b-fp8
+  llmctl bench qwen3.8-27b-code
 
   # Save results as a named baseline, then compare after a config change:
   python3 bench/concurrent_bench.py --save bench/baselines/before-fp8kv.json
@@ -75,7 +75,7 @@ class VRAMPoller:
 # ── Default configuration ─────────────────────────────────────────────────────
 
 DEFAULT_URL   = "http://127.0.0.1:8080/v1/chat/completions"
-DEFAULT_MODEL = "qwen3-coder-30b-fp8"
+DEFAULT_MODEL = "qwen3.8-27b-code"
 
 # Prompts of different lengths to exercise prefill (short = decode-bound,
 # long = prefill-bound). Each tuple: (label, prompt, expected_completion_tokens)
