@@ -230,7 +230,8 @@ See `tui/CLAUDE.md` for architecture and coding conventions.
 | `qwen3.8-27b-code` ✓ | vLLM + MTP | ~31 GB + KV | 27B (dense) | **Default.** Thinking (medium effort); 131K ctx; 361 tok/s @ conc=8 |
 | `qwen3.8-27b-think` | vLLM | ~31 GB + KV | 27B (dense) | Thinking, no MTP — parallel agent fleets |
 | `qwen3.8-27b-fast` | vLLM + MTP | ~31 GB + KV | 27B (dense) | Thinking OFF by default |
-| `qwen3.8-flash-next` | llama-server (Vulkan) | ~81 GB | 6B (MoE, 125B) | UD-IQ4_XS GGUF, custom llama.cpp fork; vLLM path under evaluation |
+| `qwen3.8-flash-next` | llama-server (Vulkan) | ~81 GB | 6B (MoE, 125B) | UD-IQ4_XS GGUF, custom llama.cpp fork; single-user |
+| `qwen3.8-flash-next-vllm` | vLLM TP4+EP (nightly image) | ~19 GB/GPU + pinned host RAM | 6B (MoE, 125B) | W4A16 INT4 + FP8 PLE; 55 tok/s serial, 149 @ conc=8, 232 @ conc=16; needs `--ulimit memlock=-1:-1`; exclusive VRAM |
 | `qwen3.6-35b-code` | vLLM + MTP | ~35 GB | 3B (MoE) | Previous gen, MTP + thinking |
 | `qwen3.6-35b-128k-nomtp` | vLLM | ~35 GB | 3B (MoE) | Previous gen, thinking, no MTP |
 | `qwen3.6-35b-fast` | vLLM | ~35 GB | 3B (MoE) | Previous gen, thinking OFF |
@@ -244,7 +245,7 @@ reference set. Older profiles (Qwen3.6-27B, Qwen3.6-35B AWQ/512K/GGUF variants, 
 Qwen3.5-122B) were removed from `config/models.yaml`; restore from git history if needed.
 
 Use aliases for common swaps: `llmctl swap qwen3.8` (→ 27b-code), `llmctl swap 27b-fast`, `llmctl swap 27b-think`,
-`llmctl swap flash-next`, `llmctl swap gemma4` (→ 26B Q8 vision), `llmctl swap gemma4-vllm` (→ 26B vLLM).
+`llmctl swap flash-next`, `llmctl swap flash-next-vllm`, `llmctl swap gemma4` (→ 26B Q8 vision), `llmctl swap gemma4-vllm` (→ 26B vLLM).
 ✓ = on disk and benchmarked
 
 ---

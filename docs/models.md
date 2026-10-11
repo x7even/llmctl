@@ -154,6 +154,55 @@ extended reasoning is unnecessary overhead.
 
 ---
 
+### `qwen3.8-flash-next-vllm` — Flash-Next for concurrent agents
+
+**Aliases:** `flash-next-vllm`
+
+**Use for:** the same model as `qwen3.8-flash-next` (125B MoE, 6B active) when more than
+one agent is running. llama-server layer-splits across GPUs, so only one GPU works at a
+time and 4 streams drop to ~8.5 tok/s each; TP4 + expert-parallel keeps all four busy.
+
+**Setup:**
+- Checkpoint: `albucino/Qwen3.8-Flash-Next-W4A16-FP8PLE` (121 GB): AutoRound INT4 (W4A16)
+  transformer, FP8 per-layer-embedding (PLE) table. Not a full-FP8 model.
+- Image: **nightly** `vllm-openai-rocm:nightly-8cbd5d03006c33185f402249ff2b448efd594986`
+  (vLLM 0.31.1rc1.dev173). `v0.31.0` rejects the compressed-tensors PLE table.
+  Move to a tagged release when one carries the same support.
+- TP4 + `--enable-expert-parallel`, `VLLM_ROCM_USE_AITER=0` (Triton MoE path; no AITER
+  path for `Qwen4Exp`). No EP crash with INT4 MoE, unlike the AWQ case in `config/CLAUDE.md`.
+- The PLE table lives in pinned host RAM (~13 GB per rank). Rootless podman's default
+  memlock limit is ~23 GiB, so the profile passes `--ulimit memlock=-1:-1`.
+- On GPU: 18.8 GiB per rank for weights, ~124 GB peak across all four cards. Exclusive VRAM.
+- Cold start through the router: ~4.5 min first time (compile), ~2 min with warm cache.
+
+**Results** (`--no-thinking`, decode tok/s, 4× R9700):
+
+| Prompt | serial | conc=2 | conc=4 | conc=8 | conc=16 |
+|--------|--------|--------|--------|--------|---------|
+| medium-256 | 55 | 106 | 94 | 149 | **232** |
+| xlarge-2048 | 23 | n/a | 89 | 201 | n/a |
+
+(xlarge-2048 requests generate long outputs, so p90 latency is 70–90 s per request at every level.) An 88K-token
+needle prompt prefills in ~27 s (~3.2K tok/s) and retrieves correctly. Tool calling
+(`qwen3_coder` parser) and default thinking (terminates, ~100 tokens on a simple question) work.
+Baselines: `bench/baselines/qwen3.8-flash-next-vllm-nightly-8cbd5d0-*.json`. For comparison
+the GGUF profile does ~50 tok/s single-stream (with MTP) but only ~34 aggregate at 4 streams.
+
+**Tuning findings (do not "fix" these back):**
+- `--cudagraph-capture-sizes 1 2 4 8`, not the usual `1 2 4 8 16 32`. Larger captured sizes
+  slow low-batch decode on this model (medium-256 serial / conc=8 / conc=16 decode tok/s:
+  sizes ≤8 ≈ 52/148/209; ≤16 ≈ 37/122/231; ≤32 ≈ 27/128/227). Single-stream matters most
+  for agents; batches above 8 run uncaptured and lose ~8% at conc=16.
+- Context length (131072) and `--max-num-seqs 32` have no measurable cost.
+- **MTP is not enabled.** The checkpoint ships an INT4 draft head (`runtime/mtp-int4-g32`);
+  at 2 speculative tokens it accepts ~2.0 tokens/step (52% draft acceptance) but throughput
+  was flat (serial 54.7 vs 53.2, conc=8 166 vs 162) and KV capacity fell from 381K to 225K tokens.
+
+**Not used from the checkpoint:** its `runtime/` directory is a CUDA/RTX 3090 overlay
+(UVA expert offload, `humming` MoE backend); it does not apply to ROCm.
+
+---
+
 ---
 
 ## Archived profiles (removed from `config/models.yaml`)

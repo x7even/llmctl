@@ -80,11 +80,12 @@ llmctl list
 
 Example output:
 ```
-Profiles (11)  [* = loaded]:
+Profiles (12)  [* = loaded]:
   qwen3.8-27b-code *
   qwen3.8-27b-think
   qwen3.8-27b-fast
   qwen3.8-flash-next
+  qwen3.8-flash-next-vllm
   qwen3.8-27b-code
   qwen3.6-35b-128k-nomtp
   qwen3.6-35b-fast

@@ -1,0 +1,61 @@
+{
+  "model": "qwen3.8-flash-next-vllm",
+  "timestamp": "2026-10-11 09:04:37",
+  "rows": [
+    {
+      "label": "xlarge-2048 serial",
+      "concurrency": 1,
+      "n_requests": 3,
+      "errors": 0,
+      "wall_s": 272.4325680319889,
+      "req_per_s": 0.011011899280880916,
+      "prefill_tps": 2.235415554018826,
+      "decode_tps": 22.552369727244116,
+      "latency_mean": 90.81085601066297,
+      "latency_p90": 90.97429487899353,
+      "latency_p99": 90.97429487899353
+    },
+    {
+      "label": "xlarge-2048 conc=1",
+      "concurrency": 1,
+      "n_requests": 8,
+      "errors": 0,
+      "wall_s": 323.1502848109958,
+      "req_per_s": 0.02475628330230017,
+      "prefill_tps": 5.0255255103669345,
+      "decode_tps": 50.70086820311075,
+      "latency_mean": 40.393512980126616,
+      "latency_p90": 71.9074506330071,
+      "latency_p99": 71.9074506330071,
+      "vram_peak_gb": 125.52083456
+    },
+    {
+      "label": "xlarge-2048 conc=4",
+      "concurrency": 4,
+      "n_requests": 8,
+      "errors": 0,
+      "wall_s": 184.93612806199235,
+      "req_per_s": 0.04325817829017337,
+      "prefill_tps": 8.781410192905195,
+      "decode_tps": 88.59274913827507,
+      "latency_mean": 92.45613547012545,
+      "latency_p90": 92.96562862599967,
+      "latency_p99": 92.96562862599967,
+      "vram_peak_gb": 125.5209984
+    },
+    {
+      "label": "xlarge-2048 conc=8",
+      "concurrency": 8,
+      "n_requests": 8,
+      "errors": 0,
+      "wall_s": 81.57706329299253,
+      "req_per_s": 0.09806678099292647,
+      "prefill_tps": 19.907556541564073,
+      "decode_tps": 200.8407674735134,
+      "latency_mean": 81.55429633475069,
+      "latency_p90": 81.5734596530092,
+      "latency_p99": 81.5734596530092,
+      "vram_peak_gb": 125.521113088
+    }
+  ]
+}
