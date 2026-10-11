@@ -12,8 +12,9 @@ SKIP_GGUF=0
 PASS=0
 FAIL=0
 
-pass() { echo "  [PASS] $1"; ((PASS++)); }
-fail() { echo "  [FAIL] $1"; ((FAIL++)); }
+# Not ((PASS++)): that returns status 1 when the counter is 0, which kills the script under set -e.
+pass() { echo "  [PASS] $1"; PASS=$((PASS + 1)); }
+fail() { echo "  [FAIL] $1"; FAIL=$((FAIL + 1)); }
 
 chat() {
     # chat <model> <prompt> <max_tokens> <timeout_s>
