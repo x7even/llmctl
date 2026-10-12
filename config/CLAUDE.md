@@ -180,9 +180,13 @@ profile's actual `cmd` (`--tensor-parallel-size`, `--tensor-split`, `--ulimit me
   sizes `--tensor-split` for `min_gpus` profiles, and reports profiles that cannot run
   (including host-RAM shortfalls). Hardware detection and the support check live in
   `scripts/llmhw.py` (`detect()`, `supports()`, `parse_requires()`).
-- `llmctl` and `llmpanel` do not read it yet. A later release will wire them to
-  `scripts/llmhw.py` so they can refuse or mark profiles this machine cannot run; until
-  then only `scripts/configure` acts on the declarations.
+- `llmctl` reads it through `scripts/llmhw.py`: `llmctl hw` prints the verdict per profile,
+  `llmctl list` / `pick` hide unsupported profiles (`--all` shows them), and `llmctl swap`
+  refuses them with exit 2 unless `--force`. It fails open (no llmhw, no detected GPU count,
+  or a profile without `requires` means allowed). `LLMSTACK_GPU_COUNT=N` / `--gpu-count N`
+  simulate a different rig. See `docs/llmctl.md`.
+- `llmpanel` does not read it yet (planned for 0.4.4); until then only `scripts/configure`
+  and `llmctl` act on the declarations.
 - llama-swap exposes it as `meta.llamaswap.requires` on `GET /v1/models`, so clients can read it.
 
 ### `unlisted: true  # llmstack:auto` lines
@@ -194,7 +198,10 @@ maintains one line directly under the profile's other top-level keys:
     unlisted: true  # llmstack:auto - needs gpus [4], detected 2
 ```
 
-`unlisted: true` hides the profile from `/v1/models` while it stays swappable by name. On a
+`unlisted: true` hides the profile from `/v1/models` only; `llmctl list` / `pick` hide it too
+and `llmctl swap` refuses it (exit 2 unless `--force`) because they apply the same llmhw verdict
+from `metadata.requires`. A hand-written `unlisted: true` or `false` does not change that
+verdict. On a
 later run where the profile becomes supported (more GPUs, `--gpu-count` raised), configure
 removes **only** lines carrying the `llmstack:auto` marker. A hand-written `unlisted: true`
 without the marker is never touched, and a profile that is hand-unlisted and unsupported does

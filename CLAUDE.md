@@ -50,6 +50,8 @@ State files: `~/.local/share/llmstack/llama-swap.{pid,log}`, `llmproxy.{pid,log}
 llmctl up                        # start llama-swap router
 llmctl swap qwen3.6-35b-code     # load a model (blocks until healthy)
 llmctl status                    # show running state + VRAM
+llmctl hw                        # detected GPUs/RAM + which profiles this hardware can run
+llmctl list --all                # list shows only runnable profiles by default
 llmctl logs qwen3.6-35b-code     # tail container log (essential for debugging startup)
 llmctl unload                    # free VRAM, keep router running
 llmctl down                      # stop everything

@@ -115,7 +115,7 @@ Its behaviour for fewer than four cards:
   three) are reported as `SKIP` with the reason and their `cmd` is left unchanged. They are
   hidden from `/v1/models` by an auto-managed `unlisted: true  # llmstack:auto` line that
   configure removes again once the profile becomes supported; a hand-written `unlisted:` line
-  (`true` or `false`) is never touched and always wins, so a profile never ends up with two. They still fail if swapped to by name.
+  (`true` or `false`) is never touched and always wins, so a profile never ends up with two. `llmctl list` / `pick` / `swap` apply the same `scripts/llmhw.py` verdict: they hide these profiles, and `llmctl swap` refuses them with exit 2 unless `--force` (they will probably fail to start). That verdict comes only from `metadata.requires`; a hand-written `unlisted: true` or `false` does not change it.
 - **`--dry-run`:** prints the resulting config and the warnings without writing anything. Use
   it first to see what a count would produce.
 

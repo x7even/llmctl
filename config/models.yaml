@@ -52,7 +52,7 @@ models:
     name: "Qwen3.8-27B FP8 (code, MTP, thinking)"
     ttl: 0
     # metadata.requires (every profile, directly after ttl): what hardware the profile
-    # can run on. Read by scripts/configure today (llmctl / llmpanel will read it in a
+    # can run on. Read by scripts/configure and llmctl (llmpanel will read it in a
     # later release); llama-swap passes it through as /v1/models meta.llamaswap. One key per line, plain scalars and
     # flow lists only. Keys: gpus [..] (vLLM: valid tensor-parallel sizes) OR min_gpus N
     # (llama-server), host_ram_gib, vram_total_gib, estimate (true = not measured on
