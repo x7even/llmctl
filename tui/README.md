@@ -47,6 +47,7 @@ already be running (`llmctl up`).
 | `--interval DURATION` | `1s` | Poll interval. One of: `500ms` `1s` `2s` `5s` `15s` |
 | `--config PATH` | `~/ai/llmstack/config/models.yaml` | Path to models.yaml |
 | `--log PATH` | `~/.local/share/llmstack/llama-swap.log` | Log file to tail |
+| `--gpu-count N` | detected | Simulate N GPUs instead of detecting them (also `LLMSTACK_GPU_COUNT=N`; the flag wins). The header then shows `(override)` |
 
 ---
 
@@ -77,7 +78,7 @@ already be running (`llmctl up`).
 │ 2026-05-06 12:34:01 starting backend qwen3.8-27b-code on :9104            │
 │ 2026-05-06 12:34:58 backend healthy                                        │
 ╰────────────────────────────────────────────────────────────────────────────╯
- [tab] panel  [f] fullscreen  [↑↓/jk] nav  [s/↵] swap  [u] unload  [p] poll:1s  [r] reload  [q] quit
+ [tab] panel  [f] fullscreen  [↑↓/jk] nav  [s/↵] swap  [u] unload  [a] all  [p] poll:1s  [r] reload  [q] quit
 ```
 
 **Colour coding:**
@@ -107,7 +108,8 @@ already be running (`llmctl up`).
 | `f` | Toggle fullscreen for focused panel |
 | `Esc` | Exit fullscreen |
 | `p` | Cycle poll interval: 500ms → 1s → 2s → 5s → 15s |
-| `r` | Reload `models.yaml` from disk (picks up edits without restart) |
+| `r` | Reload `models.yaml` from disk and re-detect hardware (picks up edits without restart) |
+| `a` | Models: show / hide profiles this hardware cannot run |
 | `q` / `Ctrl+C` | Quit |
 
 ### Models panel (when focused)
@@ -116,8 +118,38 @@ already be running (`llmctl up`).
 |-----|--------|
 | `↑` / `k` | Move cursor up |
 | `↓` / `j` | Move cursor down |
-| `Enter` / `s` | Swap to selected model (blocks with spinner until loaded) |
+| `Enter` / `s` | Swap to selected model (blocks with spinner until loaded); refused for a profile this hardware cannot run |
 | `u` | Unload all running models (free VRAM, keep llama-swap running) |
+| `a` | Toggle show-all (see "Hardware filtering" below) |
+
+**Hardware filtering.** At startup and on `r`, llmpanel detects the GPU count (sysfs VRAM
+size, `rocm-smi` as fallback, or `--gpu-count` / `LLMSTACK_GPU_COUNT`) and host RAM, and checks
+every profile's `metadata.requires` (schema: `config/CLAUDE.md`) with the same rules as
+`llmctl` and `scripts/configure`.
+
+- The panel header shows the hardware, e.g. `Models 4 GPU · 188 GiB RAM` (`2 GPU (override)`
+  when forced; the RAM part is dropped when the panel is too narrow).
+- By default only runnable profiles are listed, in `models.yaml` order. The footer says
+  `N hidden - a: show all` (the Models column is at most 40 columns wide; in fullscreen the
+  longer `N hidden (needs more GPUs/RAM) - a: show all` fits).
+- `a` lists everything. Unsupported profiles are greyed with a compact reason that fits beside
+  the longest profile names: `4 GPU`, `2/4 GPU`, `2+ GPU` or `96 GiB RAM` (what the profile
+  needs; the title shows what you have), with a trailing `est` when the requirement is an
+  estimate, not measured here. The Config panel states the full reason for the selected profile
+  (`needs 4 GPUs, have 2 (est)`). The cursor stays on the same profile across the toggle when
+  it is still listed.
+- `Enter` / `s` on an unsupported profile does not swap. The panel line reads
+  `✗ needs 4 GPUs, have 2` and the status bar leads with the way out:
+  `unsupported: use 'llmctl swap --force <profile>' to try anyway (<reason>)`.
+  The messages clear when you move the cursor, toggle `a`, reload with `r`, or start another
+  swap. The panel has no force path; `llmctl` owns `--force`.
+- The reasons are paraphrased for width (`needs 4 GPUs, have 2`); `llmctl` prints the raw
+  `llmhw` wording (`needs gpus [4], detected 2`, `(estimate)`). The verdict is the same.
+- If the GPU count cannot be detected, the panel fails open: every profile is listed and
+  the footer shows a dim `hw not detected - showing all` (`hardware not detected - showing all`
+  in fullscreen). Pass `--gpu-count N` to set it by hand.
+- The `unlisted` key in `models.yaml` is not consulted by the panel (it never was); only
+  the hardware verdict hides profiles.
 
 ### Config panel (when focused)
 

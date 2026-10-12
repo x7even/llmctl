@@ -185,8 +185,12 @@ profile's actual `cmd` (`--tensor-parallel-size`, `--tensor-split`, `--ulimit me
   refuses them with exit 2 unless `--force`. It fails open (no llmhw, no detected GPU count,
   or a profile without `requires` means allowed). `LLMSTACK_GPU_COUNT=N` / `--gpu-count N`
   simulate a different rig. See `docs/llmctl.md`.
-- `llmpanel` does not read it yet (planned for 0.4.4); until then only `scripts/configure`
-  and `llmctl` act on the declarations.
+- `llmpanel` reads it too (`tui/config.go` parses it, `tui/hw.go` is a Go port of
+  `scripts/llmhw.py` kept in step by `tests/fixtures/llmhw_cases.json`). The Models panel lists
+  only runnable profiles, `a` shows the rest greyed with the reason, and a swap of an
+  unsupported profile is refused (the panel points at `llmctl swap --force`). It fails open
+  like `llmctl`, and honours `--gpu-count` / `LLMSTACK_GPU_COUNT`. Every consumer
+  (`scripts/configure`, `llmctl`, `llmpanel`) is now wired.
 - llama-swap exposes it as `meta.llamaswap.requires` on `GET /v1/models`, so clients can read it.
 
 ### `unlisted: true  # llmstack:auto` lines

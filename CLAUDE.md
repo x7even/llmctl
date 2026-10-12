@@ -56,6 +56,7 @@ llmctl logs qwen3.6-35b-code     # tail container log (essential for debugging s
 llmctl unload                    # free VRAM, keep router running
 llmctl down                      # stop everything
 llmpanel                         # TUI: inference metrics, GPU, model list, config, logs
+                                 #   Models panel hides profiles this hardware can't run; `a` shows them greyed
 ```
 
 After changing `config/models.yaml`, restart llama-swap for the change to take effect:
@@ -292,7 +293,7 @@ Full data across all prompt sizes: `bench/CLAUDE.md` and `bench/baselines/`.
 ```
 bin/llmctl           Python CLI — lifecycle, model switching, log tailing
 bin/llmproxy         Python SSE shim — fixes vLLM null tool-call names for @ai-sdk
-bin/llmpanel         Pre-built TUI binary (or build from tui/)
+bin/llmpanel         TUI binary built by `cd tui && make build` (gitignored, never commit)
 config/models.yaml   Single source of truth for all model profiles
 config/templates/    Custom Jinja chat templates
 tui/                 Go source for llmpanel (Bubbletea)
