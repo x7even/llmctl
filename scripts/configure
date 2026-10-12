@@ -2,19 +2,30 @@
 """
 Configure config/models.yaml for your machine.
 
-Does three things:
+Does four things:
   1. Replaces __LLMSTACK_DIR__ with the absolute path to this repo.
      (llama-swap v223+ runs cmd without a shell, so env vars like $LLMSTACK_DIR
      are not expanded — configure writes the real path at setup time instead.)
-  2. Patches each profile for your GPU count:
-       * vLLM profiles get --tensor-parallel-size set to the largest *valid* TP
-         that is <= the GPU count (valid set per profile, default 1/2/4 because
+  2. Reads each profile's `metadata: requires:` block from models.yaml (the single
+     source of truth for GPU counts / host RAM; see scripts/llmhw.py) and patches
+     each profile that can run here:
+       * vLLM profiles get --tensor-parallel-size set to the largest allowed
+         GPU count <= the detected count (`gpus: [2, 4]`; default 1/2/4 because
          head counts must divide evenly; e.g. 3 cards -> TP2, one card idle).
        * llama-server (GGUF) profiles get --tensor-split sized to the real GPU
          count (3 cards -> 1,1,1 — layer split has no divisibility rule).
-  3. Prints a per-profile summary. Profiles that cannot run at this GPU count
-     (see PROFILE_REQUIREMENTS) are reported and left untouched — no bogus TP
-     is written for them. They are NOT removed from the yaml.
+  3. Profiles that cannot run here (too few GPUs, or less host RAM than
+     `host_ram_gib`) keep their cmd byte-identical but get an auto-managed line
+         unlisted: true  # llmstack:auto - needs gpus [4], detected 2
+     so llama-swap hides them from /v1/models (they stay swappable by name).
+     The line is removed again on a later run where the profile is supported.
+     A hand-written `unlisted:` line (no `llmstack:auto` marker) is never
+     touched, and no second line is added next to it (if a marker line is
+     already there, it is dropped so the profile never has two `unlisted:`
+     keys). A hand-written `unlisted: false` keeps the unsupported profile
+     listed; configure warns about it. Line endings (LF/CRLF) are preserved.
+  4. Prints a per-profile summary. Profiles with no metadata.requires block are
+     treated as permissive (assumed to fit) and flagged.
 
 GPU detection counts only discrete GPUs with >= 8 GiB of VRAM (sysfs
 mem_info_vram_total), so an integrated GPU is ignored. Falls back to rocm-smi
@@ -35,162 +46,17 @@ import argparse
 import difflib
 import re
 import shutil
-import subprocess
 import sys
 from dataclasses import dataclass, field
 from pathlib import Path
 
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+import llmhw  # noqa: E402  (shared detection, metadata.requires parsing, supports())
+
 REPO_ROOT = Path(__file__).resolve().parent.parent
 DEFAULT_CONFIG = REPO_ROOT / "config" / "models.yaml"
 
-GIB = 1024**3
-MIN_GPU_VRAM_BYTES = 8 * GIB  # smaller devices are iGPUs / display adapters
-
-DEFAULT_TP = (1, 2, 4)
-
-
-# ── Per-profile requirements ────────────────────────────────────────────────
-
-@dataclass(frozen=True)
-class Req:
-    min_gpus: int
-    note: str
-    valid_tp: tuple = DEFAULT_TP   # TP sizes a vLLM profile can run at
-    estimate: bool = False         # True = derived from file sizes, not measured
-    min_ram_gib: float | None = None  # host RAM (MemTotal) the profile needs
-
-
-# Measured facts: 4x R9700 32 GB, 2026-10-12. Entries marked estimate=True are
-# inferred from checkpoint size and have not been run at the reduced GPU count.
-PROFILE_REQUIREMENTS: dict[str, Req] = {
-    # Qwen3.8-27B FP8 (29 GB). Measured failures: TP3 asserts "16 is not divisible
-    # by 3" (linear-attention heads); TP1 hits torch.OutOfMemoryError while loading
-    # weights (29.78 of 31.86 GiB allocated). TP 1/2/4 are the sizes that divide the
-    # 24 attn / 4 KV / 16-48 linear head counts. TP2 measured: 255K-token KV pool,
-    # 46.6 / 219 / 418 tok/s (serial/conc8/16).
-    "qwen3.8-27b-code": Req(2, "measured: TP2 works, TP1 OOMs loading the 29 GB FP8 weights, TP3 fails (16 heads not divisible by 3)"),
-    "qwen3.8-27b-think": Req(2, "measured: TP2 works, TP1 OOMs loading the 29 GB FP8 weights, TP3 fails (16 heads not divisible by 3)"),
-    "qwen3.8-27b-fast": Req(2, "measured: TP2 works, TP1 OOMs loading the 29 GB FP8 weights, TP3 fails (16 heads not divisible by 3)"),
-    # Flash-Next W4A16. Measured failures: TP3 asserts "248320 is not divisible by 3"
-    # (vocab size); TP2 hits torch.OutOfMemoryError loading weights (31.20 GiB
-    # allocated, 50 MiB free). Works only on the 4-card layout (~19 GiB/GPU) and
-    # needs a 47.7 GiB CPU-offloaded, pinned PLE table in host RAM.
-    "qwen3.8-flash-next-vllm": Req(
-        4, "measured: TP4+EP only (TP2 OOMs loading weights, TP3 fails: vocab 248320 not divisible by 3); "
-           "needs ~96 GB host RAM for the pinned PLE table",
-        valid_tp=(4,), min_ram_gib=88,
-    ),
-    # Flash-Next GGUF (llama-server, Vulkan) ~81 GB total across cards.
-    "qwen3.8-flash-next": Req(3, "~81 GB across cards: needs >=3 x 32 GB GPUs"),
-    # Qwen3.6-35B FP8 (35 GB on disk) cannot fit one 32 GB card with KV.
-    "qwen3.6-35b-code": Req(2, "estimate: 35 GB FP8 weights need >=2 x 32 GB cards", valid_tp=(2, 4), estimate=True),
-    "qwen3.6-35b-128k-nomtp": Req(2, "estimate: 35 GB FP8 weights need >=2 x 32 GB cards", valid_tp=(2, 4), estimate=True),
-    "qwen3.6-35b-fast": Req(2, "estimate: 35 GB FP8 weights need >=2 x 32 GB cards", valid_tp=(2, 4), estimate=True),
-    # Gemma 4 26B-A4B BF16 (49 GB weights + KV) is documented as ~123 GB,
-    # exclusive VRAM, benchmarked only at TP4.
-    "gemma4-26b-a4b": Req(4, "49 GB BF16 weights + KV, ~123 GB exclusive as documented; only benchmarked at TP4",
-                          valid_tp=(4,)),
-    # Gemma 4 26B FP8-Dynamic (~26 GB weights) cannot also hold KV on one card.
-    "gemma4-26b-fp8": Req(2, "estimate: ~26 GB FP8 weights + KV need >=2 x 32 GB cards", estimate=True),
-    # Gemma GGUF (llama-server), not run at reduced GPU counts. Q8 is 27 GB on disk;
-    # with mmproj and KV it may not fit a single 31.86 GiB card. Q4 is 7.1 GB.
-    "gemma4-26b-q8": Req(1, "estimate: 27 GB Q8 GGUF + mmproj + KV may not fit one 32 GB card; "
-                            "at 1 GPU lower --parallel/--ctx-size if it OOMs", estimate=True),
-    "gemma4-12b-q4": Req(1, "estimate: 7.1 GB Q4 GGUF should fit any single card", estimate=True),
-}
-
-# Used for profiles with no entry above: assume they fit, but flag them.
-DEFAULT_REQ = Req(1, "no entry in PROFILE_REQUIREMENTS — assuming it fits; add one")
-
-
-# ── GPU detection (pure, injectable) ────────────────────────────────────────
-
-def count_sysfs_gpus(drm_root: Path, min_vram: int = MIN_GPU_VRAM_BYTES) -> tuple[int, int] | None:
-    """Count discrete GPUs under a DRM sysfs root (normally /sys/class/drm).
-
-    Returns (big, small): devices with >= min_vram vs. smaller ones (iGPUs).
-    Returns None when no device exposes mem_info_vram_total at all, so the
-    caller can fall back to another method. (0, k) means "only small devices".
-    Connector entries (card0-DP-1) are ignored; devices are de-duplicated by
-    the resolved path of their `device` link.
-    """
-    seen: set[Path] = set()
-    big = small = 0
-    found_any = False
-    for card in sorted(Path(drm_root).glob("card*")):
-        if not re.fullmatch(r"card\d+", card.name):
-            continue
-        dev = card / "device"
-        vram_file = dev / "mem_info_vram_total"
-        try:
-            real = dev.resolve()
-            raw = vram_file.read_text().strip()
-            vram = int(raw)
-        except (OSError, ValueError):
-            continue
-        found_any = True
-        if real in seen:
-            continue
-        seen.add(real)
-        if vram >= min_vram:
-            big += 1
-        else:
-            small += 1
-    return (big, small) if found_any else None
-
-
-def count_rocm_smi_gpus(run=None, min_vram: int = MIN_GPU_VRAM_BYTES) -> tuple[int, int] | None:
-    """Count GPUs via rocm-smi. `run(argv) -> str` is injectable for tests.
-
-    Prefers --showmeminfo vram (lets us drop iGPUs); falls back to
-    --listdevices (unique GPU[n] indices, cannot tell iGPUs apart).
-    """
-    run = run or _run_cmd
-    try:
-        out = run(["rocm-smi", "--showmeminfo", "vram"])
-    except Exception:
-        out = ""
-    sizes: dict[int, int] = {}
-    for m in re.finditer(r"GPU\[(\d+)\][^\n]*?VRAM Total Memory \(B\):\s*(\d+)", out):
-        sizes[int(m.group(1))] = int(m.group(2))
-    if sizes:
-        big = sum(1 for v in sizes.values() if v >= min_vram)
-        return big, len(sizes) - big
-    try:
-        out = run(["rocm-smi", "--listdevices"])
-    except Exception:
-        return None
-    idx = {int(m.group(1)) for m in re.finditer(r"^GPU\[(\d+)\]", out, re.M)}
-    return (len(idx), 0) if idx else None
-
-
-def _run_cmd(argv: list[str]) -> str:
-    return subprocess.check_output(argv, stderr=subprocess.DEVNULL, text=True)
-
-
-def detect_gpus(drm_root: Path = Path("/sys/class/drm"), run=None) -> tuple[int, int, str] | None:
-    """Return (discrete_gpus, ignored_small_devices, method) or None."""
-    r = count_sysfs_gpus(drm_root)
-    if r is not None:
-        return r[0], r[1], "sysfs"
-    r = count_rocm_smi_gpus(run)
-    if r is not None:
-        return r[0], r[1], "rocm-smi"
-    return None
-
-
-# ── Host RAM ────────────────────────────────────────────────────────────────
-
-def parse_memtotal_gib(meminfo: str) -> float | None:
-    m = re.search(r"^MemTotal:\s+(\d+)\s*kB", meminfo, re.M)
-    return int(m.group(1)) / (1024 * 1024) if m else None
-
-
-def read_meminfo() -> str:
-    try:
-        return Path("/proc/meminfo").read_text()
-    except OSError:
-        return ""
+DEFAULT_TP = (1, 2, 4)  # vLLM TP sizes assumed when a profile has no requires.gpus
 
 
 # ── TP selection ────────────────────────────────────────────────────────────
@@ -206,6 +72,10 @@ def choose_tp(n: int, valid: tuple = DEFAULT_TP) -> int | None:
 _HEADER_RE = re.compile(r"^  ([A-Za-z0-9][\w.\-]*):\s*$")
 _TP_RE = re.compile(r"(--tensor-parallel-size\s+)\d+")
 _SPLIT_RE = re.compile(r"(--tensor-split\s+)[\d.,]+")
+_CMD_RE = re.compile(r"^    cmd:")
+_UNLISTED_RE = re.compile(r"^    unlisted:")
+MARKER = "# llmstack:auto"
+_MARKER_RE = re.compile(r"^    unlisted:\s*true\s+" + re.escape(MARKER) + r"(\s.*)?$")
 
 
 def _is_comment(line: str) -> bool:
@@ -256,7 +126,7 @@ def patch_block(lines: list[str], kind: str, n: int, tp: int | None) -> list[str
         if kind == "vllm" and tp is not None:
             # --enable-expert-parallel is deliberately left alone: stripping it
             # would be one-way (re-running at a larger GPU count could not
-            # restore it). Only min_gpus >= 2 profiles should use EP anyway.
+            # restore it). Only profiles with gpus >= 2 should use EP anyway.
             l = _TP_RE.sub(lambda m: m.group(1) + str(tp), l)
         elif kind == "gguf":
             split = ",".join(["1"] * n)
@@ -265,33 +135,93 @@ def patch_block(lines: list[str], kind: str, n: int, tp: int | None) -> list[str
     return out
 
 
+def _eol(line: str) -> str:
+    return "\r\n" if line.endswith("\r\n") else "\n"
+
+
+def _is_marker(line: str) -> bool:
+    return bool(_MARKER_RE.match(line.rstrip("\r\n")))
+
+
+def _hand_unlisted_is_false(line: str) -> bool:
+    """True for a hand-written `unlisted: false` (the only value that lists a profile)."""
+    value = llmhw.strip_comment(line.split(":", 1)[1])
+    return value.strip("\"'").lower() == "false"
+
+
+def set_auto_unlisted(lines: list[str], reason: str | None) -> tuple[list[str], str]:
+    """Add / refresh / remove the auto-managed `unlisted: true` marker line.
+
+    reason=None (profile supported): remove marker lines only. reason=str
+    (unsupported): ensure exactly one marker line, unless the profile already
+    has a hand-written `unlisted:` line. A hand-written line is never modified
+    and always wins: any marker lines are dropped so the profile never carries
+    two `unlisted:` keys (a duplicate mapping key is invalid YAML). Returns
+    (lines, action) with action one of '', 'added', 'updated', 'removed',
+    'hand' (hand-written `unlisted: true`), 'hand-listed' (hand-written
+    `unlisted: false`: the profile stays listed even though it cannot run).
+    """
+    marker_idx = [i for i, l in enumerate(lines) if _is_marker(l)]
+    hand = [l for l in lines if _UNLISTED_RE.match(l) and not _is_marker(l)]
+    if reason is None:
+        if not marker_idx:
+            return lines, ""
+        return [l for i, l in enumerate(lines) if i not in marker_idx], "removed"
+    if hand:
+        action = "hand-listed" if all(_hand_unlisted_is_false(l) for l in hand) else "hand"
+        return [l for i, l in enumerate(lines) if i not in marker_idx], action
+    at = next((i for i, l in enumerate(lines) if _CMD_RE.match(l)), 1)
+    eol = _eol(lines[marker_idx[0]] if marker_idx else lines[min(at, len(lines) - 1)])
+    new = f"    unlisted: true  {MARKER} - {reason}{eol}"
+    if marker_idx:
+        first = marker_idx[0]
+        out = [new if i == first else l for i, l in enumerate(lines) if i == first or i not in marker_idx]
+        return out, ("" if out == lines else "updated")
+    return lines[:at] + [new] + lines[at:], "added"
+
+
 @dataclass
 class ProfileResult:
     name: str
     kind: str                 # vllm | gguf | other
     status: str               # ok | infeasible
-    req: Req
-    known: bool
+    requires: dict | None     # metadata.requires, or None when the block is missing
     tp: int | None = None
     reason: str = ""
+    marker: str = ""          # see set_auto_unlisted
     warnings: list[str] = field(default_factory=list)
 
+    @property
+    def known(self) -> bool:
+        return self.requires is not None
 
-def evaluate(name: str, kind: str, n: int) -> ProfileResult:
-    req = PROFILE_REQUIREMENTS.get(name)
-    known = req is not None
-    req = req or DEFAULT_REQ
-    res = ProfileResult(name, kind, "ok", req, known)
-    if n < req.min_gpus:
-        res.status = "infeasible"
-        res.reason = f"needs {req.min_gpus} GPU(s), have {n}"
+    @property
+    def estimate(self) -> bool:
+        # `is True`: only a plain `estimate: true` counts (a quoted "false" is a string)
+        return bool(self.requires) and self.requires.get("estimate") is True
+
+    @property
+    def note(self) -> str:
+        return str((self.requires or {}).get("note", ""))
+
+
+def evaluate(name: str, kind: str, hw: dict, requires: dict | None) -> ProfileResult:
+    n = hw["gpu_count"]
+    res = ProfileResult(name, kind, "ok", requires)
+    ok, tp, reasons = llmhw.supports(requires, hw)
+    if not ok:
+        res.status, res.reason = "infeasible", "; ".join(reasons)
         return res
+    need_ram = (requires or {}).get("host_ram_gib")
+    if need_ram is not None and hw.get("host_ram_gib") is None:
+        res.warnings.append(f"needs ~{need_ram} GiB host RAM; could not read MemTotal from /proc/meminfo")
     if kind == "vllm":
-        tp = choose_tp(n, req.valid_tp)
-        if tp is None or tp < req.min_gpus:
+        if tp is None:                       # no `gpus` list: default sizes
+            tp = choose_tp(n)
+        min_gpus = (requires or {}).get("min_gpus")
+        if tp is None or (isinstance(min_gpus, int) and tp < min_gpus):
             res.status = "infeasible"
-            res.reason = (f"no valid TP in {list(req.valid_tp)} fits {n} GPU(s) "
-                          f"with min {req.min_gpus}")
+            res.reason = f"no valid tensor-parallel size fits {n} GPU(s)"
             return res
         res.tp = tp
         if tp < n:
@@ -299,19 +229,27 @@ def evaluate(name: str, kind: str, n: int) -> ProfileResult:
     return res
 
 
-def patch(text: str, n: int, llmstack_dir: str) -> tuple[str, list[ProfileResult]]:
+def patch(text: str, hw: dict, llmstack_dir: str) -> tuple[str, list[ProfileResult]]:
+    n = hw["gpu_count"]
     # Substitute repo-root placeholder (llama-swap v223 runs cmd without a shell,
     # so $LLMSTACK_DIR can't be used; configure replaces __LLMSTACK_DIR__ instead)
     text = text.replace("__LLMSTACK_DIR__", llmstack_dir)
+    requires = llmhw.parse_requires(text)
     head, profiles, tail = split_profiles(text)
     results: list[ProfileResult] = []
     out = list(head)
     for name, lines in profiles:
         kind = block_kind(lines)
-        res = evaluate(name, kind, n)
+        res = evaluate(name, kind, hw, requires.get(name))
         results.append(res)
         if res.status == "ok":
             lines = patch_block(lines, kind, n, res.tp)
+            lines, res.marker = set_auto_unlisted(lines, None)
+        else:
+            lines, res.marker = set_auto_unlisted(lines, res.reason)
+            if res.marker == "hand-listed":
+                res.warnings.append("is unsupported here but explicitly listed (hand-written 'unlisted: false'); "
+                                    "configure leaves that line alone")
         out.extend(lines)
     out.extend(tail)
     return "".join(out), results
@@ -319,26 +257,8 @@ def patch(text: str, n: int, llmstack_dir: str) -> tuple[str, list[ProfileResult
 
 # ── Reporting ───────────────────────────────────────────────────────────────
 
-def check_host_ram(results: list[ProfileResult], meminfo: str) -> list[str]:
-    msgs = []
-    total = parse_memtotal_gib(meminfo)
-    for r in results:
-        need = r.req.min_ram_gib
-        if need is None or r.status != "ok":
-            continue
-        if total is None:
-            msgs.append(f"WARNING: {r.name} needs ~96 GB host RAM; could not read MemTotal from /proc/meminfo.")
-        elif total < need:
-            msgs.append(
-                f"WARNING: {r.name} needs ~96 GB host RAM (pinned CPU-offloaded table, "
-                f"--ulimit memlock=-1:-1); this host reports MemTotal {total:.0f} GiB. "
-                f"It will likely fail to load."
-            )
-    return msgs
-
-
-def format_summary(n: int, source: str, ignored: int, results: list[ProfileResult],
-                   ram_msgs: list[str]) -> str:
+def format_summary(hw: dict, results: list[ProfileResult]) -> str:
+    n, source, ignored = hw["gpu_count"], hw["source"], hw.get("ignored_devices", 0)
     lines = []
     src = f"GPU count: {n} ({source}"
     if ignored:
@@ -354,17 +274,22 @@ def format_summary(n: int, source: str, ignored: int, results: list[ProfileResul
             tag = "OK  "
             extra = ""
         else:
-            how = "left unchanged"
+            how = {"hand": "cmd unchanged, hand-unlisted",
+                   "hand-listed": "cmd unchanged, hand-listed (unlisted: false)"
+                   }.get(r.marker, "cmd unchanged, unlisted")
             tag = "SKIP"
             extra = f"  -- {r.reason}"
-        flag = " (estimate)" if r.req.estimate else ""
+        flag = " (estimate)" if r.estimate else ""
         lines.append(f"  {tag} {r.name:<{width}}  {how}{extra}{flag}")
     for r in results:
-        if r.status != "ok":
-            lines.append(f"  note {r.name}: {r.req.note}")
+        if r.status != "ok" and r.note:
+            lines.append(f"  note {r.name}: {r.note}")
         if not r.known:
-            lines.append(f"  WARNING: {r.name} has no entry in PROFILE_REQUIREMENTS "
-                         f"(scripts/configure); GPU requirements unchecked.")
+            lines.append(f"  WARNING: {r.name} has no metadata.requires block in models.yaml; "
+                         f"GPU requirements unchecked (assumed to fit).")
+        for w in r.warnings:
+            if w.startswith(("needs", "is unsupported")):
+                lines.append(f"  WARNING: {r.name} {w}.")
     idle: dict[int, list[str]] = {}
     for r in ok:
         if r.tp is not None and r.tp < n:
@@ -372,9 +297,10 @@ def format_summary(n: int, source: str, ignored: int, results: list[ProfileResul
     for tp, names in sorted(idle.items()):
         lines.append(f"WARNING: {n} GPUs but TP{tp} for {', '.join(names)}: "
                      f"{n - tp} card(s) idle for these profiles (TP needs 1, 2 or 4).")
-    lines.extend(ram_msgs)
     if bad:
-        lines.append("Skipped profiles were not modified or removed; they will fail if swapped to.")
+        lines.append("Skipped profiles keep their cmd and are marked 'unlisted: true  # llmstack:auto' "
+                     "(hidden from /v1/models, still swappable by name; they will fail to start). "
+                     "Re-run configure on a larger machine to remove the marker.")
     return "\n".join(lines)
 
 
@@ -392,19 +318,15 @@ def main(argv: list[str] | None = None) -> int:
     )
     args = ap.parse_args(argv)
 
-    ignored = 0
-    if args.gpu_count is not None:
-        n, source = args.gpu_count, "--gpu-count"
-    else:
-        det = detect_gpus()
-        if det is None:
-            print(
-                "Could not detect GPUs via sysfs or rocm-smi.\n"
-                "Use --gpu-count N to set it explicitly.",
-                file=sys.stderr,
-            )
-            return 1
-        n, ignored, source = det
+    hw = llmhw.detect(args.gpu_count)
+    if hw["gpu_count"] is None:
+        print(
+            "Could not detect GPUs via sysfs or rocm-smi.\n"
+            "Use --gpu-count N to set it explicitly.",
+            file=sys.stderr,
+        )
+        return 1
+    n = hw["gpu_count"]
     if n < 1:
         print("No usable GPU found (need >= 1 discrete GPU with >= 8 GiB VRAM).\n"
               "Use --gpu-count N to set it explicitly.", file=sys.stderr)
@@ -417,9 +339,11 @@ def main(argv: list[str] | None = None) -> int:
 
     llmstack_dir = str(path.resolve().parent.parent)
 
-    original = path.read_text()
-    patched, results = patch(original, n, llmstack_dir)
-    summary = format_summary(n, source, ignored, results, check_host_ram(results, read_meminfo()))
+    # newline="" keeps CRLF files CRLF (read_text/write_text would normalise to LF)
+    with open(path, newline="") as f:
+        original = f.read()
+    patched, results = patch(original, hw, llmstack_dir)
+    summary = format_summary(hw, results)
 
     if original == patched:
         print(f"No changes needed — already configured for {n} GPU(s) at {llmstack_dir}.")
@@ -437,7 +361,8 @@ def main(argv: list[str] | None = None) -> int:
 
     backup = Path(str(path) + ".bak")
     shutil.copy(path, backup)
-    path.write_text(patched)
+    with open(path, "w", newline="") as f:
+        f.write(patched)
     print(f"Configured for {n} GPU(s) at {llmstack_dir}. Backup saved to {backup.name}")
     print(summary)
     return 0

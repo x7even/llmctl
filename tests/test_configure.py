@@ -1,6 +1,8 @@
 #!/usr/bin/env python3
 """
-Unit tests for scripts/configure (GPU detection, TP rounding, profile minimums).
+Unit tests for scripts/configure (TP rounding, requires read from models.yaml,
+auto-managed `unlisted` marker lines). Hardware detection and parse_requires
+have their own tests in tests/test_llmhw.py.
 
 Run:  python3 tests/test_configure.py        (also pytest-compatible)
 """
@@ -20,8 +22,9 @@ _loader = importlib.machinery.SourceFileLoader("configure", _path)
 _spec = importlib.util.spec_from_loader("configure", _loader)
 cfg = importlib.util.module_from_spec(_spec)
 _loader.exec_module(cfg)
+llmhw = cfg.llmhw
 
-GIB = 1024**3
+MARK = "# llmstack:auto"
 
 # Small fixture: one profile of each kind + a commented template tail.
 FIXTURE = """\
@@ -31,6 +34,11 @@ models:
 
   # comment mentioning --tensor-parallel-size 4 must never be rewritten
   qwen3.8-27b-code:
+    name: "27B"
+    metadata:
+      requires:
+        gpus: [2, 4]
+        note: "measured: TP2 works"
     cmd: |
       podman run --rm
         -v __LLMSTACK_DIR__/.vllm-cache:/root/.cache/vllm
@@ -43,6 +51,13 @@ models:
     cmdStop: podman stop x
 
   qwen3.8-flash-next-vllm:
+    name: "flash"
+    metadata:
+      requires:
+        gpus: [4]
+        host_ram_gib: 96
+        vram_total_gib: 66
+        note: "TP4+EP only"
     cmd: |
       podman run --rm
         vllm serve /models/y
@@ -52,6 +67,11 @@ models:
     cmdStop: podman stop y
 
   qwen3.8-flash-next:
+    name: "flash gguf"
+    metadata:
+      requires:
+        min_gpus: 3
+        estimate: true
     cmd: |
       llama-server
         --tensor-split 1,1,1,1
@@ -59,12 +79,17 @@ models:
     cmdStop: podman stop z
 
   gemma4-12b-q4:
+    name: "small"
+    metadata:
+      requires:
+        min_gpus: 1
     cmd: |
       llama-server
         --tensor-split 1,1,1,1
     cmdStop: podman stop w
 
   brand-new-profile:
+    name: "no metadata"
     cmd: |
       vllm serve /models/q
         --tensor-parallel-size 4
@@ -78,8 +103,13 @@ models:
 """
 
 
-def _patched(n, text=FIXTURE):
-    return cfg.patch(text, n, "/opt/llmstack")
+def _hw(n, ram=188.0):
+    return {"gpu_count": n, "vram_gib_per_gpu": [], "host_ram_gib": ram,
+            "source": "test", "ignored_devices": 0}
+
+
+def _patched(n, text=FIXTURE, ram=188.0):
+    return cfg.patch(text, _hw(n, ram), "/opt/llmstack")
 
 
 def _block(text, name):
@@ -100,6 +130,18 @@ def _status(results):
     return {r.name: r for r in results}
 
 
+def _marker_lines(text, name):
+    return [l for l in _block(text, name).splitlines() if MARK in l]
+
+
+def _unlisted_lines(text, name):
+    return [l for l in _block(text, name).splitlines() if l.startswith("    unlisted:")]
+
+
+def _without_markers(block):
+    return "".join(l for l in block.splitlines(keepends=True) if MARK not in l)
+
+
 # ── TP rounding ─────────────────────────────────────────────────────────────
 
 def test_choose_tp_default_set():
@@ -116,7 +158,7 @@ def test_choose_tp_restricted_set():
 
 
 def test_patch_tp_rounding_for_each_gpu_count():
-    # qwen3.8-27b-code: min 2, valid 1/2/4. flash-next-vllm: TP4 only.
+    # qwen3.8-27b-code: gpus [2,4]. flash-next-vllm: gpus [4].
     for n, tp27, flash_ok in [(2, 2, False), (3, 2, False), (4, 4, True), (8, 4, True)]:
         out, res = _patched(n)
         st = _status(res)
@@ -127,28 +169,31 @@ def test_patch_tp_rounding_for_each_gpu_count():
             assert _tp(out, "qwen3.8-flash-next-vllm") == 4
 
 
-def test_tp1_infeasible_for_27b_and_leaves_block_untouched():
+def test_tp1_infeasible_for_27b_and_cmd_untouched():
     out, res = _patched(1)
     st = _status(res)
     assert st["qwen3.8-27b-code"].status == "infeasible"
-    # No bogus TP written: block identical to the placeholder-substituted input.
+    # No bogus TP written: block identical to the placeholder-substituted input
+    # apart from the one auto-managed marker line.
     base = FIXTURE.replace("__LLMSTACK_DIR__", "/opt/llmstack")
-    assert _block(out, "qwen3.8-27b-code") == _block(base, "qwen3.8-27b-code")
+    assert _without_markers(_block(out, "qwen3.8-27b-code")) == _block(base, "qwen3.8-27b-code")
     assert _tp(out, "qwen3.8-27b-code") == 4
     assert "--enable-expert-parallel" in _block(out, "qwen3.8-27b-code")
 
 
 def test_expert_parallel_flag_never_stripped_and_reconfigure_roundtrips():
-    # An unknown profile (default min 1) at TP1 keeps --enable-expert-parallel,
-    # so reconfiguring the same text for a larger GPU count loses nothing.
-    text = FIXTURE.replace("qwen3.8-27b-code:", "tiny-moe:")
-    out1, res1 = cfg.patch(text, 1, "/x")
-    assert _status(res1)["tiny-moe"].status == "ok"
-    assert _tp(out1, "tiny-moe") == 1
-    assert "--enable-expert-parallel" in _block(out1, "tiny-moe")
-    out4, _ = cfg.patch(out1, 4, "/x")
-    assert _tp(out4, "tiny-moe") == 4
-    assert "--enable-expert-parallel" in _block(out4, "tiny-moe")
+    # A profile without metadata (permissive, default TP sizes) at TP1 keeps
+    # --enable-expert-parallel, so reconfiguring for a larger count loses nothing.
+    text = FIXTURE.replace("  brand-new-profile:\n    name: \"no metadata\"\n    cmd: |\n      vllm serve /models/q\n",
+                           "  brand-new-profile:\n    name: \"no metadata\"\n    cmd: |\n      vllm serve /models/q\n"
+                           "        --enable-expert-parallel\n")
+    out1, res1 = cfg.patch(text, _hw(1), "/x")
+    assert _status(res1)["brand-new-profile"].status == "ok"
+    assert _tp(out1, "brand-new-profile") == 1
+    assert "--enable-expert-parallel" in _block(out1, "brand-new-profile")
+    out4, _ = cfg.patch(out1, _hw(4), "/x")
+    assert _tp(out4, "brand-new-profile") == 4
+    assert "--enable-expert-parallel" in _block(out4, "brand-new-profile")
 
 
 def test_column0_comment_between_profiles_does_not_truncate_parsing():
@@ -157,20 +202,22 @@ def test_column0_comment_between_profiles_does_not_truncate_parsing():
     _, profiles, _ = cfg.split_profiles(text)
     _, base_profiles, _ = cfg.split_profiles(FIXTURE)
     assert [n for n, _ in profiles] == [n for n, _ in base_profiles]
-    out, res = cfg.patch(text, 4, "/x")
+    out, res = cfg.patch(text, _hw(4), "/x")
     assert len(res) == len(base_profiles) >= 3
     assert "# stray column-0 comment" in out
+    assert _status(res)["qwen3.8-flash-next-vllm"].requires["gpus"] == [4]
 
 
 def test_idle_card_warning_when_tp_below_n():
     for n in (3, 5, 6, 7, 8):
         _, res = _patched(n)
-        s = cfg.format_summary(n, "test", 0, res, [])
+        s = cfg.format_summary(_hw(n), res)
         assert "idle" in s, n
     _, res = _patched(4)
-    assert "idle" not in cfg.format_summary(4, "test", 0, [r for r in res if r.status == "ok" and r.kind == "vllm" and r.tp == 4], [])
-    _, res2 = cfg.patch(FIXTURE, 2, "/x")
-    assert "idle" not in cfg.format_summary(2, "test", 0, res2, [])
+    ok4 = [r for r in res if r.status == "ok" and r.kind == "vllm" and r.tp == 4]
+    assert "idle" not in cfg.format_summary(_hw(4), ok4)
+    _, res2 = _patched(2)
+    assert "idle" not in cfg.format_summary(_hw(2), res2)
 
 
 def test_comments_and_template_untouched():
@@ -193,7 +240,7 @@ def test_gguf_tensor_split_sized_to_real_n():
         out, res = _patched(n)
         assert _split(out, "gemma4-12b-q4") == ",".join(["1"] * n)
     out3, res3 = _patched(3)
-    # flash-next GGUF needs 3 -> OK at 3 with a 3-way split (no TP rounding for GGUF).
+    # flash-next GGUF needs min_gpus 3 -> OK at 3 with a 3-way split (no TP rounding).
     assert _status(res3)["qwen3.8-flash-next"].status == "ok"
     assert _split(out3, "qwen3.8-flash-next") == "1,1,1"
 
@@ -201,133 +248,227 @@ def test_gguf_tensor_split_sized_to_real_n():
 def test_gguf_n1_keeps_reversible_flag():
     out, res = _patched(1)
     assert _split(out, "gemma4-12b-q4") == "1"
-    back, _ = cfg.patch(out, 4, "/opt/llmstack")
+    back, _ = cfg.patch(out, _hw(4), "/opt/llmstack")
     assert _split(back, "gemma4-12b-q4") == "1,1,1,1"
 
 
-# ── Minimums reporting ──────────────────────────────────────────────────────
+# ── Requires come from models.yaml ──────────────────────────────────────────
+
+def test_requires_read_from_yaml_not_code():
+    assert not hasattr(cfg, "PROFILE_REQUIREMENTS")
+    # Same profile name, different metadata -> different verdict.
+    text = FIXTURE.replace("gpus: [2, 4]\n        note: \"measured: TP2 works\"", "gpus: [4]")
+    _, res = _patched(2, text)
+    assert _status(res)["qwen3.8-27b-code"].status == "infeasible"
+    _, res = _patched(2)
+    assert _status(res)["qwen3.8-27b-code"].status == "ok"
+
 
 def test_minimums_reporting():
     _, res = _patched(2)
     st = _status(res)
-    assert st["qwen3.8-flash-next"].status == "infeasible"       # GGUF needs 3
-    assert st["qwen3.8-flash-next-vllm"].status == "infeasible"  # needs 4
+    assert st["qwen3.8-flash-next"].status == "infeasible"       # GGUF min_gpus 3
+    assert st["qwen3.8-flash-next-vllm"].status == "infeasible"  # gpus [4]
     assert st["gemma4-12b-q4"].status == "ok"
-    s = cfg.format_summary(2, "test", 0, res, [])
+    s = cfg.format_summary(_hw(2), res)
     assert "SKIP qwen3.8-flash-next " in s
-    assert "needs 3 GPU(s), have 2" in s
-    assert "needs 4 GPU(s), have 2" in s
-    assert "not modified or removed" in s
+    assert "needs min_gpus 3, detected 2" in s
+    assert "needs gpus [4], detected 2" in s
+    assert "llmstack:auto" in s
+    assert "(estimate)" in s
 
 
-def test_unknown_profile_flagged():
-    _, res = _patched(4)
-    s = cfg.format_summary(4, "test", 0, res, [])
-    assert "brand-new-profile has no entry in PROFILE_REQUIREMENTS" in s
+def test_unknown_profile_permissive_and_flagged():
+    out, res = _patched(1)
+    st = _status(res)
+    assert st["brand-new-profile"].status == "ok" and st["brand-new-profile"].tp == 1
+    assert _marker_lines(out, "brand-new-profile") == []
+    s = cfg.format_summary(_hw(1), res)
+    assert "brand-new-profile has no metadata.requires block" in s
 
 
-def test_table_covers_real_config_profiles():
+def test_real_config_profiles_all_have_requires_and_known_values():
     text = (REPO / "config" / "models.yaml").read_text()
     _, profiles, _ = cfg.split_profiles(text)
     names = [n for n, _ in profiles]
-    assert names, "no profiles parsed from config/models.yaml"
-    missing = [n for n in names if n not in cfg.PROFILE_REQUIREMENTS]
-    assert not missing, f"profiles without a PROFILE_REQUIREMENTS entry: {missing}"
+    assert len(names) == 12, names
+    req = llmhw.parse_requires(text)
+    missing = [n for n in names if n not in req]
+    assert not missing, f"profiles without metadata.requires: {missing}"
     for n, lines in profiles:
         assert cfg.block_kind(lines) in ("vllm", "gguf"), n
-
-
-def test_known_minimums():
-    R = cfg.PROFILE_REQUIREMENTS
     for k in ("qwen3.8-27b-code", "qwen3.8-27b-think", "qwen3.8-27b-fast"):
-        assert R[k].min_gpus == 2 and not R[k].estimate
-    assert R["qwen3.8-flash-next-vllm"].min_gpus == 4
-    assert R["qwen3.8-flash-next-vllm"].valid_tp == (4,)
-    assert R["qwen3.8-flash-next"].min_gpus == 3
-    assert R["gemma4-26b-q8"].min_gpus == 1 and R["gemma4-12b-q4"].min_gpus == 1
+        assert req[k]["gpus"] == [2, 4] and not req[k].get("estimate")
+    assert req["qwen3.8-flash-next-vllm"]["gpus"] == [4]
+    assert req["qwen3.8-flash-next-vllm"]["host_ram_gib"] == 96
+    assert req["qwen3.8-flash-next"]["min_gpus"] == 3
+    assert req["gemma4-26b-a4b"]["gpus"] == [4] and req["gemma4-26b-a4b"]["estimate"] is True
+    assert req["qwen3.8-flash-next-vllm"]["vram_total_gib"] == 75
+    assert not req["qwen3.8-flash-next-vllm"].get("estimate")
+    assert req["gemma4-26b-q8"]["min_gpus"] == 1 and req["gemma4-12b-q4"]["min_gpus"] == 1
     for k in ("qwen3.6-35b-code", "qwen3.6-35b-128k-nomtp", "qwen3.6-35b-fast"):
-        assert R[k].min_gpus >= 2 and R[k].estimate
+        assert req[k]["gpus"] == [2, 4] and req[k]["estimate"] is True
 
 
 # ── Host RAM ────────────────────────────────────────────────────────────────
 
-def _meminfo(gib):
-    return f"MemTotal:       {int(gib * 1024 * 1024)} kB\nMemFree:        1 kB\n"
+def test_host_ram_makes_profile_unsupported_with_reason():
+    out, res = _patched(4, ram=188.0)
+    assert _status(res)["qwen3.8-flash-next-vllm"].status == "ok"
+    out, res = _patched(4, ram=94.0)                     # a 96 GB box reports ~94 GiB
+    assert _status(res)["qwen3.8-flash-next-vllm"].status == "ok"
+    out, res = _patched(4, ram=64.0)
+    r = _status(res)["qwen3.8-flash-next-vllm"]
+    assert r.status == "infeasible" and "64 GiB" in r.reason and "96" in r.reason
+    assert len(_marker_lines(out, "qwen3.8-flash-next-vllm")) == 1
 
 
-def test_host_ram_warning():
-    _, res = _patched(4)
-    assert cfg.parse_memtotal_gib(_meminfo(188)) == 188
-    assert cfg.check_host_ram(res, _meminfo(188)) == []     # this host: no warning
-    assert cfg.check_host_ram(res, _meminfo(94)) == []      # 96 GB box reports ~94 GiB
-    low = cfg.check_host_ram(res, _meminfo(64))
-    assert len(low) == 1 and "qwen3.8-flash-next-vllm" in low[0] and "64 GiB" in low[0]
-    assert len(cfg.check_host_ram(res, "")) == 1            # unreadable -> warn
-    _, res2 = _patched(2)                                   # infeasible -> GPU message wins
-    assert cfg.check_host_ram(res2, _meminfo(8)) == []
+def test_host_ram_unreadable_warns_but_stays_supported():
+    out, res = _patched(4, ram=None)
+    r = _status(res)["qwen3.8-flash-next-vllm"]
+    assert r.status == "ok" and r.warnings
+    assert "could not read MemTotal" in cfg.format_summary(_hw(4, None), res)
+    assert _marker_lines(out, "qwen3.8-flash-next-vllm") == []
 
 
-# ── GPU detection ───────────────────────────────────────────────────────────
+# ── Auto-managed unlisted marker ────────────────────────────────────────────
 
-def _fake_drm(root: Path, cards: dict, connectors=True):
-    """cards: {'card0': vram_bytes | None}. None = no mem_info file."""
-    for name, vram in cards.items():
-        dev = root / "devices" / f"pci-{name}"
-        dev.mkdir(parents=True)
-        if vram is not None:
-            (dev / "mem_info_vram_total").write_text(f"{vram}\n")
-        c = root / "drm" / name
-        c.mkdir(parents=True)
-        (c / "device").symlink_to(dev)
-        if connectors:
-            (root / "drm" / f"{name}-DP-1").mkdir()
-    return root / "drm"
-
-
-def test_igpu_filtered_from_fake_sysfs():
-    with tempfile.TemporaryDirectory() as td:
-        drm = _fake_drm(Path(td), {"card0": 32 * GIB, "card1": 32 * GIB, "card2": 32 * GIB,
-                                    "card3": 512 * 1024 * 1024})
-        assert cfg.count_sysfs_gpus(drm) == (3, 1)
-        assert cfg.detect_gpus(drm, run=lambda a: "") == (3, 1, "sysfs")
+def test_marker_added_on_unsupported_with_reason_text():
+    out, _ = _patched(2)
+    assert _marker_lines(out, "qwen3.8-flash-next-vllm") == [
+        f"    unlisted: true  {MARK} - needs gpus [4], detected 2"]
+    assert _marker_lines(out, "qwen3.8-flash-next") == [
+        f"    unlisted: true  {MARK} - needs min_gpus 3, detected 2"]
+    assert _marker_lines(out, "qwen3.8-27b-code") == []
+    assert _marker_lines(out, "gemma4-12b-q4") == []
+    # directly among the profile's own keys, just before cmd:
+    blk = _block(out, "qwen3.8-flash-next-vllm").splitlines()
+    i = next(k for k, l in enumerate(blk) if MARK in l)
+    assert blk[i + 1].startswith("    cmd:")
 
 
-def test_connector_entries_and_symlink_dupes_ignored():
-    with tempfile.TemporaryDirectory() as td:
-        root = Path(td)
-        drm = _fake_drm(root, {"card0": 32 * GIB})
-        # a second card node pointing at the same underlying device
-        (drm / "card1").mkdir()
-        (drm / "card1" / "device").symlink_to(root / "devices" / "pci-card0")
-        assert cfg.count_sysfs_gpus(drm) == (1, 0)
+def test_marker_removed_when_profile_becomes_supported():
+    out2, _ = _patched(2)
+    assert _marker_lines(out2, "qwen3.8-flash-next-vllm")
+    out4, _ = cfg.patch(out2, _hw(4), "/opt/llmstack")
+    assert MARK not in out4
+    assert out4 == _patched(4)[0]                        # back to the fresh 4-GPU result
 
 
-def test_only_igpu_gives_zero_not_rocm_smi_fallback():
-    with tempfile.TemporaryDirectory() as td:
-        drm = _fake_drm(Path(td), {"card0": 2 * GIB})
-        called = []
-        det = cfg.detect_gpus(drm, run=lambda a: called.append(a) or "GPU[0] : x")
-        assert det == (0, 1, "sysfs") and not called
+def test_marker_reason_refreshed_when_count_changes():
+    out2, _ = _patched(2)
+    out1, _ = cfg.patch(out2, _hw(1), "/opt/llmstack")
+    assert _marker_lines(out1, "qwen3.8-flash-next-vllm") == [
+        f"    unlisted: true  {MARK} - needs gpus [4], detected 1"]
+    assert len(_unlisted_lines(out1, "qwen3.8-flash-next-vllm")) == 1
 
 
-def test_fallback_to_rocm_smi_when_no_sysfs_vram_info():
-    with tempfile.TemporaryDirectory() as td:
-        drm = _fake_drm(Path(td), {"card0": None})
-        out = ("GPU[0]\t\t: VRAM Total Memory (B): 34208743424\n"
-               "GPU[1]\t\t: VRAM Total Memory (B): 34208743424\n"
-               "GPU[2]\t\t: VRAM Total Memory (B): 536870912\n")
-        assert cfg.detect_gpus(drm, run=lambda a: out) == (2, 1, "rocm-smi")
-        listing = "GPU[0] : Device Name: a\nGPU[0] : Device ID: b\nGPU[1] : Device Name: c\n"
-        def run(argv):
-            return listing if "--listdevices" in argv else ""
-        assert cfg.detect_gpus(drm, run=run) == (2, 0, "rocm-smi")  # unique indices, not lines
-        assert cfg.detect_gpus(Path(td) / "nope", run=lambda a: (_ for _ in ()).throw(OSError())) is None
+def test_hand_written_unlisted_untouched_and_not_doubled():
+    hand = "    unlisted: true\n"
+    text = FIXTURE.replace("  qwen3.8-flash-next-vllm:\n    name: \"flash\"\n",
+                           "  qwen3.8-flash-next-vllm:\n    name: \"flash\"\n" + hand)
+    assert hand in text
+    # unsupported + hand-unlisted: no second line, hand line kept
+    out2, res = _patched(2, text)
+    assert _unlisted_lines(out2, "qwen3.8-flash-next-vllm") == ["    unlisted: true"]
+    assert _marker_lines(out2, "qwen3.8-flash-next-vllm") == []
+    assert _status(res)["qwen3.8-flash-next-vllm"].status == "infeasible"
+    # supported + hand-unlisted: hand line must survive
+    out4, _ = _patched(4, text)
+    assert _unlisted_lines(out4, "qwen3.8-flash-next-vllm") == ["    unlisted: true"]
+    # hand line in one profile, marker in another: going back to 4 GPUs removes
+    # only the marker line; the hand-written one survives.
+    assert _marker_lines(out2, "qwen3.8-flash-next")
+    out_b, _ = cfg.patch(out2, _hw(4), "/opt/llmstack")
+    assert MARK not in out_b
+    assert _unlisted_lines(out_b, "qwen3.8-flash-next-vllm") == ["    unlisted: true"]
 
 
-def test_real_host_detection_if_amd_present():
-    # Smoke only: must not crash, and must return a sane result or None.
-    det = cfg.detect_gpus()
-    assert det is None or det[0] >= 0
+def _with_hand(line, name="qwen3.8-flash-next-vllm"):
+    head = f"  {name}:\n    name: \"flash\"\n"
+    assert head in FIXTURE
+    return FIXTURE.replace(head, head + line)
+
+
+def test_hand_written_unlisted_false_stays_listed_with_warning():
+    text = _with_hand("    unlisted: false\n")
+    out, res = _patched(2, text)
+    r = _status(res)["qwen3.8-flash-next-vllm"]
+    assert r.status == "infeasible" and r.marker == "hand-listed"
+    assert _unlisted_lines(out, "qwen3.8-flash-next-vllm") == ["    unlisted: false"]   # not touched, not doubled
+    assert any("explicitly listed" in w for w in r.warnings)
+    s = cfg.format_summary(_hw(2), res)
+    assert "hand-listed (unlisted: false)" in s and "hand-unlisted" not in s.split("qwen3.8-flash-next-vllm")[1].splitlines()[0]
+    assert "WARNING: qwen3.8-flash-next-vllm is unsupported here but explicitly listed" in s
+    # a truthy hand line (with a trailing comment) is still 'hand', quoted true included
+    for line in ("    unlisted: true  # mine\n", '    unlisted: "true"\n'):
+        _, res = _patched(2, _with_hand(line))
+        assert _status(res)["qwen3.8-flash-next-vllm"].marker == "hand"
+    # supported: nothing changes
+    out4, res4 = _patched(4, text)
+    assert _unlisted_lines(out4, "qwen3.8-flash-next-vllm") == ["    unlisted: false"]
+
+
+def test_hand_line_added_after_marker_wins_and_marker_is_dropped():
+    # configure (2 GPUs), then the user adds their own unlisted: true; rerun must not leave two keys
+    out2, _ = _patched(2)
+    assert len(_unlisted_lines(out2, "qwen3.8-flash-next-vllm")) == 1
+    head = "  qwen3.8-flash-next-vllm:\n    name: \"flash\"\n"
+    for hand, kind in (("    unlisted: true\n", "hand"), ("    unlisted: false\n", "hand-listed")):
+        edited = out2.replace(head, head + hand)
+        assert len(_unlisted_lines(edited, "qwen3.8-flash-next-vllm")) == 2
+        again, res = cfg.patch(edited, _hw(2), "/opt/llmstack")
+        assert _unlisted_lines(again, "qwen3.8-flash-next-vllm") == [hand.rstrip("\n")], kind
+        assert _marker_lines(again, "qwen3.8-flash-next-vllm") == []
+        assert _status(res)["qwen3.8-flash-next-vllm"].marker == kind
+        # the other profiles' markers are unaffected, and it is stable on a third run
+        assert _marker_lines(again, "qwen3.8-flash-next")
+        assert cfg.patch(again, _hw(2), "/opt/llmstack")[0] == again
+    # unit level: marker + hand in one block, no cmd needed
+    blk = ["  p:\n", "    unlisted: true\n", f"    unlisted: true  {MARK} - old\n", "    cmd: x\n"]
+    lines, action = cfg.set_auto_unlisted(blk, "needs gpus [4], detected 2")
+    assert action == "hand" and lines == ["  p:\n", "    unlisted: true\n", "    cmd: x\n"]
+
+
+def test_estimate_requires_plain_true():
+    for val, expect in (("true", True), ('"false"', False), ("false", False), ('"true"', False)):
+        text = FIXTURE.replace("        min_gpus: 3\n        estimate: true\n",
+                               f"        min_gpus: 3\n        estimate: {val}\n")
+        _, res = _patched(4, text)
+        assert _status(res)["qwen3.8-flash-next"].estimate is expect, val
+
+
+def test_crlf_file_keeps_crlf_and_roundtrips():
+    crlf = FIXTURE.replace("\n", "\r\n")
+    base = crlf.replace("__LLMSTACK_DIR__", "/opt/llmstack")
+    out2, _ = _patched(2, crlf)
+    assert "\n" not in out2.replace("\r\n", ""), "bare LF introduced"
+    assert out2.count("\r\n") == out2.count("\n")
+    assert _marker_lines(out2.replace("\r\n", "\n"), "qwen3.8-flash-next-vllm")
+    assert f"{MARK} - needs gpus [4], detected 2\r\n" in out2
+    # 4 -> 2 -> 4 restores the original bytes
+    out4, _ = cfg.patch(out2, _hw(4), "/opt/llmstack")
+    assert out4 == base
+    # idempotent at 2 and a refresh at 1 also keeps CRLF
+    assert cfg.patch(out2, _hw(2), "/opt/llmstack")[0] == out2
+    out1, _ = cfg.patch(out2, _hw(1), "/opt/llmstack")
+    assert "\n" not in out1.replace("\r\n", "") and "detected 1\r\n" in out1
+
+
+def test_unsupported_cmd_blocks_byte_identical():
+    base = FIXTURE.replace("__LLMSTACK_DIR__", "/opt/llmstack")
+    for n in (1, 2, 3):
+        out, res = _patched(n)
+        for r in res:
+            if r.status == "infeasible":
+                assert _without_markers(_block(out, r.name)) == _block(base, r.name), (n, r.name)
+
+
+def test_pure_patch_idempotent():
+    for n in (1, 2, 3, 4, 8):
+        once, _ = _patched(n)
+        twice, _ = cfg.patch(once, _hw(n), "/opt/llmstack")
+        assert once == twice, n
 
 
 # ── CLI behaviour (subprocess, temp copy of the real config) ────────────────
@@ -354,12 +495,14 @@ def test_dry_run_does_not_write():
     td, conf = _sandbox()
     try:
         before = _sha(conf)
-        for n in ("2", "3", "4"):
+        for n in ("1", "2", "3", "4"):
             r = _run("--config", str(conf), "--gpu-count", n, "--dry-run")
             assert r.returncode == 0, r.stderr
             assert "dry run" in r.stdout and f"GPU count: {n}" in r.stdout
             assert _sha(conf) == before
             assert not Path(str(conf) + ".bak").exists()
+        r = _run("--config", str(conf), "--gpu-count", "2", "--dry-run")
+        assert f"+    unlisted: true  {MARK} - needs gpus [4], detected 2" in r.stdout
     finally:
         shutil.rmtree(td)
 
@@ -374,25 +517,56 @@ def test_write_is_idempotent_and_reconfigurable():
         assert "__LLMSTACK_DIR__" not in first
         assert _tp(first, "qwen3.8-27b-code") == 2
         assert _split(first, "gemma4-12b-q4") == "1,1,1"
+        assert _marker_lines(first, "qwen3.8-flash-next-vllm")      # needs 4
+        assert _marker_lines(first, "gemma4-26b-a4b")               # needs 4
+        assert not _marker_lines(first, "qwen3.8-flash-next")       # min_gpus 3 ok
         # second run: no changes, same bytes
         r2 = _run("--config", str(conf), "--gpu-count", "3")
         assert r2.returncode == 0 and "No changes needed" in r2.stdout
         assert conf.read_text() == first
-        # reconfigure back to 4: TP and split restored for feasible profiles
+        # reconfigure back to 4: TP, split restored and every marker removed
         _run("--config", str(conf), "--gpu-count", "4")
         again = conf.read_text()
         assert _tp(again, "qwen3.8-27b-code") == 4
         assert _split(again, "gemma4-12b-q4") == "1,1,1,1"
+        assert MARK not in again
         assert _run("--config", str(conf), "--gpu-count", "4").stdout.startswith("No changes needed")
     finally:
         shutil.rmtree(td)
 
 
-def test_pure_patch_idempotent():
-    for n in (1, 2, 3, 4, 8):
-        once, _ = _patched(n)
-        twice, _ = cfg.patch(once, n, "/opt/llmstack")
-        assert once == twice, n
+def test_cli_crlf_models_yaml_roundtrips_byte_for_byte():
+    td, conf = _sandbox()
+    try:
+        lf = conf.read_bytes()
+        conf.write_bytes(lf.replace(b"\n", b"\r\n"))
+        assert _run("--config", str(conf), "--gpu-count", "4").returncode == 0
+        four = conf.read_bytes()                      # placeholder replaced, still CRLF
+        assert b"__LLMSTACK_DIR__" not in four and four.count(b"\r\n") == four.count(b"\n")
+        assert _run("--config", str(conf), "--gpu-count", "2").returncode == 0
+        two = conf.read_bytes()
+        assert b"llmstack:auto" in two and two.count(b"\r\n") == two.count(b"\n")
+        assert _run("--config", str(conf), "--gpu-count", "4").returncode == 0
+        assert conf.read_bytes() == four
+    finally:
+        shutil.rmtree(td)
+
+
+def test_one_gpu_then_four_roundtrips_to_fresh_four():
+    td, conf = _sandbox()
+    td2, conf2 = _sandbox()
+    try:
+        assert _run("--config", str(conf), "--gpu-count", "1").returncode == 0
+        assert MARK in conf.read_text()
+        assert _run("--config", str(conf), "--gpu-count", "4").returncode == 0
+        assert _run("--config", str(conf2), "--gpu-count", "4").returncode == 0
+        # (each sandbox bakes in its own absolute path; normalise before comparing)
+        a = conf.read_text().replace(str(td.resolve()), "<DIR>")
+        b = conf2.read_text().replace(str(td2.resolve()), "<DIR>")
+        assert "<DIR>" in a and a == b
+    finally:
+        shutil.rmtree(td)
+        shutil.rmtree(td2)
 
 
 def test_bad_gpu_count_rejected():

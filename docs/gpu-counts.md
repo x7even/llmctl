@@ -42,7 +42,7 @@ Min GPUs is the smallest count at which the profile can run with the shipped set
 | `qwen3.8-flash-next-vllm` | vLLM TP+EP | 4 | TP3 fails | Fails (OOM loading weights) | Not run; the 4-card layout is required |
 | `qwen3.8-flash-next` | llama-server (Vulkan) | 3 | Layer split (estimate, not run at 3) | Does not fit (~81 GB) | Does not fit (~81 GB) |
 | `qwen3.6-35b-code` / `-128k-nomtp` / `-fast` | vLLM | 2 (estimate) | TP2 expected (estimate) | Expected to fit (estimate) | Does not fit (35 GB checkpoint) |
-| `gemma4-26b-a4b` (BF16) | vLLM | 4 (only benchmarked at TP4; `scripts/configure` skips it below 4) | Skipped | Skipped | Skipped (49 GB checkpoint) |
+| `gemma4-26b-a4b` (BF16) | vLLM | 4 (estimate: only benchmarked at TP4, a conservative cap rather than a measured failure; `scripts/configure` skips it below 4) | Skipped | Skipped | Skipped (49 GB checkpoint) |
 | `gemma4-26b-fp8` | vLLM | 2 (estimate) | TP2 (estimate) | TP2 (estimate) | Skipped (~26 GB weights + KV) |
 | `gemma4-26b-q8` | llama-server | 1 (estimate) | Untested | Untested | Untested; 27 GB GGUF + mmproj + KV may not fit one 32 GB card |
 | `gemma4-12b-q4` | llama-server | 1 (estimate) | Untested | Untested | Untested; 7 GB GGUF should fit |
@@ -85,6 +85,9 @@ pinned host RAM, which also needs the container to run with `--ulimit memlock=-1
 
 `qwen3.8-flash-next` totals about 81 GB across the cards, so it needs at least three 32 GB
 cards (the GGUF is 90 GB on disk). `--tensor-split` layer-splits on any count of 3 or more.
+Caveat: the shards are about 87 GiB plus a 2.6 GiB MTP draft, and three cards offer 95.6 GiB
+before KV cache, so the `min_gpus: 3` figure is an unmeasured estimate. If it runs out of
+memory on three cards, raise `min_gpus` to 4 in the profile.
 Only one GPU is active at a time, so throughput does not scale with concurrency.
 
 ---
@@ -102,10 +105,17 @@ Its behaviour for fewer than four cards:
   rounds down, because one card then sits idle for vLLM profiles.
 - **llama-server:** `--tensor-split` is written for the actual count (`1` for a single card),
   since GGUF layer splits work with any number of cards.
-- **Minimum-GPU table:** profiles that cannot run at the detected count (for example
+- **Requirements are declared in the profile:** each profile in `config/models.yaml` carries a
+  `metadata.requires` block (`gpus: [2, 4]` for vLLM, `min_gpus: 3` for llama-server, optional
+  `host_ram_gib`, `estimate`, `note`), and `scripts/configure` reads them from there. The table
+  above is the human-readable view of those declarations; the schema is in
+  `config/CLAUDE.md` ("Profile requirements"). Add the block to every new profile.
+- **Minimum-GPU handling:** profiles that cannot run at the detected count (for example
   `qwen3.8-flash-next-vllm` and `gemma4-26b-a4b` below four cards, `qwen3.8-flash-next` below
-  three) are reported as `SKIP` with the reason and left unchanged (not removed); they will
-  fail if swapped to. Leave them alone or delete them from your local `models.yaml`.
+  three) are reported as `SKIP` with the reason and their `cmd` is left unchanged. They are
+  hidden from `/v1/models` by an auto-managed `unlisted: true  # llmstack:auto` line that
+  configure removes again once the profile becomes supported; a hand-written `unlisted:` line
+  (`true` or `false`) is never touched and always wins, so a profile never ends up with two. They still fail if swapped to by name.
 - **`--dry-run`:** prints the resulting config and the warnings without writing anything. Use
   it first to see what a count would produce.
 
