@@ -231,7 +231,7 @@ See `tui/CLAUDE.md` for architecture and coding conventions.
 | `qwen3.8-27b-think` | vLLM | ~31 GB + KV | 27B (dense) | Thinking, no MTP — parallel agent fleets |
 | `qwen3.8-27b-fast` | vLLM + MTP | ~31 GB + KV | 27B (dense) | Thinking OFF by default |
 | `qwen3.8-flash-next` | llama-server (Vulkan) | ~81 GB | 6B (MoE, 125B) | UD-IQ4_XS GGUF, custom llama.cpp fork; single-user |
-| `qwen3.8-flash-next-vllm` | vLLM TP4+EP (nightly image) | ~19 GB/GPU + pinned host RAM | 6B (MoE, 125B) | W4A16 INT4 + FP8 PLE; 55 tok/s serial, 149 @ conc=8, 232 @ conc=16; needs `--ulimit memlock=-1:-1`; exclusive VRAM |
+| `qwen3.8-flash-next-vllm` | vLLM TP4+EP (nightly image) | ~19 GB/GPU + ~48 GB pinned PLE in host RAM (~96 GB host RAM recommended) | 6B (MoE, 125B) | W4A16 INT4 + FP8 PLE; 262K ctx, **medium effort by default** (xhigh runs away); 55.7 tok/s serial, ~150-185 @ conc=8 (182 best run), 216 @ conc=16, flat ~55 out to 258K; needs `--ulimit memlock=-1:-1` and all 4 GPUs; exclusive VRAM |
 | `qwen3.6-35b-code` | vLLM + MTP | ~35 GB | 3B (MoE) | Previous gen, MTP + thinking |
 | `qwen3.6-35b-128k-nomtp` | vLLM | ~35 GB | 3B (MoE) | Previous gen, thinking, no MTP |
 | `qwen3.6-35b-fast` | vLLM | ~35 GB | 3B (MoE) | Previous gen, thinking OFF |
@@ -258,6 +258,7 @@ on vLLM 0.26.0 (2026-10); older rows on vLLM 0.22.1.
 | Profile | serial | conc=8 | conc=16 |
 |---------|--------|--------|---------|
 | qwen3.8-27b-code (MTP, 131K ctx) | 66 | 361 | 549 |
+| qwen3.8-flash-next-vllm (no MTP, 262K ctx) | 55.7 | ~150-185 (182 best) | 216 |
 | qwen3.6-35b-code (MTP, MI300X defaults) | 43 | 261 | 481 |
 | qwen3.6-35b-fp8 no-MTP | 69 | 222 | — |
 | gemma4-26b-a4b (vLLM BF16) | 53.4 | 287.1 | **528.2** |
@@ -265,6 +266,17 @@ on vLLM 0.26.0 (2026-10); older rows on vLLM 0.22.1.
 | gemma4-12b-q4 (GGUF, llama-server) | 36.1 | 108.9 | 94.8 |
 
 Baselines for removed profiles remain in `docs/models.md` and `bench/baselines/`.
+
+### Flash-Next and GPU-count facts (0.4.1)
+
+- `qwen3.8-flash-next-vllm` defaults to `reasoning_effort=medium` (`--default-chat-template-kwargs`).
+  The template's xhigh default runs away on this model (4/32 code-test passes vs 29-32/32 at medium across two runs of 8 samples x 4 tasks).
+- 262K context costs nothing on Flash-Next: KV pool ~535K tokens at 131K, ~551K at 262K; decode
+  stays ~55 tok/s from 1K to 258K. The dense 27B does not: 83 tok/s at 1K, 3.3 at 258K (v0.26).
+- vLLM TP must be 1, 2 or 4 (head counts). TP3 fails for both Qwen3.8 models (27B: 16 linear-attention heads
+  not divisible by 3; Flash-Next: vocab 248320 not divisible by 3). 27B TP2 works
+  (serial 46.6, conc=8 219, conc=16 418 tok/s); 27B TP1 and Flash-Next TP2 OOM while loading weights.
+  GGUF profiles split on any count. Details: `docs/gpu-counts.md`.
 
 **Note:** R9700-tuned MoE configs (-33% at conc=8) were reverted; all 35b profiles use MI300X
 defaults, which outperform at concurrent load.
@@ -286,6 +298,7 @@ bench/               Benchmark scripts + saved baselines
 tests/smoke.sh       Integration smoke test (both backends)
 scripts/configure    GPU-count auto-detector; patches models.yaml
 docs/models.md       Full benchmark data + per-profile architecture notes
+docs/gpu-counts.md   Running with fewer than 4 GPUs (valid TP sizes, per-profile limits)
 docs/llmctl.md       Full CLI reference
 docs/workarounds.md  Active bugs + workarounds (vLLM SSE null name)
 .vllm-cache/         Persistent Inductor compilation cache (gitignored)

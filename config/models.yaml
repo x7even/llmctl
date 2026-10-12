@@ -409,14 +409,16 @@ models:
   # ─── vLLM: Qwen3.8-Flash-Next W4A16 (AutoRound INT4) + FP8 PLE table ─────
   # Best for: many concurrent agents on Flash-Next. Same model as the GGUF
   #          profile above but TP4 + expert-parallel instead of layer-split, so
-  #          decode scales with concurrency (conc=8: 149 tok/s aggregate vs ~34
+  #          decode scales with concurrency (conc=8: ~150-185 tok/s aggregate vs ~34
   #          for llama-server at 4 streams). Single-stream is on par (~55 tok/s vs ~50).
   # Image:   NIGHTLY, pinned by commit. Arch `Qwen4Exp` landed in vLLM after
   #          v0.29 and v0.31.0 rejects the compressed-tensors PLE table; move to
   #          a tagged release once one ships with the same support.
-  # Weights: 121 GB checkpoint, ~19 GiB/GPU on device; the 51B-param PLE (n-gram
-  #          embedding) table stays in pinned host RAM (~13 GB per rank, ~51 GB
-  #          total), hence --ulimit memlock=-1:-1 (rootless podman default is ~23 GiB).
+  # Weights: 121 GB (116 GiB) checkpoint. Per card (31.86 GiB): weights 18.79, graphs 0.72,
+  #          KV 6.91, ~3 spare. The FP8 PLE (n-gram embedding) table,
+  #          47.7 GiB, is CPU-offloaded into pinned host RAM (~12 GiB per rank), hence
+  #          --ulimit memlock=-1:-1 (rootless podman default is ~23 GiB). Needs ~96 GB
+  #          host RAM and all four cards: TP2 OOMs loading weights, TP3 fails: vocab 248320 not divisible by 3 (docs/gpu-counts.md).
   # Notes:   MTP (runtime/mtp-int4-g32 draft, 2 tokens) accepts ~2.0 tokens/step
   #          but gave no throughput gain and cost 40% of KV capacity: left off.
   #          VLLM_ROCM_USE_AITER=0: AITER has no Qwen4Exp path, Triton kernels used.
@@ -425,6 +427,12 @@ models:
   #          serial/conc8/conc16: sizes<=8 ~52/148/209, <=16 ~37/122/231, <=32 ~27/128/227).
   #          Agents are mostly low-concurrency, so single-stream wins; batches >8 run uncaptured.
   #          Exclusive VRAM: unload other models first.
+  #          reasoning_effort defaults to medium (server-side, requests can override): the
+  #          template's own default is xhigh, which runs away on this model (4/32 code-test
+  #          passes at a 32K cap, 3/8 even at 256K) while medium scored 29-32/32 across two runs
+  #          and solves them in 2-4K tokens.
+  #          --max-model-len 262144 (native) costs nothing: same KV pool (~551K tokens vs ~535K
+  #          at 131K) and speed, and Flash-Next decode stays ~55 tok/s from 1K to 258K of context.
   qwen3.8-flash-next-vllm:
     name: "Qwen3.8-Flash-Next W4A16 (vLLM, TP4+EP)"
     ttl: 0
@@ -460,7 +468,7 @@ models:
         --enable-expert-parallel
         --language-model-only
         --load-format safetensors
-        --max-model-len 131072
+        --max-model-len 262144
         --max-num-seqs 32
         --max-num-batched-tokens 8192
         --gpu-memory-utilization 0.90
@@ -470,6 +478,7 @@ models:
         --reasoning-parser qwen3
         --enable-auto-tool-choice
         --tool-call-parser qwen3_coder
+        --default-chat-template-kwargs '{"reasoning_effort": "medium"}'
         --cudagraph-capture-sizes 1 2 4 8
     cmdStop: podman stop llmstack-vllm-${MODEL_ID}
 

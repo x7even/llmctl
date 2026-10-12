@@ -83,7 +83,7 @@ llmpanel
 | `qwen3.8-27b-think` | vLLM TP=4 | ~31 GB + KV | 131K | Same model without MTP — better for parallel agent fleets |
 | `qwen3.8-27b-fast` | vLLM TP=4 + MTP | ~31 GB + KV | 131K | Thinking off by default — quick answers, bulk work |
 | `qwen3.8-flash-next` | llama-server Vulkan | ~81 GB | 262K (2 slots) | Qwen3.8-Flash-Next 125B (6B active), UD-IQ4_XS GGUF; single-user. For concurrent agents use `qwen3.8-flash-next-vllm` |
-| `qwen3.8-flash-next-vllm` | vLLM TP=4 + EP (nightly image) | ~19 GB/GPU + ~13 GB pinned host RAM/rank | 131K | Same model, W4A16 INT4; decode scales with concurrency (**149 tok/s conc=8** vs ~34 for GGUF at 4 streams). Needs `memlock` unlimited; exclusive VRAM |
+| `qwen3.8-flash-next-vllm` | vLLM TP=4 + EP (nightly image) | ~19 GB/GPU + ~12 GB pinned host RAM/rank (~96 GB host RAM) | 262K | Same model, W4A16 INT4; decode scales with concurrency (**~150-185 tok/s conc=8**, 182 in the best run, vs ~34 for GGUF at 4 streams), flat ~55 tok/s out to 258K context; defaults to medium reasoning effort. Needs `memlock` unlimited; exclusive VRAM; needs all 4 GPUs |
 | `qwen3.6-35b-code` | vLLM TP=4 + MTP | ~35 GB | 131K | Previous generation (MoE, 3B active) — MTP + thinking |
 | `qwen3.6-35b-128k-nomtp` | vLLM TP=4 | ~35 GB | 131K | Previous generation — thinking, no MTP, high concurrency |
 | `qwen3.6-35b-fast` | vLLM TP=4 | ~35 GB | 262K | Previous generation — thinking disabled by default |
@@ -111,7 +111,7 @@ Qwen3.5-122B) were removed from the shipped config; their benchmark data is kept
 | `gemma4`, `gemma4-26b`, `gemma4-moe`, `gemma4-vision` | `gemma4-26b-q8` |
 | `gemma4-vllm`, `gemma4-concurrent` | `gemma4-26b-a4b` |
 
-See `docs/models.md` for benchmark data, architecture details, and tuning notes.
+See `docs/models.md` for benchmark data, architecture details, and tuning notes. Fewer than four GPUs: see `docs/gpu-counts.md`.
 
 ---
 
@@ -123,6 +123,7 @@ Metric: decode tok/s.
 | Profile | serial | conc=4 | conc=8 | conc=16 |
 |---------|--------|--------|--------|---------|
 | `qwen3.8-27b-code` (medium-256, MTP)² | 66 | 194 | **361** | 549 |
+| `qwen3.8-flash-next-vllm` (nightly image, TP4+EP)² | 56 | — | **~150-185** | 216 |
 | `gemma4-26b-a4b` (medium-256, BF16, thinking on¹)² | 53 | 167 | 287 | **528** |
 | `qwen3.6-35b-code` (xlarge-2048, MTP)² | 43 | 155 | **335** | 651 |
 | `qwen3.6-35b-code` (medium-256, MTP)² | 43 | 145 | **261** | 481 |
@@ -301,7 +302,7 @@ The containers and config in this repo are built for the **AMD Radeon AI PRO R97
 
 1. **Replaces `__LLMSTACK_DIR__`** — `config/models.yaml` ships with this literal placeholder in all volume mount paths. llama-swap executes container commands without a shell, so environment variables like `$HOME` aren't expanded at runtime. `configure` substitutes the placeholder with the absolute path to your repo clone.
 
-2. **Patches GPU count** — auto-detected via `rocm-smi`, or set with `--gpu-count`.
+2. **Patches GPU count** — auto-detected from sysfs VRAM size (with `rocm-smi` as fallback), or set with `--gpu-count`.
 
 ```bash
 scripts/configure                  # auto-detect GPU count, apply both fixes
@@ -314,11 +315,11 @@ What it adjusts in `config/models.yaml`:
 | Setting | What changes |
 |---------|-------------|
 | `__LLMSTACK_DIR__` | Replaced with the absolute path to this repo (e.g. `/home/alice/ai/llmstack`) |
-| `--tensor-parallel-size` | Set to your GPU count |
-| `--tensor-split` (llama-server) | Set to `1,1,...` matching GPU count (removed for 1 GPU) |
-| `--enable-expert-parallel` | Removed when GPU count is 1 |
+| `--tensor-parallel-size` | Set to the largest valid TP size (1, 2 or 4) not above your GPU count; TP must divide the model's head counts, so 3 GPUs gives TP2 |
+| `--tensor-split` (llama-server) | Set to `1,1,...` matching GPU count (`1` for a single GPU) |
+| `--enable-expert-parallel` | Never changed by `configure` |
 
-**VRAM limits** — `qwen3.8-flash-next` (~81 GB) won't fit on fewer than 3 GPUs. The script warns if your GPU count is below the minimum; those profiles should be removed from `models.yaml` in that case.
+**VRAM limits** — `qwen3.8-flash-next` (~81 GB) won't fit on fewer than 3 GPUs, and `qwen3.8-flash-next-vllm` needs all 4. The script reports profiles below their minimum GPU count as `SKIP` and leaves them unchanged (they fail if swapped to); delete them from your local `models.yaml` if you like. Per-profile behaviour on 3, 2 and 1 GPUs, with measured numbers: `docs/gpu-counts.md`.
 
 ---
 
@@ -335,6 +336,7 @@ containers/llama-server/ llama-server Vulkan Containerfile
 tui/                     Go source for llmpanel
 docs/llmctl.md           Full llmctl command reference
 docs/models.md           Model benchmark data and tuning notes
+docs/gpu-counts.md       Running with fewer than 4 GPUs (valid TP sizes, per-profile limits)
 docs/workarounds.md      Known issues and active workarounds
 tests/smoke.sh           Smoke test (both backends)
 bench/                   Benchmark scripts and saved baselines

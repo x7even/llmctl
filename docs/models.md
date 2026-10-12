@@ -170,9 +170,18 @@ time and 4 streams drop to ~8.5 tok/s each; TP4 + expert-parallel keeps all four
   Move to a tagged release when one carries the same support.
 - TP4 + `--enable-expert-parallel`, `VLLM_ROCM_USE_AITER=0` (Triton MoE path; no AITER
   path for `Qwen4Exp`). No EP crash with INT4 MoE, unlike the AWQ case in `config/CLAUDE.md`.
-- The PLE table lives in pinned host RAM (~13 GB per rank). Rootless podman's default
-  memlock limit is ~23 GiB, so the profile passes `--ulimit memlock=-1:-1`.
-- On GPU: 18.8 GiB per rank for weights, ~124 GB peak across all four cards. Exclusive VRAM.
+- The FP8 PLE table (47.7 GiB) is CPU-offloaded into pinned host RAM (~12 GiB per rank, so
+  ~96 GB of host RAM is needed in total). Rootless podman's default memlock limit is ~23 GiB,
+  so the profile passes `--ulimit memlock=-1:-1`.
+- Checkpoint breakdown (116 GiB, 121 GB on disk): experts INT4 58.4 GiB, PLE FP8 47.7 GiB,
+  attention BF16 5.6, embed 1.2, lm_head 1.2, vision 0.8.
+- Per card (31.86 GiB): weights 18.79 GiB, CUDA graphs 0.72, KV 6.91, ~3 spare, ~124 GB peak
+  across all four cards. Exclusive VRAM.
+- Needs all four cards: TP3 fails (`248320 is not divisible by 3`, the vocab size) and TP2
+  OOMs while loading weights (31.20 GiB allocated, 50 MiB free); see `docs/gpu-counts.md`.
+- Server-side default `reasoning_effort=medium` (`--default-chat-template-kwargs`); requests
+  can override. The template's own default (xhigh) runs away on this model (see 0.4.1 below).
+- `--max-model-len 262144` (native). KV pool is ~535K tokens at 131K and ~551K at 262K.
 - Cold start through the router: ~4.5 min first time (compile), ~2 min with warm cache.
 
 **Results** (`--no-thinking`, decode tok/s, 4× R9700):
@@ -193,10 +202,37 @@ the GGUF profile does ~50 tok/s single-stream (with MTP) but only ~34 aggregate 
   slow low-batch decode on this model (medium-256 serial / conc=8 / conc=16 decode tok/s:
   sizes ≤8 ≈ 52/148/209; ≤16 ≈ 37/122/231; ≤32 ≈ 27/128/227). Single-stream matters most
   for agents; batches above 8 run uncaptured and lose ~8% at conc=16.
-- Context length (131072) and `--max-num-seqs 32` have no measurable cost.
+- Context length (262144 native, was 131072) and `--max-num-seqs 32` have no measurable cost:
+  the KV pool is ~535K tokens at 131K and ~551K at 262K, with the same speed.
 - **MTP is not enabled.** The checkpoint ships an INT4 draft head (`runtime/mtp-int4-g32`);
   at 2 speculative tokens it accepts ~2.0 tokens/step (52% draft acceptance) but throughput
-  was flat (serial 54.7 vs 53.2, conc=8 166 vs 162) and KV capacity fell from 381K to 225K tokens.
+  was flat (serial 54.7 vs 53.2, conc=8 166 vs 162) and KV capacity fell by ~40% (the MTP-on pool was not re-measured against the ~535K baseline).
+
+**0.4.1 measurements** (nightly-8cbd5d0, TP4+EP, 262144 context, 4× R9700):
+
+| Metric | Result |
+|--------|--------|
+| Decode, serial / conc=8 / conc=16 (tok/s aggregate) | 55.7 / ~150-185 (182 best run) / 216 |
+| Decode vs context depth, 1K to 258K | flat, 57 to 55 tok/s |
+| Code tests, `reasoning_effort=medium` | 29-32/32 (two runs of 8 samples x 4 tasks: 29/32 with an explicit flag, 32/32 with the server-side default; sampling noise) |
+| Code tests, template default (xhigh) | 4/32 at a 32K cap, 3/8 at 256K (runaway thinking) |
+
+conc=8 is noisy on this config (149, 157, 165 and 185 were all seen across runs, including
+157 in the same-config 262K A/B), so 182 and the earlier 149 are not distinguishable. The
+0.4.1 serial/conc=16 numbers come from local runs, not a saved
+baseline; `bench/baselines/qwen3.8-flash-next-vllm-*.json` holds the earlier 55 / 149 / 232. Unlike the dense 27B, Flash-Next does not slow down with context depth, which makes
+the 262K window usable in practice. Medium effort is the server default because xhigh
+thinks without converging on this model; medium solves the code tests in 2-4K tokens.
+
+**Qwen3.8-27B decode vs context depth** (vLLM 0.26.0, TP4, MTP), for comparison with Flash-Next:
+
+| Context | 1K | 32K | 66K | 132K | 207K | 258K |
+|---------|----|-----|-----|------|------|------|
+| decode tok/s | 83 | 19.5 | 11.2 | 6.0 | 3.8 | 3.3 |
+
+The dense 27B loses most of its decode speed by 32K tokens, so for very long contexts
+Flash-Next is the better fit. (In the 262K code-test runs the 27B converged within about 40K
+tokens at xhigh, while Flash-Next at xhigh ran away.)
 
 **Not used from the checkpoint:** its `runtime/` directory is a CUDA/RTX 3090 overlay
 (UVA expert offload, `humming` MoE backend); it does not apply to ROCm.
@@ -784,7 +820,8 @@ could improve throughput by ~10–20%.
 
 Neither Qwen3.6-35B-FP8 (~31 GB) nor Qwen3-Coder-30B-FP8 (~31 GB) fits in a single
 32 GB R9700. Even if they did, single-GPU throughput would be memory-bandwidth limited.
-With TP=4:
+With TP=4 (TP must be 1, 2 or 4; other sizes and smaller GPU counts are covered in
+`docs/gpu-counts.md`):
 
 - **4× aggregate HBM bandwidth** across 4 GPUs
 - **All-reduce cost** ~1.5 ms per token over PCIe 5.0 — small vs generation time
