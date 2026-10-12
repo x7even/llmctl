@@ -1,0 +1,43 @@
+{
+ "id": "chatcmpl-822febc8db69de98",
+ "object": "chat.completion",
+ "created": 1791710154,
+ "model": "qwen3.8-flash-next-vllm",
+ "choices": [
+  {
+   "index": 0,
+   "message": {
+    "role": "assistant",
+    "content": "```python\nimport re\nfrom collections import defaultdict\nfrom datetime import datetime\nfrom typing import Iterable, Dict, List, Tuple, Any\n\n\ndef analyze_log(lines: Iterable[str]) -> dict:\n    \"\"\"\n    Summarise a web server access log in Common Log Format.\n    \n    Each line should match: ip ident user [timestamp] \"METHOD path PROTOCOL\" status bytes\n    \n    Returns a dict with summary statistics.\n    \"\"\"\n    # Regex pattern for Common Log Format\n    # ip ident user [timestamp] \"METHOD path PROTOCOL\" status bytes\n    pattern = re.compile(\n        r'^(\\S+)\\s+(\\S+)\\s+(\\S+)\\s+\\[([^\\]]+)\\]\\s+\"(\\S+)\\s+(\\S+)\\s+(\\S+)\"\\s+(\\d{3})\\s+(\\S+)$'\n    )\n    \n    total_requests = 0\n    malformed = 0\n    unique_ips = set()\n    status_counts = defaultdict(int)\n    bytes_total = 0\n    error_count = 0\n    path_counts = defaultdict(int)\n    requests_per_hour = defaultdict(int)\n    \n    month_map = {\n        'Jan': '01', 'Feb': '02', 'Mar': '03', 'Apr': '04',\n        'May': '05', 'Jun': '06', 'Jul': '07', 'Aug': '08',\n        'Sep': '09', 'Oct': '10', 'Nov': '11', 'Dec': '12'\n    }\n    \n    for line in lines:\n        line = line.strip()\n        if not line:\n            malformed += 1\n            continue\n        \n        match = pattern.match(line)\n        if not match:\n            malformed += 1\n            continue\n        \n        ip = match.group(1)\n        # ident = match.group(2)  # not used\n        # user = match.group(3)  # not used\n        timestamp_str = match.group(4)\n        # method = match.group(5)  # not used\n        path_with_query = match.group(6)\n        # protocol = match.group(7)  # not used\n        status_str = match.group(8)\n        bytes_str = match.group(9)\n        \n        # Validate status code (should be 3 digits, already guaranteed by regex)\n        try:\n            status = int(status_str)\n        except ValueError:\n            malformed += 1\n            continue\n        \n        # Parse bytes field\n        if bytes_str == '-':\n            bytes_sent = 0\n        else:\n            try:\n                bytes_sent = int(bytes_str)\n            except ValueError:\n                malformed += 1\n                continue\n        \n        # This is a valid line\n        total_requests += 1\n        unique_ips.add(ip)\n        status_counts[status] += 1\n        bytes_total += bytes_sent\n        \n        # Check for error status (400-599)\n        if 400 <= status <= 599:\n            error_count += 1\n        \n        # Extract path (remove query string)\n        path = path_with_query.split('?')[0]\n        path_counts[path] += 1\n        \n        # Parse timestamp to extract hour\n        # Timestamp format: 10/Oct/2026:13:55:36 +0000\n        # We need to extract day, month, year, hour\n        # Format: DD/Mon/YYYY:HH:MM:SS +ZZZZ\n        ts_match = re.match(r'^(\\d{2})/([A-Za-z]{3})/(\\d{4}):(\\d{2}):(\\d{2}):(\\d{2})\\s+[+-]\\d{4}$', timestamp_str)\n        if not ts_match:\n            # If timestamp doesn't match expected format, treat as malformed? \n            # But the line already matched the overall pattern, so this shouldn't happen normally.\n            # For safety, we'll still count it as valid but skip hour counting.\n            pass\n        else:\n            day = ts_match.group(1)\n            month_abbr = ts_match.group(2)\n            year = ts_match.group(3)\n            hour = ts_match.group(4)\n            \n            if month_abbr in month_map:\n                month = month_map[month_abbr]\n                hour_key = f\"{year}-{month}-{day} {hour}\"\n                requests_per_hour[hour_key] += 1\n    \n    # Calculate error_rate\n    if total_requests > 0:\n        error_rate = round(error_count / total_requests, 4)\n    else:\n        error_rate = 0.0\n    \n    # Get top 3 paths sorted by count descending, then path ascending\n    sorted_paths = sorted(path_counts.items(), key=lambda x: (-x[1], x[0]))\n    top_paths = sorted_paths[:3]\n    \n    return {\n        \"total_requests\": total_requests,\n        \"malformed\": malformed,\n        \"unique_ips\": len(unique_ips),\n        \"status_counts\": dict(status_counts),\n        \"bytes_total\": bytes_total,\n        \"error_rate\": error_rate,\n        \"top_paths\": top_paths,\n        \"requests_per_hour\": dict(requests_per_hour),\n    }\n```",
+    "refusal": null,
+    "annotations": null,
+    "audio": null,
+    "function_call": null,
+    "reasoning": null
+   },
+   "logprobs": null,
+   "finish_reason": "stop",
+   "stop_reason": null,
+   "token_ids": null,
+   "routed_experts": null
+  }
+ ],
+ "service_tier": null,
+ "system_fingerprint": "vllm-0.31.1rc1.dev173+g8cbd5d030-tp4-ep-46ec01eb",
+ "usage": {
+  "prompt_tokens": 472,
+  "total_tokens": 1639,
+  "completion_tokens": 1167,
+  "prompt_tokens_details": null,
+  "completion_tokens_details": {
+   "reasoning_tokens": 0
+  }
+ },
+ "prompt_logprobs": null,
+ "prompt_token_ids": null,
+ "prompt_text": null,
+ "kv_transfer_params": null,
+ "ec_transfer_params": null,
+ "metrics": null,
+ "_wall_s": 182.4774613930058
+}

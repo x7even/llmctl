@@ -1,0 +1,43 @@
+{
+ "id": "chatcmpl-9c4d872101f6e175",
+ "object": "chat.completion",
+ "created": 1791714174,
+ "model": "qwen3.8-flash-next-vllm",
+ "choices": [
+  {
+   "index": 0,
+   "message": {
+    "role": "assistant",
+    "content": "```python\nimport sqlite3\nimport re\n\n\nclass TodoRepo:\n    def __init__(self, path: str = \":memory:\") -> None:\n        self._conn = sqlite3.connect(path)\n        self._conn.execute(\"\"\"\n            CREATE TABLE IF NOT EXISTS todos (\n                id INTEGER PRIMARY KEY AUTOINCREMENT,\n                title TEXT NOT NULL,\n                priority INTEGER NOT NULL,\n                done INTEGER NOT NULL DEFAULT 0\n            )\n        \"\"\")\n        self._conn.commit()\n\n    def add(self, title: str, priority: int = 3) -> int:\n        if not isinstance(priority, int) or isinstance(priority, bool):\n            raise ValueError(\"priority must be an int from 1 to 5\")\n        if priority < 1 or priority > 5:\n            raise ValueError(\"priority must be an int from 1 to 5\")\n        stripped = title.strip()\n        if not stripped:\n            raise ValueError(\"title must not be empty or whitespace-only\")\n        cursor = self._conn.execute(\n            \"INSERT INTO todos (title, priority, done) VALUES (?, ?, ?)\",\n            (stripped, priority, 0)\n        )\n        self._conn.commit()\n        return cursor.lastrowid\n\n    def get(self, todo_id: int) -> dict | None:\n        cursor = self._conn.execute(\n            \"SELECT id, title, priority, done FROM todos WHERE id = ?\",\n            (todo_id,)\n        )\n        row = cursor.fetchone()\n        if row is None:\n            return None\n        return {\n            \"id\": row[0],\n            \"title\": row[1],\n            \"priority\": row[2],\n            \"done\": bool(row[3])\n        }\n\n    def list(self, done: bool | None = None) -> list[dict]:\n        if done is None:\n            cursor = self._conn.execute(\n                \"SELECT id, title, priority, done FROM todos ORDER BY priority ASC, id ASC\"\n            )\n        else:\n            done_val = 1 if done else 0\n            cursor = self._conn.execute(\n                \"SELECT id, title, priority, done FROM todos WHERE done = ? ORDER BY priority ASC, id ASC\",\n                (done_val,)\n            )\n        results = []\n        for row in cursor.fetchall():\n            results.append({\n                \"id\": row[0],\n                \"title\": row[1],\n                \"priority\": row[2],\n                \"done\": bool(row[3])\n            })\n        return results\n\n    def mark_done(self, todo_id: int) -> bool:\n        cursor = self._conn.execute(\n            \"UPDATE todos SET done = 1 WHERE id = ?\",\n            (todo_id,)\n        )\n        self._conn.commit()\n        return cursor.rowcount > 0\n\n    def delete(self, todo_id: int) -> bool:\n        cursor = self._conn.execute(\n            \"DELETE FROM todos WHERE id = ?\",\n            (todo_id,)\n        )\n        self._conn.commit()\n        return cursor.rowcount > 0\n\n    def count(self, done: bool | None = None) -> int:\n        if done is None:\n            cursor = self._conn.execute(\"SELECT COUNT(*) FROM todos\")\n        else:\n            done_val = 1 if done else 0\n            cursor = self._conn.execute(\n                \"SELECT COUNT(*) FROM todos WHERE done = ?\",\n                (done_val,)\n            )\n        return cursor.fetchone()[0]\n\n    def close(self) -> None:\n        self._conn.close()\n```",
+    "refusal": null,
+    "annotations": null,
+    "audio": null,
+    "function_call": null,
+    "reasoning": null
+   },
+   "logprobs": null,
+   "finish_reason": "stop",
+   "stop_reason": null,
+   "token_ids": null,
+   "routed_experts": null
+  }
+ ],
+ "service_tier": null,
+ "system_fingerprint": "vllm-0.31.1rc1.dev173+g8cbd5d030-tp4-ep-46ec01eb",
+ "usage": {
+  "prompt_tokens": 579,
+  "total_tokens": 1374,
+  "completion_tokens": 795,
+  "prompt_tokens_details": null,
+  "completion_tokens_details": {
+   "reasoning_tokens": 0
+  }
+ },
+ "prompt_logprobs": null,
+ "prompt_token_ids": null,
+ "prompt_text": null,
+ "kv_transfer_params": null,
+ "ec_transfer_params": null,
+ "metrics": null,
+ "_wall_s": 48.555718992996844
+}

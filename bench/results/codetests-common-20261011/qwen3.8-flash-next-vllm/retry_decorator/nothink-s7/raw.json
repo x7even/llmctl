@@ -1,0 +1,43 @@
+{
+ "id": "chatcmpl-b78f2bbc7f5a59a4",
+ "object": "chat.completion",
+ "created": 1791712128,
+ "model": "qwen3.8-flash-next-vllm",
+ "choices": [
+  {
+   "index": 0,
+   "message": {
+    "role": "assistant",
+    "content": "```python\nimport functools\nimport time\nfrom typing import Callable, TypeVar, Any\n\nF = TypeVar('F', bound=Callable[..., Any])\n\n\ndef retry(\n    max_attempts: int = 3,\n    delay: float = 1.0,\n    backoff: float = 2.0,\n    exceptions: tuple[type[BaseException], ...] = (Exception,),\n    sleep: Callable[[float], None] = time.sleep\n) -> Callable[[F], F]:\n    \"\"\"\n    A decorator factory that retries a function call on specified exceptions.\n    \n    Args:\n        max_attempts: Maximum number of attempts (including the first call).\n        delay: Initial delay in seconds before the first retry.\n        backoff: Multiplier for the delay after each retry.\n        exceptions: Tuple of exception types to catch and retry on.\n        sleep: Function to call to sleep for a given number of seconds.\n    \n    Returns:\n        A decorator that wraps a function with retry logic.\n    \"\"\"\n    if max_attempts < 1:\n        raise ValueError(\"max_attempts must be at least 1\")\n    if delay < 0:\n        raise ValueError(\"delay must be non-negative\")\n    if backoff < 1:\n        raise ValueError(\"backoff must be at least 1\")\n    \n    def decorator(func: F) -> F:\n        @functools.wraps(func)\n        def wrapper(*args: Any, **kwargs: Any) -> Any:\n            last_exception = None\n            for attempt in range(max_attempts):\n                try:\n                    result = func(*args, **kwargs)\n                    wrapper.calls += 1\n                    return result\n                except exceptions as e:\n                    last_exception = e\n                    wrapper.calls += 1\n                    # If this was the last attempt, don't sleep\n                    if attempt < max_attempts - 1:\n                        wait_time = delay * (backoff ** attempt)\n                        sleep(wait_time)\n            # All attempts failed, re-raise the last exception\n            raise last_exception\n        \n        wrapper.calls = 0\n        return wrapper\n    \n    return decorator\n```",
+    "refusal": null,
+    "annotations": null,
+    "audio": null,
+    "function_call": null,
+    "reasoning": null
+   },
+   "logprobs": null,
+   "finish_reason": "stop",
+   "stop_reason": null,
+   "token_ids": null,
+   "routed_experts": null
+  }
+ ],
+ "service_tier": null,
+ "system_fingerprint": "vllm-0.31.1rc1.dev173+g8cbd5d030-tp4-ep-46ec01eb",
+ "usage": {
+  "prompt_tokens": 433,
+  "total_tokens": 898,
+  "completion_tokens": 465,
+  "prompt_tokens_details": null,
+  "completion_tokens_details": {
+   "reasoning_tokens": 0
+  }
+ },
+ "prompt_logprobs": null,
+ "prompt_token_ids": null,
+ "prompt_text": null,
+ "kv_transfer_params": null,
+ "ec_transfer_params": null,
+ "metrics": null,
+ "_wall_s": 28.395749572999193
+}

@@ -1,0 +1,43 @@
+{
+ "id": "chatcmpl-83486ba9966b2833",
+ "object": "chat.completion",
+ "created": 1791781568,
+ "model": "qwen3.8-flash-next-vllm",
+ "choices": [
+  {
+   "index": 0,
+   "message": {
+    "role": "assistant",
+    "content": "\n\n```python\n\"\"\"A retry decorator factory for calling flaky functions.\"\"\"\n\nfrom __future__ import annotations\n\nimport functools\nimport time\nfrom typing import Callable\n\n\ndef retry(\n    max_attempts: int = 3,\n    delay: float = 1.0,\n    backoff: float = 2.0,\n    exceptions: tuple[type[BaseException], ...] = (Exception,),\n    sleep: Callable[[float], None] = time.sleep,\n) -> Callable:\n    \"\"\"Return a decorator that retries a function on specified exceptions.\n\n    Parameters\n    ----------\n    max_attempts:\n        Total number of times the wrapped function may be called.\n    delay:\n        Base wait time (seconds) before the first retry.\n    backoff:\n        Multiplicative factor applied to *delay* for each subsequent retry.\n    exceptions:\n        Exception types that trigger a retry.\n    sleep:\n        Callable used to wait between attempts (injectable for testing).\n\n    Raises\n    ------\n    ValueError\n        If *max_attempts* < 1, *delay* < 0, or *backoff* < 1.\n    \"\"\"\n    if max_attempts < 1:\n        raise ValueError(f\"max_attempts must be >= 1, got {max_attempts}\")\n    if delay < 0:\n        raise ValueError(f\"delay must be >= 0, got {delay}\")\n    if backoff < 1:\n        raise ValueError(f\"backoff must be >= 1, got {backoff}\")\n\n    def decorator(func: Callable) -> Callable:\n        @functools.wraps(func)\n        def wrapper(*args, **kwargs):\n            last_exc: BaseException | None = None\n            for attempt in range(max_attempts):\n                wrapper.calls += 1\n                try:\n                    return func(*args, **kwargs)\n                except exceptions as exc:\n                    last_exc = exc\n                    if attempt < max_attempts - 1:\n                        wait = delay * backoff ** attempt\n                        sleep(wait)\n            raise last_exc  # type: ignore[misc]\n\n        wrapper.calls = 0\n        return wrapper\n\n    return decorator\n```",
+    "refusal": null,
+    "annotations": null,
+    "audio": null,
+    "function_call": null,
+    "reasoning": "The user wants a Python module implementing a `retry` decorator factory. Let me carefully implement all the requirements:\n\n1. It's a decorator factory - returns a decorator when called with parameters\n2. Always used with parentheses: `@retry()` or `@retry(max_attempts=5, delay=0.5)`\n3. The decorated function is called with caller's args, returns on success\n4. Retry logic: wait `delay * backoff ** (k - 1)` before retry k (k=1 is first wait after first failure)\n5. No wait after final failed attempt\n6. Re-raise last exception if all attempts fail\n7. Non-matching exceptions propagate immediately\n8. Validation: `max_attempts < 1`, `delay < 0`, `backoff < 1` raise ValueError when `retry(...)` is called\n9. Use `functools.wraps` to preserve metadata\n10. Wrapper has `calls` attribute tracking total invocations across all calls\n\nLet me think about the structure:\n\n```python\ndef retry(max_attempts=3, delay=1.0, backoff=2.0, exceptions=(Exception,), sleep=time.sleep):\n    # Validate parameters here (requirement 5)\n    if max_attempts < 1:\n        raise ValueError(...)\n    if delay < 0:\n        raise ValueError(...)\n    if backoff < 1:\n        raise ValueError(...)\n    \n    def decorator(func):\n        @functools.wraps(func)\n        def wrapper(*args, **kwargs):\n            wrapper.calls += 1  # No wait, calls should track total invocations\n            # Actually, let me re-read: \"calls holding the total number of times the wrapped function has been invoked\"\n            # So each time we actually call func, we increment calls\n            last_exception = None\n            for attempt in range(max_attempts):\n                try:\n                    wrapper.calls += 1\n                    return func(*args, **kwargs)\n                except exceptions as e:\n                    last_exception = e\n                    if attempt < max_attempts - 1:  # Not the last attempt\n                        wait_time = delay * backoff ** attempt\n                        sleep(wait_time)\n            raise last_exception\n        wrapper.calls = 0\n        return wrapper\n    return decorator\n```\n\nWait, let me re-check the wait formula. \"The wait before retry number k (k = 1 for the wait after the first failure) is delay * backoff ** (k - 1) seconds\"\n\nSo:\n- After 1st failure (before retry 1): wait = delay * backoff^0 = delay\n- After 2nd failure (before retry 2): wait = delay * backoff^1 = delay * backoff\n- After kth failure (before retry k): wait = delay * backoff^(k-1)\n\nIn my loop with `attempt` starting at 0:\n- attempt 0 fails \u2192 this is the 1st failure, wait before retry 1: delay * backoff^0\n- attempt 1 fails \u2192 this is the 2nd failure, wait before retry 2: delay * backoff^1\n- attempt k fails \u2192 wait = delay * backoff^k\n\nSo `wait_time = delay * backoff ** attempt` where attempt is 0-indexed. That matches.\n\nAnd \"There is no wait after the final failed attempt\" - so after attempt == max_attempts - 1, no wait. My condition `if attempt < max_attempts - 1` handles this.\n\nLet me also make sure the type hints are correct. The signature uses `Callable` from typing. Let me include proper imports.\n\nThe signature shows:\n```python\ndef retry(max_attempts: int = 3, delay: float = 1.0, backoff: float = 2.0,\n          exceptions: tuple[type[BaseException], ...] = (Exception,),\n          sleep: Callable[[float], None] = time.sleep) -> Callable: ...\n```\n\nI need to use `from typing import Callable` or `from collections.abc import Callable`. Since the signature uses `Callable[[float], None]`, I'll use `from typing import Callable` for compatibility, or actually in Python 3.9+ we can use `collections.abc.Callable`. But `Callable[[float], None]` with subscript works with `typing.Callable`. Let me use `from typing import Callable`.\n\nActually, looking more carefully, the return type is `-> Callable` which means it returns a callable (the decorator). The decorator itself takes a function and returns a function.\n\nLet me write the complete module now.\n"
+   },
+   "logprobs": null,
+   "finish_reason": "stop",
+   "stop_reason": null,
+   "token_ids": null,
+   "routed_experts": null
+  }
+ ],
+ "service_tier": null,
+ "system_fingerprint": "vllm-0.31.1rc1.dev173+g8cbd5d030-tp4-ep-9545f2a8",
+ "usage": {
+  "prompt_tokens": 431,
+  "total_tokens": 1899,
+  "completion_tokens": 1468,
+  "prompt_tokens_details": null,
+  "completion_tokens_details": {
+   "reasoning_tokens": 994
+  }
+ },
+ "prompt_logprobs": null,
+ "prompt_token_ids": null,
+ "prompt_text": null,
+ "kv_transfer_params": null,
+ "ec_transfer_params": null,
+ "metrics": null,
+ "_wall_s": 80.89072130099999
+}

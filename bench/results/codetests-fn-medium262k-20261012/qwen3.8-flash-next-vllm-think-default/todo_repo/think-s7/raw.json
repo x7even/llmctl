@@ -1,0 +1,43 @@
+{
+ "id": "chatcmpl-afe035e51e28fcdc",
+ "object": "chat.completion",
+ "created": 1791781866,
+ "model": "qwen3.8-flash-next-vllm",
+ "choices": [
+  {
+   "index": 0,
+   "message": {
+    "role": "assistant",
+    "content": "\n\n```python\nimport sqlite3\n\n\nclass TodoRepo:\n    def __init__(self, path: str = \":memory:\") -> None:\n        self._conn = sqlite3.connect(path)\n        self._conn.execute(\n            \"\"\"\n            CREATE TABLE IF NOT EXISTS todos (\n                id       INTEGER PRIMARY KEY AUTOINCREMENT,\n                title    TEXT    NOT NULL,\n                priority INTEGER NOT NULL,\n                done     INTEGER NOT NULL DEFAULT 0\n            )\n            \"\"\"\n        )\n        self._conn.commit()\n\n    # ------------------------------------------------------------------\n    def add(self, title: str, priority: int = 3) -> int:\n        title = title.strip()\n        if not title:\n            raise ValueError(\"title must not be empty or whitespace-only\")\n        if not isinstance(priority, int) or isinstance(priority, bool):\n            raise ValueError(\"priority must be an int from 1 to 5\")\n        if not 1 <= priority <= 5:\n            raise ValueError(\"priority must be an int from 1 to 5\")\n\n        cur = self._conn.execute(\n            \"INSERT INTO todos (title, priority, done) VALUES (?, ?, 0)\",\n            (title, priority),\n        )\n        self._conn.commit()\n        return cur.lastrowid\n\n    # ------------------------------------------------------------------\n    def get(self, todo_id: int) -> dict | None:\n        row = self._conn.execute(\n            \"SELECT id, title, priority, done FROM todos WHERE id = ?\",\n            (todo_id,),\n        ).fetchone()\n        if row is None:\n            return None\n        return self._row_to_dict(row)\n\n    # ------------------------------------------------------------------\n    def list(self, done: bool | None = None) -> list[dict]:\n        if done is None:\n            rows = self._conn.execute(\n                \"SELECT id, title, priority, done FROM todos \"\n                \"ORDER BY priority ASC, id ASC\"\n            ).fetchall()\n        else:\n            rows = self._conn.execute(\n                \"SELECT id, title, priority, done FROM todos \"\n                \"WHERE done = ? ORDER BY priority ASC, id ASC\",\n                (int(done),),\n            ).fetchall()\n        return [self._row_to_dict(r) for r in rows]\n\n    # ------------------------------------------------------------------\n    def mark_done(self, todo_id: int) -> bool:\n        cur = self._conn.execute(\n            \"UPDATE todos SET done = 1 WHERE id = ?\", (todo_id,)\n        )\n        self._conn.commit()\n        # rowcount > 0 means the id existed (whether it was already done or not)\n        return cur.rowcount > 0\n\n    # ------------------------------------------------------------------\n    def delete(self, todo_id: int) -> bool:\n        cur = self._conn.execute(\n            \"DELETE FROM todos WHERE id = ?\", (todo_id,)\n        )\n        self._conn.commit()\n        return cur.rowcount > 0\n\n    # ------------------------------------------------------------------\n    def count(self, done: bool | None = None) -> int:\n        if done is None:\n            row = self._conn.execute(\n                \"SELECT COUNT(*) FROM todos\"\n            ).fetchone()\n        else:\n            row = self._conn.execute(\n                \"SELECT COUNT(*) FROM todos WHERE done = ?\",\n                (int(done),),\n            ).fetchone()\n        return row[0]\n\n    # ------------------------------------------------------------------\n    def close(self) -> None:\n        self._conn.commit()\n        self._conn.close()\n\n    # ------------------------------------------------------------------\n    @staticmethod\n    def _row_to_dict(row: tuple) -> dict:\n        return {\n            \"id\": int(row[0]),\n            \"title\": str(row[1]),\n            \"priority\": int(row[2]),\n            \"done\": bool(row[3]),\n        }\n```",
+    "refusal": null,
+    "annotations": null,
+    "audio": null,
+    "function_call": null,
+    "reasoning": "The user wants a complete Python module implementing a `TodoRepo` class that uses SQLite (standard library `sqlite3` only). Let me carefully implement each method according to the specifications.\n\nKey requirements:\n1. Constructor opens/creates SQLite DB, creates table if not exists\n2. `add` - validates title (strip, non-empty) and priority (1-5 int), inserts with done=False, returns new id\n3. `get` - returns dict with proper types (done as real bool) or None\n4. `list` - ordered by priority ASC, id ASC; optional done filter\n5. `mark_done` - sets done=True, returns True if exists (even if already done), False if not\n6. `delete` - removes item, returns True/False; ids never reused\n7. `count` - number of items, optional done filter\n8. `close` - closes connection; changes committed before close\n\nImportant details:\n- Ids start at 1 and increase (SQLite AUTOINCREMENT ensures this, and ids of deleted items are never reused)\n- Title stripped of surrounding whitespace; empty/whitespace-only raises ValueError\n- Priority must be int from 1 to 5, otherwise ValueError\n- Titles may contain any characters - use parameterized queries\n- `done` must be a real `bool` in returned dicts (SQLite stores as 0/1 integer)\n- Need to commit changes so another TodoRepo on same file sees them\n- Use `:memory:` as default path\n\nFor ids never being reused: SQLite's AUTOINCREMENT keyword ensures that after deletion, the next id is always higher than any previously used id. Without AUTOINCREMENT, SQLite might reuse ids. So I should use `INTEGER PRIMARY KEY AUTOINCREMENT`.\n\nFor the `done` column: SQLite doesn't have a boolean type, so I'll store as INTEGER (0 or 1) and convert to Python bool when returning dicts.\n\nFor committing: I'll use `conn.commit()` after write operations, or set `isolation_level` appropriately. Actually, I should make sure changes are committed. I'll use explicit commits after write operations.\n\nLet me also consider: the `priority` validation - \"must be an int from 1 to 5\". I should check `isinstance(priority, int)` but also that it's not a bool (since `bool` is a subclass of `int` in Python). Actually, the spec says \"must be an int from 1 (highest) to 5 (lowest), otherwise ValueError\". I'll check if it's an int (and not a bool) and in range 1-5.\n\nWait, actually let me re-read: \"priority must be an int from 1 to 5, otherwise ValueError\". I'll validate that it's an int type and in range. Should I exclude bool? The spec doesn't explicitly say so, but `True` is technically `1` and `False` is `0`. I'll be strict and exclude bool since it's not really an \"int\" in the intended sense. Actually, let me just check `isinstance(priority, int) and not isinstance(priority, bool)` to be safe. Hmm, but the spec just says \"must be an int from 1 to 5\". Let me include the bool check to be safe - `True` would pass `isinstance(True, int)` but it's semantically wrong.\n\nActually, I'll just check `isinstance(priority, int)` and `not isinstance(priority, bool)` and `1 <= priority <= 5`.\n\nFor the table schema:\n```sql\nCREATE TABLE IF NOT EXISTS todos (\n    id INTEGER PRIMARY KEY AUTOINCREMENT,\n    title TEXT NOT NULL,\n    priority INTEGER NOT NULL,\n    done INTEGER NOT NULL DEFAULT 0\n)\n```\n\nLet me write the complete module now.\n"
+   },
+   "logprobs": null,
+   "finish_reason": "stop",
+   "stop_reason": null,
+   "token_ids": null,
+   "routed_experts": null
+  }
+ ],
+ "service_tier": null,
+ "system_fingerprint": "vllm-0.31.1rc1.dev173+g8cbd5d030-tp4-ep-9545f2a8",
+ "usage": {
+  "prompt_tokens": 577,
+  "total_tokens": 2230,
+  "completion_tokens": 1653,
+  "prompt_tokens_details": null,
+  "completion_tokens_details": {
+   "reasoning_tokens": 806
+  }
+ },
+ "prompt_logprobs": null,
+ "prompt_token_ids": null,
+ "prompt_text": null,
+ "kv_transfer_params": null,
+ "ec_transfer_params": null,
+ "metrics": null,
+ "_wall_s": 81.21865548000005
+}

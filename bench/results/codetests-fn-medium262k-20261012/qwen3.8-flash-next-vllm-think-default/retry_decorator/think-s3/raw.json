@@ -1,0 +1,43 @@
+{
+ "id": "chatcmpl-9dc5f6707b3dc281",
+ "object": "chat.completion",
+ "created": 1791781583,
+ "model": "qwen3.8-flash-next-vllm",
+ "choices": [
+  {
+   "index": 0,
+   "message": {
+    "role": "assistant",
+    "content": "\n\n```python\n\"\"\"A retry decorator factory for calling flaky functions.\n\nUsage:\n    @retry(max_attempts=5, delay=0.5)\n    def flaky_function(...):\n        ...\n\"\"\"\n\nfrom __future__ import annotations\n\nimport functools\nimport time\nfrom typing import Callable\n\n\ndef retry(\n    max_attempts: int = 3,\n    delay: float = 1.0,\n    backoff: float = 2.0,\n    exceptions: tuple[type[BaseException], ...] = (Exception,),\n    sleep: Callable[[float], None] = time.sleep,\n) -> Callable:\n    \"\"\"Return a decorator that retries a function on specified exceptions.\n\n    Args:\n        max_attempts: Total number of calls to attempt (must be >= 1).\n        delay: Base delay in seconds before the first retry (must be >= 0).\n        backoff: Multiplier applied to the delay after each retry (must be >= 1).\n        exceptions: Tuple of exception types that trigger a retry.\n        sleep: Callable used to wait between retries.\n\n    Returns:\n        A decorator that wraps a function with retry logic.\n\n    Raises:\n        ValueError: If max_attempts < 1, delay < 0, or backoff < 1.\n    \"\"\"\n    if max_attempts < 1:\n        raise ValueError(f\"max_attempts must be >= 1, got {max_attempts}\")\n    if delay < 0:\n        raise ValueError(f\"delay must be >= 0, got {delay}\")\n    if backoff < 1:\n        raise ValueError(f\"backoff must be >= 1, got {backoff}\")\n\n    def decorator(func: Callable) -> Callable:\n        @functools.wraps(func)\n        def wrapper(*args, **kwargs):\n            last_exception: BaseException | None = None\n            for attempt in range(1, max_attempts + 1):\n                wrapper.calls += 1\n                try:\n                    return func(*args, **kwargs)\n                except exceptions as exc:\n                    last_exception = exc\n                    if attempt == max_attempts:\n                        raise\n                    wait_time = delay * backoff ** (attempt - 1)\n                    sleep(wait_time)\n            # Should never reach here, but satisfy type checkers.\n            raise last_exception  # type: ignore[misc]\n\n        wrapper.calls = 0  # type: ignore[attr-defined]\n        return wrapper\n\n    return decorator\n```",
+    "refusal": null,
+    "annotations": null,
+    "audio": null,
+    "function_call": null,
+    "reasoning": "The user wants a Python module implementing a `retry` decorator factory. Let me carefully implement all the requirements:\n\n1. It's a decorator factory - `retry(...)` returns a decorator, which when applied to a function returns a wrapper.\n2. The wrapper calls the function, retries on specified exceptions, with exponential backoff.\n3. `max_attempts` is total calls (not retries), so `max_attempts=3` means up to 3 calls total.\n4. Wait before retry k (k=1 after first failure) is `delay * backoff ** (k-1)` seconds.\n5. No wait after the final failed attempt.\n6. If all attempts fail, re-raise the last exception.\n7. Non-matching exceptions propagate immediately.\n8. Validation of parameters at `retry(...)` call time.\n9. Use `functools.wraps` for metadata.\n10. `calls` attribute on the wrapper tracking total invocations.\n\nLet me think about the `calls` attribute. It says \"the total number of times the wrapped function has been invoked (across all calls to the wrapper), starting at 0.\" So this is a counter that increments each time the inner function is actually called (each attempt counts).\n\nLet me structure this:\n\n```python\nimport functools\nimport time\nfrom typing import Callable, TypeVar, Any\n\ndef retry(max_attempts=3, delay=1.0, backoff=2.0, exceptions=(Exception,), sleep=time.sleep):\n    # Validate parameters\n    if max_attempts < 1:\n        raise ValueError(...)\n    if delay < 0:\n        raise ValueError(...)\n    if backoff < 1:\n        raise ValueError(...)\n    \n    def decorator(func):\n        @functools.wraps(func)\n        def wrapper(*args, **kwargs):\n            # calls counter\n            for attempt in range(1, max_attempts + 1):\n                try:\n                    return func(*args, **kwargs)\n                except exceptions as e:\n                    if attempt == max_attempts:\n                        raise\n                    wait_time = delay * backoff ** (attempt - 1)\n                    sleep(wait_time)\n        wrapper.calls = 0  # But we need to increment this...\n        return wrapper\n    return decorator\n```\n\nWait, for the `calls` attribute - it needs to track total invocations across all calls to the wrapper. I need to increment it each time `func(*args, **kwargs)` is actually called. Let me use a mutable container or set it as an attribute.\n\nActually, since `wrapper.calls` is an integer, I need to be careful. I'll use a list or just increment the attribute directly.\n\nLet me think about the wait timing:\n- Attempt 1 fails \u2192 wait before retry 1 (k=1): `delay * backoff ** 0` = `delay`\n- Attempt 2 fails \u2192 wait before retry 2 (k=2): `delay * backoff ** 1`\n- Attempt 3 fails \u2192 wait before retry 3 (k=3): `delay * backoff ** 2`\n- ...\n- Attempt max_attempts fails \u2192 no wait, raise\n\nSo for attempt number `attempt` (1-indexed), if it fails and it's not the last attempt, we wait `delay * backoff ** (attempt - 1)`.\n\nThe `sleep` parameter has type `Callable[[float], None]`. I need to import `Callable` from `typing` or use `collections.abc`.\n\nLet me also think about the type annotations. The signature uses `tuple[type[BaseException], ...]` which requires Python 3.9+. I'll keep it as specified.\n\nFor the `calls` attribute, I'll use a closure with a mutable list, or I can use `nonlocal` with a counter, or just set it as an attribute on the wrapper function.\n\nActually, the simplest approach: use a mutable container (list) in the closure to track calls, and expose it via the wrapper's attribute. But the requirement says \"The wrapper has an attribute `calls` holding the total number of times the wrapped function has been invoked\". So `wrapper.calls` should be an integer.\n\nI can do:\n```python\nwrapper.calls = 0\n```\nAnd inside the wrapper, do `wrapper.calls += 1` before calling func. But wait, `wrapper` isn't defined yet inside the function body at definition time... actually it is at call time. Let me use a different approach.\n\nActually in Python, by the time the wrapper is called, `wrapper` is already defined in the enclosing scope. So `wrapper.calls += 1` should work. But there's a subtlety - if someone reassigns `wrapper.calls`, the closure reference still works. Let me just use this approach.\n\nWait, actually there's a problem. Inside `wrapper`, referencing `wrapper` creates a closure over the name in the enclosing scope. Since `wrapper` is assigned in the `decorator` function, it should be accessible. Let me verify:\n\n```python\ndef decorator(func):\n    @functools.wraps(func)\n    def wrapper(*args, **kwargs):\n        wrapper.calls += 1  # This works because wrapper is in the enclosing scope\n        ...\n    wrapper.calls = 0\n    return wrapper\n```\n\nYes, this works. At the time `wrapper` is called, the name `wrapper` in the enclosing scope points to the function object.\n\nLet me write the complete module now.\n"
+   },
+   "logprobs": null,
+   "finish_reason": "stop",
+   "stop_reason": null,
+   "token_ids": null,
+   "routed_experts": null
+  }
+ ],
+ "service_tier": null,
+ "system_fingerprint": "vllm-0.31.1rc1.dev173+g8cbd5d030-tp4-ep-9545f2a8",
+ "usage": {
+  "prompt_tokens": 431,
+  "total_tokens": 2158,
+  "completion_tokens": 1727,
+  "prompt_tokens_details": null,
+  "completion_tokens_details": {
+   "reasoning_tokens": 1186
+  }
+ },
+ "prompt_logprobs": null,
+ "prompt_token_ids": null,
+ "prompt_text": null,
+ "kv_transfer_params": null,
+ "ec_transfer_params": null,
+ "metrics": null,
+ "_wall_s": 95.07500599500008
+}

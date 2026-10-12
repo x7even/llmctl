@@ -1,0 +1,40 @@
+{
+ "id": "chatcmpl-8f89bc0dda9c11d0",
+ "object": "chat.completion",
+ "created": 1791716129,
+ "model": "qwen3.8-27b-code",
+ "choices": [
+  {
+   "index": 0,
+   "message": {
+    "role": "assistant",
+    "content": "\n\n```python\nimport time\nimport functools\nfrom typing import Callable\n\n\ndef retry(max_attempts: int = 3, delay: float = 1.0, backoff: float = 2.0,\n          exceptions: tuple[type[BaseException], ...] = (Exception,),\n          sleep: Callable[[float], None] = time.sleep) -> Callable:\n    if max_attempts < 1:\n        raise ValueError(\"max_attempts must be >= 1\")\n    if delay < 0:\n        raise ValueError(\"delay must be >= 0\")\n    if backoff < 1:\n        raise ValueError(\"backoff must be >= 1\")\n\n    def decorator(func: Callable) -> Callable:\n        @functools.wraps(func)\n        def wrapper(*args, **kwargs):\n            for attempt in range(max_attempts):\n                try:\n                    wrapper.calls += 1\n                    return func(*args, **kwargs)\n                except exceptions:\n                    if attempt == max_attempts - 1:\n                        raise\n                    sleep(delay * backoff ** attempt)\n        wrapper.calls = 0\n        return wrapper\n\n    return decorator\n```",
+    "refusal": null,
+    "annotations": null,
+    "audio": null,
+    "function_call": null,
+    "reasoning": "Let me carefully implement this `retry` decorator factory based on the requirements:\n\n1. `retry` is a factory that returns a decorator\n2. The decorator wraps a function with retry logic\n3. Parameters: max_attempts=3, delay=1.0, backoff=2.0, exceptions=(Exception,), sleep=time.sleep\n4. Validation: max_attempts < 1, delay < 0, backoff < 1 \u2192 ValueError at factory call time\n5. Retry logic:\n   - Call the function\n   - If success, return the result\n   - If exception is in `exceptions`, wait and retry (up to max_attempts total calls)\n   - Wait before retry k is: delay * backoff ** (k - 1)\n   - No wait after final failed attempt\n   - If all attempts fail, re-raise the last exception\n   - If exception is NOT in `exceptions`, propagate immediately\n6. Use functools.wraps\n7. Wrapper has `calls` attribute tracking total invocations across all calls to the wrapper\n\nLet me think about the retry loop:\n- Attempt 1: call function\n  - If exception in exceptions: wait delay * backoff ** 0 = delay, then attempt 2\n  - If exception not in exceptions: raise immediately\n  - If success: return\n- Attempt 2: call function\n  - If exception in exceptions: wait delay * backoff ** 1 = delay * backoff, then attempt 3\n  - ...\n- Attempt max_attempts: call function\n  - If exception in exceptions: no wait, re-raise\n  - If success: return\n\nSo the loop is:\n```\nfor attempt in range(max_attempts):\n    try:\n        result = func(*args, **kwargs)\n        return result\n    except exceptions as e:\n        if attempt == max_attempts - 1:\n            raise\n        sleep(delay * backoff ** attempt)\n```\n\nWait, let me re-check the wait formula. \"The wait before retry number k (k = 1 for the wait after the first failure) is delay * backoff ** (k - 1)\"\n\nSo:\n- After 1st failure (retry 1): delay * backoff ** 0 = delay\n- After 2nd failure (retry 2): delay * backoff ** 1 = delay * backoff\n- After 3rd failure (retry 3): delay * backoff ** 2 = delay * backoff ** 2\n\nIn my loop with `attempt` starting at 0:\n- After attempt 0 (1st failure): wait = delay * backoff ** 0 = delay \u2713\n- After attempt 1 (2nd failure): wait = delay * backoff ** 1 = delay * backoff \u2713\n- After attempt 2 (3rd failure): wait = delay * backoff ** 2 = delay * backoff ** 2 \u2713\n\nSo `sleep(delay * backoff ** attempt)` where attempt is 0-indexed. That's correct.\n\nFor the `calls` attribute: it tracks total invocations of the wrapped function across all calls to the wrapper. So each time the wrapper is called, and each time the inner function is invoked (including retries), `calls` increments.\n\nWait, let me re-read: \"the total number of times the wrapped function has been invoked (across all calls to the wrapper)\". So it's counting how many times `func` is actually called, not how many times the wrapper is called. So if a single wrapper call results in 3 attempts, `calls` increases by 3.\n\nLet me also think about the `exceptions` parameter. It's a tuple of exception types. I need to check `isinstance(e, exceptions)`.\n\nFor the type hints, I'll use `Callable` from `typing` and `time.sleep`.\n\nLet me write the complete module:\n\n```python\nimport time\nimport functools\nfrom typing import Callable\n\ndef retry(max_attempts: int = 3, delay: float = 1.0, backoff: float = 2.0,\n          exceptions: tuple[type[BaseException], ...] = (Exception,),\n          sleep: Callable[[float], None] = time.sleep) -> Callable:\n    if max_attempts < 1:\n        raise ValueError(\"max_attempts must be >= 1\")\n    if delay < 0:\n        raise ValueError(\"delay must be >= 0\")\n    if backoff < 1:\n        raise ValueError(\"backoff must be >= 1\")\n    \n    def decorator(func: Callable) -> Callable:\n        @functools.wraps(func)\n        def wrapper(*args, **kwargs):\n            for attempt in range(max_attempts):\n                try:\n                    wrapper.calls += 1\n                    return func(*args, **kwargs)\n                except exceptions as e:\n                    if attempt == max_attempts - 1:\n                        raise\n                    sleep(delay * backoff ** attempt)\n        wrapper.calls = 0\n        return wrapper\n    return decorator\n```\n\nWait, I need to be careful with the `except exceptions` syntax. In Python, `except` accepts a tuple of exception types. So `except exceptions as e:` should work if `exceptions` is a tuple of exception types.\n\nLet me double-check: `except (ValueError, TypeError) as e:` - yes, this works with a tuple. And since `exceptions` is a variable holding a tuple, `except exceptions as e:` should work the same way.\n\nActually, let me verify: in Python, `except` expects an exception type or a tuple of exception types. If `exceptions` is a tuple like `(Exception,)`, then `except exceptions` should work. Let me confirm... Yes, `except` can take any expression that evaluates to an exception type or tuple of exception types.\n\nThis looks correct. Let me finalize.\n"
+   },
+   "logprobs": null,
+   "finish_reason": "stop",
+   "stop_reason": null,
+   "token_ids": null,
+   "routed_experts": null
+  }
+ ],
+ "service_tier": null,
+ "system_fingerprint": "vllm-0.26.0-tp4-0126c26e",
+ "usage": {
+  "prompt_tokens": 431,
+  "total_tokens": 1937,
+  "completion_tokens": 1506,
+  "prompt_tokens_details": null
+ },
+ "prompt_logprobs": null,
+ "prompt_token_ids": null,
+ "prompt_text": null,
+ "kv_transfer_params": null,
+ "ec_transfer_params": null,
+ "metrics": null,
+ "_wall_s": 30.918022662997828
+}

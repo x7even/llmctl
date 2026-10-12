@@ -1,0 +1,43 @@
+{
+ "id": "chatcmpl-8b3b97c64aefff3b",
+ "object": "chat.completion",
+ "created": 1791712096,
+ "model": "qwen3.8-flash-next-vllm",
+ "choices": [
+  {
+   "index": 0,
+   "message": {
+    "role": "assistant",
+    "content": "```python\nimport functools\nimport time\nfrom typing import Callable, TypeVar, Any\n\nT = TypeVar('T')\n\n\ndef retry(max_attempts: int = 3, delay: float = 1.0, backoff: float = 2.0,\n          exceptions: tuple[type[BaseException], ...] = (Exception,),\n          sleep: Callable[[float], None] = time.sleep) -> Callable:\n    \"\"\"\n    A decorator factory that retries a function on specified exceptions.\n    \n    Args:\n        max_attempts: Maximum number of attempts (must be >= 1).\n        delay: Initial delay in seconds between retries (must be >= 0).\n        backoff: Multiplicative factor for delay between retries (must be >= 1).\n        exceptions: Tuple of exception types to catch and retry on.\n        sleep: Function to call for sleeping (defaults to time.sleep).\n    \n    Returns:\n        A decorator that wraps a function with retry logic.\n    \"\"\"\n    if max_attempts < 1:\n        raise ValueError(\"max_attempts must be >= 1\")\n    if delay < 0:\n        raise ValueError(\"delay must be >= 0\")\n    if backoff < 1:\n        raise ValueError(\"backoff must be >= 1\")\n\n    def decorator(func: Callable[..., T]) -> Callable[..., T]:\n        @functools.wraps(func)\n        def wrapper(*args: Any, **kwargs: Any) -> T:\n            last_exception: BaseException | None = None\n            for attempt in range(1, max_attempts + 1):\n                try:\n                    wrapper.calls += 1\n                    result = func(*args, **kwargs)\n                    return result\n                except exceptions as e:\n                    last_exception = e\n                    if attempt < max_attempts:\n                        wait_time = delay * (backoff ** (attempt - 1))\n                        sleep(wait_time)\n                except BaseException:\n                    # An exception not in `exceptions` propagates immediately\n                    raise\n            # All attempts failed; re-raise the last exception\n            if last_exception is not None:\n                raise last_exception\n            # This should not happen since max_attempts >= 1, but just in case\n            raise RuntimeError(\"No attempts were made\")\n\n        wrapper.calls = 0\n        return wrapper\n\n    return decorator\n```",
+    "refusal": null,
+    "annotations": null,
+    "audio": null,
+    "function_call": null,
+    "reasoning": null
+   },
+   "logprobs": null,
+   "finish_reason": "stop",
+   "stop_reason": null,
+   "token_ids": null,
+   "routed_experts": null
+  }
+ ],
+ "service_tier": null,
+ "system_fingerprint": "vllm-0.31.1rc1.dev173+g8cbd5d030-tp4-ep-46ec01eb",
+ "usage": {
+  "prompt_tokens": 433,
+  "total_tokens": 941,
+  "completion_tokens": 508,
+  "prompt_tokens_details": null,
+  "completion_tokens_details": {
+   "reasoning_tokens": 0
+  }
+ },
+ "prompt_logprobs": null,
+ "prompt_token_ids": null,
+ "prompt_text": null,
+ "kv_transfer_params": null,
+ "ec_transfer_params": null,
+ "metrics": null,
+ "_wall_s": 31.669623904992477
+}
