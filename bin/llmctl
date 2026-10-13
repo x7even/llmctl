@@ -5,15 +5,22 @@ Usage:
   llmctl up                start llama-swap (downloads binary if needed)
   llmctl down              stop llama-swap
   llmctl status            show running state and loaded models
-  llmctl list              list all profiles in config/models.yaml
-  llmctl swap <profile>    preload / swap to a model profile
+  llmctl list [--all]      list profiles this hardware can run (--all: every profile)
+  llmctl hw [--json]       detected GPUs / host RAM and which profiles fit
+  llmctl swap [--force] <profile>
+                           preload / swap to a model profile (refuses unsupported
+                           profiles unless --force)
   llmctl unload            unload all running models (free VRAM without stopping llama-swap)
-  llmctl pick              interactive fzf/menu model picker
+  llmctl pick [--all]      interactive fzf/menu model picker
   llmctl logs [profile]    tail logs (llama-swap log, or a model container)
   llmctl bench [profile]   run concurrent benchmark against a profile
   llmctl proxy-up          start llmproxy shim on :9000 (OpenCode workaround)
   llmctl proxy-down        stop llmproxy shim
   llmctl proxy-status      show llmproxy state
+
+Hardware checks read metadata.requires from config/models.yaml via scripts/llmhw.py and
+fail open (never block) when detection is unavailable. Simulate a smaller rig with
+LLMSTACK_GPU_COUNT=N (or the global --gpu-count N flag).
 
 Install symlink (run once from the llmstack directory):
   ln -sf "$(pwd)/bin/llmctl" ~/.local/bin/llmctl
@@ -36,6 +43,28 @@ from pathlib import Path
 # Works correctly whether called directly or via ~/.local/bin symlink
 STACK_DIR = Path(__file__).resolve().parent.parent
 CONFIG_FILE = STACK_DIR / "config" / "models.yaml"
+LLMHW_FILE = STACK_DIR / "scripts" / "llmhw.py"
+
+
+# ── Hardware module (fail open) ────────────────────────────────────────────────
+# scripts/llmhw.py is the single implementation of hardware detection and
+# metadata.requires parsing. If it cannot be loaded, llmctl behaves as if it did
+# not know about hardware (LLMHW_ERROR says why, for the one-line warning).
+
+def _load_llmhw():
+    try:
+        import importlib.util
+        spec = importlib.util.spec_from_file_location("llmhw", LLMHW_FILE)
+        mod = importlib.util.module_from_spec(spec)
+        sys.modules["llmhw"] = mod
+        spec.loader.exec_module(mod)
+        return mod, None
+    except Exception as e:
+        sys.modules.pop("llmhw", None)
+        return None, f"{type(e).__name__}: {e}"
+
+
+llmhw, LLMHW_ERROR = _load_llmhw()
 BENCH_SCRIPT = STACK_DIR / "bench" / "concurrent_bench.py"
 
 LLAMA_SWAP_PORT = 8080
@@ -173,7 +202,231 @@ def _ensure_binary():
     return False
 
 
+# ── Hardware awareness ─────────────────────────────────────────────────────────
+
+GPU_COUNT_FLAG = None        # set from the global --gpu-count N flag (wins over the env var)
+_HW_CACHE = {}               # memoised detection result, one per process
+_WARNED = set()
+
+
+def _warn_once(key, msg):
+    if key not in _WARNED:
+        _WARNED.add(key)
+        print(f"llmctl: warning: {msg}", file=sys.stderr)
+
+
+def _parse_gpu_count(value, origin):
+    """Parse a GPU-count override; raises ValueError with a readable message."""
+    try:
+        n = int(str(value).strip())
+    except ValueError:
+        raise ValueError(f"{origin} must be a non-negative integer, got {value!r}") from None
+    if n < 0:
+        raise ValueError(f"{origin} must be a non-negative integer, got {value!r}")
+    return n
+
+
+def _gpu_count_override():
+    """GPU count to simulate: --gpu-count, else $LLMSTACK_GPU_COUNT, else None.
+    An unusable env value is warned about and ignored (fail open)."""
+    if GPU_COUNT_FLAG is not None:
+        return GPU_COUNT_FLAG
+    raw = os.environ.get("LLMSTACK_GPU_COUNT", "").strip()
+    if not raw:
+        return None
+    try:
+        return _parse_gpu_count(raw, "LLMSTACK_GPU_COUNT")
+    except ValueError as e:
+        _warn_once("badenv", f"{e}; ignoring it and detecting hardware")
+        return None
+
+
+def _get_hw(for_report=False):
+    """Detected hardware (llmhw.detect() dict), or None when llmhw is unavailable.
+    The dict's gpu_count may itself be None (nothing detected). Warns once on
+    either failure; never raises. `for_report` (llmctl hw) words the warnings as
+    "cannot report hardware" instead of the "all profiles allowed" fail-open
+    text, which describes list/swap rather than the report."""
+    if "hw" in _HW_CACHE:
+        return _HW_CACHE["hw"]
+    tail = ("; cannot report hardware" if for_report
+            else "; hardware checks skipped, all profiles allowed")
+    hw = None
+    if llmhw is None:
+        _warn_once("hw", f"scripts/llmhw.py unavailable ({LLMHW_ERROR}){tail}")
+    else:
+        try:
+            hw = llmhw.detect(_gpu_count_override())
+        except Exception as e:
+            _warn_once("hw", f"hardware detection failed ({type(e).__name__}: {e}){tail}")
+        else:
+            if hw.get("gpu_count") is None:
+                _warn_once("hw", "GPU count not detected"
+                                 + ("" if for_report else tail))
+    _HW_CACHE["hw"] = hw
+    return hw
+
+
+def _tp_label(req, tp):
+    if tp is None:
+        return "-"
+    if req and "min_gpus" in req:
+        return f"split {tp}"
+    return f"TP{tp}"
+
+
+def _profile_report(hw):
+    """One entry per profile in config/models.yaml:
+    {id, aliases, ok, tp_or_split, label, estimate, reasons, requires}.
+    Without usable hardware info (hw None or gpu_count None) nothing is gated:
+    every profile is ok. A profile with no requires block is always ok."""
+    profiles = _list_profiles()
+    reqs = {}
+    if llmhw is not None:
+        try:
+            reqs = llmhw.parse_requires(CONFIG_FILE.read_text())
+        except Exception as e:
+            _warn_once("parse", f"could not read metadata.requires ({type(e).__name__}: {e}); "
+                                "hardware checks skipped")
+    gated = llmhw is not None and hw is not None and hw.get("gpu_count") is not None
+    out = []
+    for p in profiles:
+        req = reqs.get(p["id"])
+        ok, tp, reasons = True, None, []
+        if gated and req is not None:
+            try:
+                ok, tp, reasons = llmhw.supports(req, hw)
+            except Exception:
+                ok, tp, reasons = True, None, []
+        out.append({
+            "id": p["id"], "aliases": p["aliases"], "ok": ok, "tp_or_split": tp,
+            "label": _tp_label(req, tp),
+            "estimate": bool(req and req.get("estimate") is True),
+            "reasons": reasons, "requires": req,
+        })
+    return out
+
+
+def _hw_summary(hw):
+    """'4 GPUs (sysfs, 32 GiB each), 188 GiB host RAM' for messages."""
+    if hw is None or hw.get("gpu_count") is None:
+        return "hardware not detected"
+    n = hw["gpu_count"]
+    s = f"{n} GPU{'s' if n != 1 else ''} ({hw.get('source')}"
+    vram = hw.get("vram_gib_per_gpu") or []
+    if vram:
+        s += f", {_fmt_gib(max(vram))} GiB each"
+    s += ")"
+    if hw.get("host_ram_gib") is not None:
+        s += f", {_fmt_gib(hw['host_ram_gib'])} GiB host RAM"
+    return s
+
+
+def _fmt_gib(x):
+    return f"{x:.0f}" if abs(x - round(x)) < 0.05 else f"{x:.1f}"
+
+
+def _resolve_profile(name, report):
+    """Report entry whose id or alias is `name`, or None (the router decides)."""
+    for e in report:
+        if name == e["id"]:
+            return e
+    for e in report:
+        if name in e["aliases"]:
+            return e
+    return None
+
+
+def check_swap_allowed(name):
+    """Decide whether `llmctl swap name` may proceed on this hardware.
+
+    Returns (allowed, entry, hw): `entry` is the resolved profile's report entry
+    (None for names not in config/models.yaml); `allowed` is False only when the
+    profile is known, declares requires, and hw says it cannot run. Never
+    contacts the router and never raises: any failure means allowed."""
+    try:
+        hw = _get_hw()
+        entry = _resolve_profile(name, _profile_report(hw))
+    except Exception as e:
+        _warn_once("check", f"hardware check failed ({type(e).__name__}: {e}); allowing swap")
+        return True, None, None
+    if entry is None:
+        return True, None, hw
+    return entry["ok"], entry, hw
+
+
+def _refusal_lines(name, entry, hw):
+    who = f"'{entry['id']}'" if name == entry["id"] else f"'{name}' (profile '{entry['id']}')"
+    lines = [f"llmctl: {who} does not meet its hardware requirements:"]
+    lines += [f"  - {r}" for r in entry["reasons"]]
+    lines.append(f"Detected: {_hw_summary(hw)}")
+    lines.append("This profile will probably fail to start (out of memory or an invalid "
+                 "tensor-parallel size).")
+    if entry.get("estimate"):
+        lines.append("Its requirements are an estimate (not measured on this rig), so it "
+                     "might still work.")
+    lines.append(f"Run 'llmctl hw' to see what fits, or 'llmctl swap --force {entry['id']}' "
+                 "to try anyway (a failed start can leave the router waiting on a slow "
+                 "health check).")
+    if hw and hw.get("source") == "override":
+        lines.append("LLMSTACK_GPU_COUNT / --gpu-count only simulate a different rig; "
+                     "unset them to use the real hardware.")
+    return lines
+
+
+def _visible_profiles(show_all):
+    """(shown report entries, hidden count). Default hides unsupported profiles."""
+    report = _profile_report(_get_hw())
+    if show_all:
+        return report, 0
+    shown = [e for e in report if e["ok"]]
+    return shown, len(report) - len(shown)
+
+
 # ── Commands ───────────────────────────────────────────────────────────────────
+
+def cmd_hw(args):
+    as_json = "--json" in args
+    hw = _get_hw(for_report=True)
+    if hw is None:
+        # `hw` has no fail-open fallback to show; the warning above says why.
+        if as_json:
+            print(json.dumps({"hw": None, "profiles": {}}, indent=2))
+        sys.exit(1)
+    report = _profile_report(hw)
+    if as_json:
+        profiles = {
+            e["id"]: {"ok": e["ok"], "tp_or_split": e["tp_or_split"],
+                      "estimate": e["estimate"], "reasons": e["reasons"],
+                      "requires": e["requires"]}
+            for e in report
+        }
+        print(json.dumps({"hw": hw, "profiles": profiles}, indent=2))
+        sys.exit(0 if hw.get("gpu_count") is not None else 1)
+    n = hw.get("gpu_count")
+    print(f"GPUs:      {n if n is not None else 'not detected'} ({hw.get('source')})")
+    vram = hw.get("vram_gib_per_gpu") or []
+    print(f"VRAM/GPU:  {', '.join(_fmt_gib(v) for v in vram) + ' GiB' if vram else 'unknown'}")
+    ram = hw.get("host_ram_gib")
+    print(f"Host RAM:  {_fmt_gib(ram) + ' GiB' if ram is not None else 'unknown'}")
+    if hw.get("ignored_devices"):
+        print(f"Ignored:   {hw['ignored_devices']} device(s) under 8 GiB VRAM")
+    if hw.get("source") == "override":
+        print("Note:      GPU count overridden (LLMSTACK_GPU_COUNT / --gpu-count); simulation only")
+    print()
+    if not report:
+        print("No profiles found in config/models.yaml")
+    else:
+        w = max(len("PROFILE"), max(len(e["id"]) for e in report))
+        uw = max(len("USES"), max(len(e["label"]) for e in report))
+        print(f"{'PROFILE':<{w}}  OK  {'USES':<{uw}}  {'EST':<10}  REASONS")
+        for e in report:
+            est = "(estimate)" if e["estimate"] else ""
+            line = (f"{e['id']:<{w}}  {'OK' if e['ok'] else 'NO':<2}  "
+                    f"{e['label']:<{uw}}  {est:<10}  {'; '.join(e['reasons'])}")
+            print(line.rstrip())
+    sys.exit(0 if n is not None else 1)
+
 
 def cmd_up(_args):
     if _is_running():
@@ -258,17 +511,22 @@ def cmd_status(_args):
         pass
 
 
-def cmd_list(_args):
-    profiles = _list_profiles()
-    if not profiles:
+def cmd_list(args):
+    show_all = "--all" in args
+    if not _list_profiles():
         print("No profiles found in config/models.yaml")
         return
+    profiles, hidden = _visible_profiles(show_all)
     active = _active_models()
     print(f"Profiles ({len(profiles)})  [* = loaded]:")
     for p in profiles:
         mark = " *" if p["id"] in active else ""
         alias_str = f"  (aliases: {', '.join(p['aliases'])})" if p["aliases"] else ""
-        print(f"  {p['id']}{mark}{alias_str}")
+        note = "" if p["ok"] else f"  [UNSUPPORTED: {'; '.join(p['reasons'])}]"
+        print(f"  {p['id']}{mark}{alias_str}{note}")
+    if hidden:
+        print(f"{hidden} profile(s) hidden (need more GPUs/RAM): "
+              "use 'llmctl list --all' to show them")
 
 
 def cmd_unload(_args):
@@ -317,10 +575,20 @@ def _diagnose_swap_failure():
 
 
 def cmd_swap(args):
+    force = "--force" in args
+    args = [a for a in args if a != "--force"]
     if not args:
-        print("Usage: llmctl swap <profile>")
+        print("Usage: llmctl swap [--force] <profile>")
         sys.exit(1)
     profile = args[0]
+    allowed, entry, hw = check_swap_allowed(profile)
+    if not allowed:
+        lines = _refusal_lines(profile, entry, hw)
+        if not force:
+            print("\n".join(lines), file=sys.stderr)
+            sys.exit(2)
+        print(f"llmctl: warning: --force: '{profile}' does not meet its requirements "
+              f"({'; '.join(entry['reasons'])}); expect the start to fail", file=sys.stderr)
     if not _is_running():
         print("llama-swap is not running — run: llmctl up")
         sys.exit(1)
@@ -340,22 +608,33 @@ def cmd_swap(args):
         _diagnose_swap_failure()
 
 
-def cmd_pick(_args):
-    profiles = _list_profiles()
-    if not profiles:
+def _pick_choices(show_all):
+    """(ids, display lines, hidden count) for the picker. With --all, unsupported
+    profiles are included and tagged; the id is always the first token of a line."""
+    profiles, hidden = _visible_profiles(show_all)
+    ids = [p["id"] for p in profiles]
+    lines = [p["id"] + ("" if p["ok"] else "   [unsupported on this hardware]") for p in profiles]
+    return ids, lines, hidden
+
+
+def cmd_pick(args):
+    if not _list_profiles():
         print("No profiles in config/models.yaml")
         return
-    ids = [p["id"] for p in profiles]
+    ids, lines, hidden = _pick_choices("--all" in args)
+    if hidden:
+        print(f"{hidden} profile(s) hidden (need more GPUs/RAM): "
+              "use 'llmctl pick --all' to show them", file=sys.stderr)
     # Try fzf first
     try:
         r = subprocess.run(
             ["fzf", "--prompt", "Load model › ", "--height", "40%", "--reverse"],
-            input="\n".join(ids),
+            input="\n".join(lines),
             capture_output=True,
             text=True,
         )
         if r.returncode == 0 and r.stdout.strip():
-            cmd_swap([r.stdout.strip()])
+            cmd_swap([r.stdout.split()[0]])
             return
         if r.returncode != 0:
             raise FileNotFoundError
@@ -363,8 +642,8 @@ def cmd_pick(_args):
         pass
     # Numbered fallback
     print("Available profiles:")
-    for i, p in enumerate(ids, 1):
-        print(f"  {i:2d}) {p}")
+    for i, line in enumerate(lines, 1):
+        print(f"  {i:2d}) {line}")
     try:
         choice = input("Select [number]: ").strip()
         idx = int(choice) - 1
@@ -410,7 +689,16 @@ def cmd_bench(args):
         print(f"For now use: {STACK_DIR / 'bench'}")
         print("Or point ~/ai/vllm_bench.py at http://127.0.0.1:8080/v1")
         return
+    force = "--force" in args
+    args = [a for a in args if a != "--force"]
     profile = args[0] if args else None
+    if profile and not force:
+        # The router would load an unsupported profile by name, so apply the
+        # same refusal as `swap` (--force skips it).
+        allowed, entry, hw = check_swap_allowed(profile)
+        if not allowed:
+            print("\n".join(_refusal_lines(profile, entry, hw)), file=sys.stderr)
+            sys.exit(2)
     cmd_args = [sys.executable, str(BENCH_SCRIPT)]
     if profile:
         cmd_args += ["--model", profile, "--url", f"{LLAMA_SWAP_URL}/v1/chat/completions"]
@@ -484,6 +772,7 @@ COMMANDS = {
     "down": cmd_down,
     "status": cmd_status,
     "list": cmd_list,
+    "hw": cmd_hw,
     "swap": cmd_swap,
     "unload": cmd_unload,
     "pick": cmd_pick,
@@ -495,16 +784,42 @@ COMMANDS = {
 }
 
 
+def _extract_gpu_count_flag(argv):
+    """Remove a global `--gpu-count N` / `--gpu-count=N` from argv (any position);
+    returns (remaining argv, count or None). Raises ValueError on a bad value."""
+    rest, count, i = [], None, 0
+    while i < len(argv):
+        a = argv[i]
+        if a == "--gpu-count":
+            if i + 1 >= len(argv):
+                raise ValueError("--gpu-count needs a value")
+            count = _parse_gpu_count(argv[i + 1], "--gpu-count")
+            i += 2
+        elif a.startswith("--gpu-count="):
+            count = _parse_gpu_count(a.split("=", 1)[1], "--gpu-count")
+            i += 1
+        else:
+            rest.append(a)
+            i += 1
+    return rest, count
+
+
 def main():
-    if len(sys.argv) < 2 or sys.argv[1] in ("-h", "--help", "help"):
+    global GPU_COUNT_FLAG
+    try:
+        argv, GPU_COUNT_FLAG = _extract_gpu_count_flag(sys.argv[1:])
+    except ValueError as e:
+        print(f"llmctl: {e}", file=sys.stderr)
+        sys.exit(1)
+    if not argv or argv[0] in ("-h", "--help", "help"):
         print(__doc__)
         sys.exit(0)
-    subcmd = sys.argv[1]
+    subcmd = argv[0]
     if subcmd not in COMMANDS:
         print(f"Unknown command: {subcmd}")
         print("Commands: " + "  ".join(sorted(COMMANDS)))
         sys.exit(1)
-    COMMANDS[subcmd](sys.argv[2:])
+    COMMANDS[subcmd](argv[1:])
 
 
 if __name__ == "__main__":

@@ -71,39 +71,109 @@ GPU VRAM:
 
 ### `llmctl list`
 
-List all profiles defined in `config/models.yaml`. Marks currently loaded
-models with `*`.
+List the profiles in `config/models.yaml` that can run on this machine's hardware
+(judged from each profile's `metadata.requires`, see `llmctl hw`). Marks currently
+loaded models with `*`. If any profiles were hidden because the GPU count or host RAM
+is too small, a final line says how many.
 
 ```
-llmctl list
+llmctl list            # supported profiles only
+llmctl list --all      # every profile; unsupported ones are marked with the reason
 ```
 
-Example output:
+Example output (`LLMSTACK_GPU_COUNT=2`):
 ```
-Profiles (12)  [* = loaded]:
-  qwen3.8-27b-code *
-  qwen3.8-27b-think
-  qwen3.8-27b-fast
-  qwen3.8-flash-next
-  qwen3.8-flash-next-vllm
-  qwen3.8-27b-code
-  qwen3.6-35b-128k-nomtp
-  qwen3.6-35b-fast
-  gemma4-26b-q8
-  gemma4-12b-q4
-  gemma4-26b-a4b
-  gemma4-26b-fp8
+Profiles (9)  [* = loaded]:
+  qwen3.8-27b-code  (aliases: qwen3.8, 27b-3.8, qwen3.8-27b)
+  qwen3.8-27b-think  (aliases: 27b-think)
+  ...
+  gemma4-26b-fp8  (aliases: gemma4-fp8, gemma4-fast-vllm)
+3 profile(s) hidden (need more GPUs/RAM): use 'llmctl list --all' to show them
 ```
+
+With `--all`:
+```
+  qwen3.8-flash-next  (aliases: flash-next, qwen3.8-flash)  [UNSUPPORTED: needs min_gpus 3, detected 2]
+  qwen3.8-flash-next-vllm  (aliases: flash-next-vllm)  [UNSUPPORTED: needs gpus [4], detected 2]
+```
+
+If hardware detection is unavailable, `list` shows every profile exactly as before
+(see "Hardware awareness and fail-open" below).
 
 ---
 
-### `llmctl swap <profile>`
+### `llmctl hw [--json]`
+
+Show the detected hardware and which profiles it can run.
+
+```
+llmctl hw
+LLMSTACK_GPU_COUNT=2 llmctl hw          # simulate a 2-GPU rig
+llmctl hw --json                        # {hw, profiles:{name:{ok,tp_or_split,estimate,reasons,requires}}}
+```
+
+Example output (`LLMSTACK_GPU_COUNT=2`):
+```
+GPUs:      2 (override)
+VRAM/GPU:  unknown
+Host RAM:  188 GiB
+Note:      GPU count overridden (LLMSTACK_GPU_COUNT / --gpu-count); simulation only
+
+PROFILE                  OK  USES     EST         REASONS
+qwen3.8-27b-code         OK  TP2
+...
+qwen3.8-flash-next       NO  -        (estimate)  needs min_gpus 3, detected 2
+qwen3.8-flash-next-vllm  NO  -                    needs gpus [4], detected 2
+gemma4-26b-q8            OK  split 2  (estimate)
+```
+
+- `USES` is what `scripts/configure` would pick: `TP<n>` (vLLM tensor-parallel size, the
+  largest listed `gpus` entry that fits) or `split <n>` (llama-server `min_gpus` profiles).
+- `(estimate)` means the profile's requirements were derived, not measured on this rig.
+- GPU/RAM detection and the checks are `scripts/llmhw.py`; sources are `sysfs`, `rocm-smi`
+  or `override`. `VRAM/GPU` is unknown for an override.
+- Exit code 1 if the GPU count could not be detected (a warning explains why), else 0.
+  If `scripts/llmhw.py` loads but finds no GPU count, `--json` still prints the full
+  report with `ok` true for everything. If `scripts/llmhw.py` cannot be loaded (or
+  detection raises), `--json` prints `{"hw": null, "profiles": {}}`, plain `hw` prints
+  nothing but the `llmctl: warning: ... cannot report hardware` line on stderr, and
+  both exit 1.
+
+---
+
+### `llmctl swap [--force] <profile>`
 
 Load a model profile and wait until it is ready to serve requests.
 
 ```
 llmctl swap qwen3.8-27b-code
+llmctl swap --force gemma4-26b-a4b     # skip the hardware check
 ```
+
+If the profile (or the profile an alias resolves to) declares `metadata.requires` that this
+machine does not meet, the swap is **refused with exit code 2** before the router is
+contacted. The message names the unmet requirement(s), the detected hardware, a warning
+that the profile will probably fail to start, and the override. If the requirement is an
+`estimate` (see `llmctl hw`) the message says so, since the verdict is then a best guess.
+The last line appears only when the GPU count is a simulated one (`LLMSTACK_GPU_COUNT` /
+`--gpu-count`):
+
+```
+llmctl: 'gemma4-vllm' (profile 'gemma4-26b-a4b') does not meet its hardware requirements:
+  - needs gpus [4], detected 2
+Detected: 2 GPUs (override), 188 GiB host RAM
+This profile will probably fail to start (out of memory or an invalid tensor-parallel size).
+Run 'llmctl hw' to see what fits, or 'llmctl swap --force gemma4-26b-a4b' to try anyway (a failed start can leave the router waiting on a slow health check).
+LLMSTACK_GPU_COUNT / --gpu-count only simulate a different rig; unset them to use the real hardware.
+```
+
+`--force` skips the refusal and runs the swap, adding a warning on stderr
+(`warning: --force: '<profile>' does not meet its requirements (<reasons>); expect the
+start to fail`). Expect it to fail: the container can run out of memory or reject the
+tensor-parallel size, and a failed start can leave the router waiting on a slow health
+check. A profile with no `requires` block, a name that is
+not in `config/models.yaml` (the router decides), or a failed hardware detection are all
+allowed.
 
 - Sends a warm-up chat completion request (max_tokens=1) which causes
   llama-swap to start the backend container
@@ -134,13 +204,17 @@ llmctl unload
 
 ---
 
-### `llmctl pick`
+### `llmctl pick [--all]`
 
 Interactive model picker. Uses `fzf` if installed, falls back to a numbered
-list.
+list. Like `llmctl list`, it offers only profiles this hardware can run; `--all`
+includes the rest, tagged `[unsupported on this hardware]`. Picking a tagged profile is
+always refused with the `swap` message (the picker cannot pass `--force`); to load one
+anyway run `llmctl swap --force <id>`.
 
 ```
 llmctl pick
+llmctl pick --all
 ```
 
 With `fzf`:
@@ -195,6 +269,8 @@ llmctl bench qwen3.8-27b-code
 ```
 
 Wraps `bench/concurrent_bench.py`. Prints aggregate tok/s, TTFT, and per-GPU VRAM.
+A profile this hardware cannot run is refused with the same exit-2 message as `swap`
+(the router would otherwise load it by name); `llmctl bench --force <profile>` skips that check.
 Used to establish throughput baselines and detect regressions after config changes.
 
 For a full sweep across all prompt sizes and concurrency levels:
@@ -258,6 +334,33 @@ llmproxy: RUNNING  pid=23456  port=9000 → :8080
 
 ---
 
+## Hardware awareness and fail-open
+
+`llmctl hw`, `list`, `pick` and `swap` use `scripts/llmhw.py` (the same module as
+`scripts/configure`) to detect GPUs / host RAM and to evaluate each profile's
+`metadata.requires` (schema: `config/CLAUDE.md`). The module is located relative to the real
+path of `llmctl`, so symlinks and other working directories are fine.
+
+| Control | Effect |
+|---------|--------|
+| `LLMSTACK_GPU_COUNT=N` | Treat the machine as having N GPUs (source `override`). For simulating smaller rigs and testing; it does not change what is really installed, so a swap that passes the check can still fail at container start. |
+| `--gpu-count N` | Same, as a global flag in any position (`llmctl --gpu-count 2 list`); wins over the env var. |
+| `llmctl swap --force` | Skip the swap refusal. The profile will probably fail to start. |
+
+**Fail open:** hardware checks never block or crash llmctl. If `scripts/llmhw.py` cannot be
+loaded, detection raises, or no GPU count can be detected, `list`, `pick` and `swap` behave
+exactly as before this feature (all profiles shown, any swap allowed) and print one short
+`llmctl: warning: ...` line on stderr. An unusable `LLMSTACK_GPU_COUNT` value is warned
+about and ignored. `llmctl hw` has nothing to show without detection and exits 1.
+
+`scripts/configure` hides unsupported profiles from `/v1/models` with an `unlisted: true
+# llmstack:auto` line; `llmctl list` / `pick` / `swap` apply the same `llmhw` verdict
+(hidden from the lists, refused by `swap` without `--force`). The llmctl verdict comes
+only from `metadata.requires`: a hand-written `unlisted: true` or `false` does not change
+it.
+
+---
+
 ## State files
 
 | File | Purpose |
@@ -276,6 +379,8 @@ llmproxy: RUNNING  pid=23456  port=9000 → :8080
 |---------|--------|
 | `up` hangs past 10 s | Check `llama-swap.log`; confirm GPUs are free (`rocm-smi`) |
 | `swap` times out | First vLLM boot takes 18–20 min; run `llmctl logs <profile>` and wait manually. Subsequent starts are ~2–3 min. |
+| `swap` exits 2 "does not meet its hardware requirements" | The profile's `metadata.requires` is not met (`llmctl hw` shows why). Unset `LLMSTACK_GPU_COUNT` if you set it for a simulation; use `--force` only to knowingly override |
+| A profile is missing from `list` | Hidden for this hardware; `llmctl list --all` shows it with the reason |
 | `swap` returns no response | `llmctl logs <profile>` to see backend errors |
 | Port 8080 already in use | Another process is on 8080; `lsof -i :8080` to identify |
 | `unload` no-ops silently | Nothing was loaded; llama-swap returns OK regardless |

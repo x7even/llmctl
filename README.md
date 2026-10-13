@@ -145,8 +145,9 @@ See `docs/models.md` for full tables across all prompt sizes and concurrency lev
 llmctl up                 start llama-swap (auto-downloads binary if missing)
 llmctl down               stop llama-swap
 llmctl status             running state, loaded models, GPU VRAM snapshot
-llmctl list               list all profiles [* = loaded]
-llmctl swap <profile>     load a model and wait until ready
+llmctl list [--all]       list profiles this hardware can run [* = loaded]; --all shows every profile
+llmctl hw [--json]        detected GPUs / RAM and which profiles fit (LLMSTACK_GPU_COUNT=N simulates)
+llmctl swap <profile>     load a model and wait until ready (refuses unsupported ones; --force overrides, expect the start to fail)
 llmctl unload             unload all backends, free VRAM (llama-swap stays up)
 llmctl pick               interactive fzf / numbered picker
 llmctl logs               tail the llama-swap process log
@@ -321,7 +322,7 @@ What it adjusts in `config/models.yaml`:
 | `--tensor-split` (llama-server) | Set to `1,1,...` matching GPU count (`1` for a single GPU) |
 | `--enable-expert-parallel` | Never changed by `configure` |
 
-**VRAM limits** — `qwen3.8-flash-next` (~81 GB) won't fit on fewer than 3 GPUs, and `qwen3.8-flash-next-vllm` needs all 4. The script reports profiles below their minimum GPU count (or host RAM) as `SKIP`. Their `cmd` stays untouched, but they get an auto-managed `unlisted: true  # llmstack:auto - needs gpus [4], detected 2` line, so llama-swap hides them from `/v1/models`; they still fail if swapped to by name. Re-running `configure` on a machine where the profile is supported removes only those marker lines. A hand-written `unlisted:` line is never touched or duplicated. Per-profile behaviour on 3, 2 and 1 GPUs, with measured numbers: `docs/gpu-counts.md`.
+**VRAM limits** — `qwen3.8-flash-next` (~81 GB) won't fit on fewer than 3 GPUs, and `qwen3.8-flash-next-vllm` needs all 4. The script reports profiles below their minimum GPU count (or host RAM) as `SKIP`. Their `cmd` stays untouched, but they get an auto-managed `unlisted: true  # llmstack:auto - needs gpus [4], detected 2` line, so llama-swap hides them from `/v1/models`. `llmctl list` / `pick` / `swap` apply the same `scripts/llmhw.py` verdict (hidden from the lists; `llmctl swap` refuses them with exit 2 unless `--force`, and they will probably fail to start). That verdict comes only from `metadata.requires`; a hand-written `unlisted: true` or `false` does not change it. Re-running `configure` on a machine where the profile is supported removes only those marker lines. A hand-written `unlisted:` line is never touched or duplicated. Per-profile behaviour on 3, 2 and 1 GPUs, with measured numbers: `docs/gpu-counts.md`.
 
 ---
 
