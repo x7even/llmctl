@@ -196,8 +196,10 @@ llmctl pick
 terminal window.
 
 ```bash
-llmpanel [--url URL] [--interval DURATION] [--config PATH] [--log PATH]
+llmpanel [--url URL] [--interval DURATION] [--config PATH] [--log PATH] [--gpu-count N]
 ```
+
+The Models panel applies the same hardware check as `llmctl`: it lists only the profiles this machine can run (from each profile's `metadata.requires`), shows the detected hardware in its header, and `a` toggles a greyed-out view of the rest with the reason. Swapping an unsupported profile is refused; use `llmctl swap --force` to try it anyway.
 
 **Panels** (press `1`–`5` or `Tab` to focus, `f` for fullscreen):
 
@@ -205,7 +207,7 @@ llmpanel [--url URL] [--interval DURATION] [--config PATH] [--log PATH]
 |---|-------|-------|
 | 1 | Inference | Active model, running/waiting requests, KV%, decode tok/s, TTFT, prefix hit rate |
 | 2 | GPU | Per-GPU VRAM, use%, temperature — colour-coded |
-| 3 | Models | All profiles; `▶` cursor, `●` loaded; `Enter`/`s` to swap, `u` to unload |
+| 3 | Models | Profiles this hardware can run; `▶` cursor, `●` loaded; `Enter`/`s` to swap, `u` to unload, `a` to show the rest |
 | 4 | Config | Scrollable YAML for the selected profile; updates as cursor moves |
 | 5 | Logs | Live tail of llama-swap log |
 
@@ -219,8 +221,9 @@ llmpanel [--url URL] [--interval DURATION] [--config PATH] [--log PATH]
 | `↑↓` / `jk` | Navigate model list or scroll Config/Logs |
 | `Enter` / `s` | Swap to selected model |
 | `u` | Unload all models |
+| `a` | Show / hide profiles this hardware cannot run (greyed, with the reason) |
 | `p` | Cycle poll interval (500ms → 1s → 2s → 5s → 15s) |
-| `r` | Reload models.yaml from disk |
+| `r` | Reload models.yaml from disk and re-detect hardware |
 | `q` / `Ctrl+C` | Quit |
 
 Build from source: `cd tui && make install`  
