@@ -287,7 +287,7 @@ Clients  ──►  llmproxy :9000  ──►  llama-swap :8080  ──►  vLLM
 
 ## Hardware compatibility
 
-The containers and config in this repo are built for the **AMD Radeon AI PRO R9700 (gfx1201 / RDNA4)**. **1 to 4 GPUs are supported** — `scripts/configure` auto-detects your count and patches `tensor-parallel-size`, `tensor-split`, and expert-parallel settings accordingly. The benchmarks in this repo use 4× R9700 (128 GB total); fewer GPUs reduce throughput and limit which models fit. Here is what each backend requires if you want to adapt it to other hardware:
+The containers and config in this repo are built for the **AMD Radeon AI PRO R9700 (gfx1201 / RDNA4)**. **1 to 4 GPUs are supported** — `scripts/configure` auto-detects your count and patches `tensor-parallel-size` and `tensor-split` accordingly and hides profiles that cannot run on your machine. The benchmarks in this repo use 4× R9700 (128 GB total); fewer GPUs reduce throughput and limit which models fit. Here is what each backend requires if you want to adapt it to other hardware:
 
 | Backend | Requirement | Notes |
 |---------|-------------|-------|
@@ -298,14 +298,16 @@ The containers and config in this repo are built for the **AMD Radeon AI PRO R97
 
 ### Configuration (required after cloning)
 
-`scripts/configure` must be run once after cloning. It does two things:
+`scripts/configure` must be run once after cloning. It does three things:
 
 1. **Replaces `__LLMSTACK_DIR__`** — `config/models.yaml` ships with this literal placeholder in all volume mount paths. llama-swap executes container commands without a shell, so environment variables like `$HOME` aren't expanded at runtime. `configure` substitutes the placeholder with the absolute path to your repo clone.
 
-2. **Patches GPU count** — auto-detected from sysfs VRAM size (with `rocm-smi` as fallback), or set with `--gpu-count`.
+2. **Patches GPU count** — auto-detected from sysfs VRAM size (with `rocm-smi` as fallback), or set with `--gpu-count`. What each profile needs is declared in its own `metadata: requires:` block in `config/models.yaml` (`gpus: [2, 4]` for vLLM, `min_gpus: 3` for llama-server, optional `host_ram_gib`; schema in `config/CLAUDE.md`), and `configure` reads it from there.
+
+3. **Hides profiles this machine cannot run** — see [VRAM limits](#configuration-required-after-cloning) below.
 
 ```bash
-scripts/configure                  # auto-detect GPU count, apply both fixes
+scripts/configure                  # auto-detect GPU count, apply all fixes
 scripts/configure --dry-run        # preview the result without writing
 scripts/configure --gpu-count 2    # override GPU count (if rocm-smi isn't available)
 ```
@@ -319,7 +321,7 @@ What it adjusts in `config/models.yaml`:
 | `--tensor-split` (llama-server) | Set to `1,1,...` matching GPU count (`1` for a single GPU) |
 | `--enable-expert-parallel` | Never changed by `configure` |
 
-**VRAM limits** — `qwen3.8-flash-next` (~81 GB) won't fit on fewer than 3 GPUs, and `qwen3.8-flash-next-vllm` needs all 4. The script reports profiles below their minimum GPU count as `SKIP` and leaves them unchanged (they fail if swapped to); delete them from your local `models.yaml` if you like. Per-profile behaviour on 3, 2 and 1 GPUs, with measured numbers: `docs/gpu-counts.md`.
+**VRAM limits** — `qwen3.8-flash-next` (~81 GB) won't fit on fewer than 3 GPUs, and `qwen3.8-flash-next-vllm` needs all 4. The script reports profiles below their minimum GPU count (or host RAM) as `SKIP`. Their `cmd` stays untouched, but they get an auto-managed `unlisted: true  # llmstack:auto - needs gpus [4], detected 2` line, so llama-swap hides them from `/v1/models`; they still fail if swapped to by name. Re-running `configure` on a machine where the profile is supported removes only those marker lines. A hand-written `unlisted:` line is never touched or duplicated. Per-profile behaviour on 3, 2 and 1 GPUs, with measured numbers: `docs/gpu-counts.md`.
 
 ---
 
