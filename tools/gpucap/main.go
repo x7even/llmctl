@@ -13,6 +13,7 @@ import (
 	"regexp"
 	"strconv"
 	"strings"
+	"text/tabwriter"
 	"time"
 )
 
@@ -238,23 +239,69 @@ func apply(cards []card, watts int) error {
 	return nil
 }
 
+// stat reads a numeric sysfs file, divides by div and formats it with f; "-" if unreadable.
+func stat(path string, div float64, f string) string {
+	v, err := readInt(path)
+	if err != nil {
+		return "-"
+	}
+	return fmt.Sprintf(f, float64(v)/div)
+}
+
+func readStr(path string) string {
+	b, err := os.ReadFile(path)
+	if err != nil {
+		return "-"
+	}
+	return strings.TrimSpace(strings.ReplaceAll(string(b), "\x00", ""))
+}
+
 func status(cards []card) {
 	cf := loadConf()
 	fmt.Printf("configured: %dW, %dmV, undervolt limit -%dmV (%s)\n", cf.capW, cf.uvMV, cf.uvLimit, confPath)
 	if !odEnabled() {
 		fmt.Println("voltage offset: OverDrive not enabled (run install.sh and reboot)")
 	}
+	tw := tabwriter.NewWriter(os.Stdout, 0, 0, 2, ' ', tabwriter.AlignRight)
+	fmt.Fprintln(tw, "CARD\tCAP W\tDRAW W\tOFFSET mV\tVGFX mV\tSCLK MHz\tMCLK MHz\tEDGE C\tJUNC C\tMEM C\tFAN RPM\tFAN %\tBUSY %\tVRAM GB\tPCIE\t")
+	var capRange, odRange string
 	for _, c := range cards {
-		cap, _ := readInt(c.hwmon + "/power1_cap")
-		minU, _ := readInt(c.hwmon + "/power1_cap_min")
-		maxU, _ := readInt(c.hwmon + "/power1_cap_max")
-		avg, _ := readInt(c.hwmon + "/power1_average")
-		uv := "offset=n/a"
+		h, d := c.hwmon, c.dev
+		off := "n/a"
 		if cur, lo, hi, ok := readOD(c); ok {
-			uv = fmt.Sprintf("offset=%dmV (range %d..%dmV)", cur, lo, hi)
+			off = strconv.Itoa(cur)
+			odRange = fmt.Sprintf("%d..%d mV", lo, hi)
 		}
-		fmt.Printf("%s cap=%dW (range %d-%dW) draw=%dW %s\n", c.name, cap/1e6, minU/1e6, maxU/1e6, avg/1e6, uv)
+		minU, _ := readInt(h + "/power1_cap_min")
+		maxU, _ := readInt(h + "/power1_cap_max")
+		capRange = fmt.Sprintf("%d-%d W", minU/1e6, maxU/1e6)
+		vram := "-"
+		if u, err := readInt(d + "/mem_info_vram_used"); err == nil {
+			t, _ := readInt(d + "/mem_info_vram_total")
+			vram = fmt.Sprintf("%.1f/%.0f", float64(u)/1e9, float64(t)/1e9)
+		}
+		fan := "-"
+		if v, err := readInt(h + "/pwm1"); err == nil {
+			fan = fmt.Sprintf("%.0f", float64(v)*100/255)
+		}
+		pcie := "-"
+		if w := readStr(d + "/current_link_width"); w != "-" {
+			pcie = fmt.Sprintf("x%s@%s", w, strings.Fields(readStr(d + "/current_link_speed"))[0])
+		}
+		fmt.Fprintf(tw, "%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t\n",
+			c.name,
+			stat(h+"/power1_cap", 1e6, "%.0f"), stat(h+"/power1_average", 1e6, "%.0f"),
+			off, stat(h+"/in0_input", 1, "%.0f"),
+			stat(h+"/freq1_input", 1e6, "%.0f"), stat(h+"/freq2_input", 1e6, "%.0f"),
+			stat(h+"/temp1_input", 1e3, "%.0f"), stat(h+"/temp2_input", 1e3, "%.0f"), stat(h+"/temp3_input", 1e3, "%.0f"),
+			stat(h+"/fan1_input", 1, "%.0f"), fan,
+			stat(d+"/gpu_busy_percent", 1, "%.0f"), vram, pcie)
 	}
+	tw.Flush()
+	if odRange == "" {
+		odRange = "n/a"
+	}
+	fmt.Printf("ranges: cap %s, offset %s\n", capRange, odRange)
 }
 
 func parseWatts(s string) int {

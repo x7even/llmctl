@@ -9,7 +9,7 @@ A small Linux command-line tool to view and set the power cap on every AMD GPU, 
 ## Usage
 
 ```
-gpucap status          show configured cap, then cap / allowed range / current draw per card
+gpucap status          table per card: cap, draw, voltage offset, live voltage, clocks, temps, fan, busy, VRAM, PCIe link
 gpucap set <watts>     write /etc/gpucap.conf and apply now (needs root)
 gpucap apply [watts]   apply the configured (or given) cap; this is what the systemd units run
 ```
@@ -21,9 +21,11 @@ Example:
 
 ```
 $ gpucap status
-configured: 230W (/etc/gpucap.conf)
-card0 cap=230W (range 147-300W) draw=18W
+configured: 230W, -30mV, undervolt limit -100mV (/etc/gpucap.conf)
+   CARD  CAP W  DRAW W  OFFSET mV  VGFX mV  SCLK MHz  MCLK MHz  EDGE C  JUNC C  MEM C  FAN RPM  FAN %  BUSY %  VRAM GB      PCIE
+  card0    230     180        -30      950      2900      1258      62      71     66     2100     45      98  28.1/34  x16@32.0
 ...
+ranges: cap 210-330 W, offset -200..0 mV
 $ sudo gpucap set 250
 ```
 
