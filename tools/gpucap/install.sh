@@ -31,6 +31,7 @@ if [ -r "$PARAM" ]; then
     else echo "WARNING: rebuild your initramfs manually so the amdgpu option applies at boot"; fi
     echo
     echo "*** REBOOT REQUIRED once to enable voltage offset (ppfeaturemask $(printf '0x%x' "$cur") -> $new). ***"
-    echo "*** After that: sudo gpucap undervolt -30   (no reboot needed to change it again) ***"
+    echo "*** After the reboot, undervolting is enabled: sudo gpucap undervolt -XX   (e.g. -30; XX = mV, max 100) ***"
+    echo "*** Changing the offset later never needs another reboot. ***"
   fi
 fi
