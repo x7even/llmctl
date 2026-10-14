@@ -30,6 +30,22 @@ $ sudo gpucap set 250
 It works through the amdgpu hwmon files (`/sys/class/drm/card*/device/hwmon/*/power1_cap`), so it only sees
 AMD cards with a power-cap sysfs entry.
 
+## Undervolting (optional, RDNA3/RDNA4)
+
+```
+gpucap undervolt <mV>  write UV_MV to /etc/gpucap.conf and apply a GFX voltage offset now (e.g. -50; 0 clears; needs root)
+```
+
+This writes `vo <mV>` then `c` to `/sys/class/drm/card*/device/pp_od_clk_voltage` and reads the value back.
+`apply` (boot/resume) re-applies the saved offset after the cap; a failed offset only warns, so the cap still applies.
+`gpucap status` shows the current offset and allowed range, or `offset=n/a` when unsupported.
+
+**Prerequisite:** the file only exists when amdgpu's OverDrive bit is enabled, which the default
+`amdgpu.ppfeaturemask=0xfff7bfff` does not do. Add `amdgpu.ppfeaturemask=0xfff7ffff` (or `0xffffffff`) to the kernel
+command line and reboot. Older kernels may not expose the offset for newer GPUs (Navi 48 support landed around 6.13+).
+Start with a small offset (-30 to -50 mV) and stress-test each card: a too-aggressive undervolt shows up as hangs or
+crashes under load, not as an error.
+
 ## Build and install
 
 Requires Go 1.22+ to build (the binary is not committed).
