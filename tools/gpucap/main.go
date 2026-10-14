@@ -1,6 +1,8 @@
 // gpucap: view and set the power cap on every amdgpu card, persistently.
 //
-//	gpucap status          show cap/min/max/draw per card
+//	gpucap                 summary: settings, clocks, temperatures per card (also `gpucap status`)
+//	gpucap --settings      just the current settings and their allowed ranges
+//	gpucap --all           every value we can read, per card
 //	gpucap set <watts>     write config and apply now (needs root)
 //	gpucap undervolt <mV>  write config and apply a GFX voltage offset now (e.g. -50; 0 clears; needs root)
 //	gpucap apply [watts]   apply configured (or given) cap and voltage offset; used by systemd
@@ -11,6 +13,7 @@ import (
 	"os"
 	"path/filepath"
 	"regexp"
+	"slices"
 	"strconv"
 	"strings"
 	"text/tabwriter"
@@ -256,52 +259,95 @@ func readStr(path string) string {
 	return strings.TrimSpace(strings.ReplaceAll(string(b), "\x00", ""))
 }
 
-func status(cards []card) {
+type column struct {
+	head string
+	get  func(c card) string
+}
+
+// columns holds every value status can show; the views below pick from it by header.
+var columns = []column{
+	{"CARD", func(c card) string { return c.name }},
+	{"CAP W", func(c card) string { return stat(c.hwmon+"/power1_cap", 1e6, "%.0f") }},
+	{"CAP RANGE W", func(c card) string {
+		lo, _ := readInt(c.hwmon + "/power1_cap_min")
+		hi, _ := readInt(c.hwmon + "/power1_cap_max")
+		return fmt.Sprintf("%d-%d", lo/1e6, hi/1e6)
+	}},
+	{"DRAW W", func(c card) string { return stat(c.hwmon+"/power1_average", 1e6, "%.0f") }},
+	{"OFFSET mV", func(c card) string {
+		if cur, _, _, ok := readOD(c); ok {
+			return strconv.Itoa(cur)
+		}
+		return "n/a"
+	}},
+	{"OFFSET RANGE mV", func(c card) string {
+		if _, lo, hi, ok := readOD(c); ok {
+			return fmt.Sprintf("%d..%d", lo, hi)
+		}
+		return "n/a"
+	}},
+	{"VGFX mV", func(c card) string { return stat(c.hwmon+"/in0_input", 1, "%.0f") }},
+	{"SCLK MHz", func(c card) string { return stat(c.hwmon+"/freq1_input", 1e6, "%.0f") }},
+	{"MCLK MHz", func(c card) string { return stat(c.hwmon+"/freq2_input", 1e6, "%.0f") }},
+	{"EDGE C", func(c card) string { return stat(c.hwmon+"/temp1_input", 1e3, "%.0f") }},
+	{"JUNC C", func(c card) string { return stat(c.hwmon+"/temp2_input", 1e3, "%.0f") }},
+	{"MEM C", func(c card) string { return stat(c.hwmon+"/temp3_input", 1e3, "%.0f") }},
+	{"FAN RPM", func(c card) string { return stat(c.hwmon+"/fan1_input", 1, "%.0f") }},
+	{"FAN %", func(c card) string {
+		if v, err := readInt(c.hwmon + "/pwm1"); err == nil {
+			return fmt.Sprintf("%.0f", float64(v)*100/255)
+		}
+		return "-"
+	}},
+	{"BUSY %", func(c card) string { return stat(c.dev+"/gpu_busy_percent", 1, "%.0f") }},
+	{"VRAM GB", func(c card) string {
+		u, err := readInt(c.dev + "/mem_info_vram_used")
+		if err != nil {
+			return "-"
+		}
+		t, _ := readInt(c.dev + "/mem_info_vram_total")
+		return fmt.Sprintf("%.1f/%.0f", float64(u)/1e9, float64(t)/1e9)
+	}},
+	{"PCIE", func(c card) string {
+		w := readStr(c.dev + "/current_link_width")
+		sp := strings.Fields(readStr(c.dev + "/current_link_speed"))
+		if w == "-" || len(sp) == 0 {
+			return "-"
+		}
+		return fmt.Sprintf("x%s@%s", w, sp[0])
+	}},
+}
+
+// Views of the column set, selected by the first argument to `gpucap`.
+var views = map[string][]string{
+	"summary":  {"CARD", "CAP W", "DRAW W", "OFFSET mV", "VGFX mV", "SCLK MHz", "MCLK MHz", "EDGE C", "JUNC C", "MEM C"},
+	"settings": {"CARD", "CAP W", "CAP RANGE W", "OFFSET mV", "OFFSET RANGE mV"},
+}
+
+func status(cards []card, view string) {
 	cf := loadConf()
 	fmt.Printf("configured: %dW, %dmV, undervolt limit -%dmV (%s)\n", cf.capW, cf.uvMV, cf.uvLimit, confPath)
 	if !odEnabled() {
 		fmt.Println("voltage offset: OverDrive not enabled (run install.sh and reboot)")
 	}
+	var cols []column
+	for _, c := range columns {
+		if want, ok := views[view]; !ok || slices.Contains(want, c.head) { // "all": no entry, every column
+			cols = append(cols, c)
+		}
+	}
 	tw := tabwriter.NewWriter(os.Stdout, 0, 0, 2, ' ', tabwriter.AlignRight)
-	fmt.Fprintln(tw, "CARD\tCAP W\tDRAW W\tOFFSET mV\tVGFX mV\tSCLK MHz\tMCLK MHz\tEDGE C\tJUNC C\tMEM C\tFAN RPM\tFAN %\tBUSY %\tVRAM GB\tPCIE\t")
-	var capRange, odRange string
-	for _, c := range cards {
-		h, d := c.hwmon, c.dev
-		off := "n/a"
-		if cur, lo, hi, ok := readOD(c); ok {
-			off = strconv.Itoa(cur)
-			odRange = fmt.Sprintf("%d..%d mV", lo, hi)
+	for _, c := range cols {
+		fmt.Fprint(tw, c.head, "\t")
+	}
+	fmt.Fprintln(tw)
+	for _, cd := range cards {
+		for _, c := range cols {
+			fmt.Fprint(tw, c.get(cd), "\t")
 		}
-		minU, _ := readInt(h + "/power1_cap_min")
-		maxU, _ := readInt(h + "/power1_cap_max")
-		capRange = fmt.Sprintf("%d-%d W", minU/1e6, maxU/1e6)
-		vram := "-"
-		if u, err := readInt(d + "/mem_info_vram_used"); err == nil {
-			t, _ := readInt(d + "/mem_info_vram_total")
-			vram = fmt.Sprintf("%.1f/%.0f", float64(u)/1e9, float64(t)/1e9)
-		}
-		fan := "-"
-		if v, err := readInt(h + "/pwm1"); err == nil {
-			fan = fmt.Sprintf("%.0f", float64(v)*100/255)
-		}
-		pcie := "-"
-		if w := readStr(d + "/current_link_width"); w != "-" {
-			pcie = fmt.Sprintf("x%s@%s", w, strings.Fields(readStr(d + "/current_link_speed"))[0])
-		}
-		fmt.Fprintf(tw, "%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t\n",
-			c.name,
-			stat(h+"/power1_cap", 1e6, "%.0f"), stat(h+"/power1_average", 1e6, "%.0f"),
-			off, stat(h+"/in0_input", 1, "%.0f"),
-			stat(h+"/freq1_input", 1e6, "%.0f"), stat(h+"/freq2_input", 1e6, "%.0f"),
-			stat(h+"/temp1_input", 1e3, "%.0f"), stat(h+"/temp2_input", 1e3, "%.0f"), stat(h+"/temp3_input", 1e3, "%.0f"),
-			stat(h+"/fan1_input", 1, "%.0f"), fan,
-			stat(d+"/gpu_busy_percent", 1, "%.0f"), vram, pcie)
+		fmt.Fprintln(tw)
 	}
 	tw.Flush()
-	if odRange == "" {
-		odRange = "n/a"
-	}
-	fmt.Printf("ranges: cap %s, offset %s\n", capRange, odRange)
 }
 
 func parseWatts(s string) int {
@@ -324,8 +370,12 @@ func main() {
 		cmd = os.Args[1]
 	}
 	switch cmd {
-	case "status":
-		status(findCards())
+	case "status", "--summary":
+		status(findCards(), "summary")
+	case "--settings":
+		status(findCards(), "settings")
+	case "--all":
+		status(findCards(), "all")
 	case "set":
 		if len(os.Args) < 3 {
 			fmt.Fprintln(os.Stderr, "usage: gpucap set <watts>")
@@ -393,7 +443,7 @@ func main() {
 			fmt.Fprintln(os.Stderr, "warning:", err)
 		}
 	default:
-		fmt.Fprintln(os.Stderr, "usage: gpucap status | set <watts> | undervolt <mV> | apply [watts]")
+		fmt.Fprintln(os.Stderr, "usage: gpucap [--settings | --all] | set <watts> | undervolt <mV> | apply [watts]")
 		os.Exit(2)
 	}
 }
