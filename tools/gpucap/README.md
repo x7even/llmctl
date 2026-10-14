@@ -40,11 +40,15 @@ This writes `vo <mV>` then `c` to `/sys/class/drm/card*/device/pp_od_clk_voltage
 `apply` (boot/resume) re-applies the saved offset after the cap; a failed offset only warns, so the cap still applies.
 `gpucap status` shows the current offset and allowed range, or `offset=n/a` when unsupported.
 
-**Prerequisite:** the file only exists when amdgpu's OverDrive bit is enabled, which the default
-`amdgpu.ppfeaturemask=0xfff7bfff` does not do. Add `amdgpu.ppfeaturemask=0xfff7ffff` (or `0xffffffff`) to the kernel
-command line and reboot. Older kernels may not expose the offset for newer GPUs (Navi 48 support landed around 6.13+).
-Start with a small offset (-30 to -50 mV) and stress-test each card: a too-aggressive undervolt shows up as hangs or
-crashes under load, not as an error.
+**Allowed range:** gpucap accepts 0 down to `-UV_LIMIT_MV` (default `-100` mV), further bounded by the range the driver
+reports. The driver usually allows about -200 mV, but offsets that deep are rarely stable. To go deeper, set
+`UV_LIMIT_MV=150` (for example) in `/etc/gpucap.conf`. Typical stable values are -30 to -80 mV and vary per chip: start at
+-30, stress-test each card, and step down. A too-aggressive undervolt shows up as hangs or crashes under load, not as an error.
+
+**Prerequisite (handled by `install.sh`):** the offset file only exists when amdgpu's OverDrive bit (`0x4000`) is set in
+`amdgpu.ppfeaturemask`, which the default does not do. `install.sh` ORs that bit into the running mask, writes
+`/etc/modprobe.d/gpucap-overdrive.conf`, rebuilds the initramfs, and tells you to **reboot once**. After that, changing the
+offset is a live write and never needs a reboot. Older kernels may not expose the offset for newer GPUs (Navi 48 landed around 6.13+).
 
 ## Build and install
 
@@ -70,7 +74,8 @@ which was just the value for the machine this was written for. Set your own with
 
 ```
 sudo systemctl disable --now gpu-power-cap.service gpu-power-cap-resume.service
-sudo rm /etc/systemd/system/gpu-power-cap*.service /usr/local/bin/gpucap /etc/gpucap.conf
+sudo rm /etc/systemd/system/gpu-power-cap*.service /usr/local/bin/gpucap /etc/gpucap.conf /etc/modprobe.d/gpucap-overdrive.conf
+sudo update-initramfs -u   # only if you removed the modprobe file
 sudo systemctl daemon-reload
 ```
 

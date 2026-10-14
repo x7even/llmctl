@@ -25,6 +25,11 @@ const (
 	// (writes CAP_W to /etc/gpucap.conf, which is what the boot/resume units read), or change
 	// this value (and the matching CAP_W in install.sh) and rebuild.
 	defaultCap = 230
+
+	// defaultUVLimit is the deepest undervolt (mV, magnitude) gpucap accepts unless UV_LIMIT_MV in
+	// /etc/gpucap.conf raises it. The driver range is usually wider (about -200 mV) but offsets that
+	// deep are rarely stable; typical stable values are -30 to -80 mV and this varies per chip.
+	defaultUVLimit = 100
 )
 
 type card struct {
@@ -72,12 +77,13 @@ func waitCards(timeout time.Duration) []card {
 }
 
 type conf struct {
-	capW int // power cap in watts
-	uvMV int // GFX voltage offset in mV; 0 = stock, negative = undervolt
+	capW    int // power cap in watts
+	uvMV    int // GFX voltage offset in mV; 0 = stock, negative = undervolt
+	uvLimit int // deepest undervolt allowed, mV magnitude
 }
 
 func loadConf() conf {
-	c := conf{capW: defaultCap}
+	c := conf{capW: defaultCap, uvLimit: defaultUVLimit}
 	b, err := os.ReadFile(confPath)
 	if err != nil {
 		return c
@@ -96,13 +102,17 @@ func loadConf() conf {
 			c.capW = n
 		case "UV_MV":
 			c.uvMV = n
+		case "UV_LIMIT_MV":
+			if n > 0 {
+				c.uvLimit = n
+			}
 		}
 	}
 	return c
 }
 
 func saveConf(c conf) error {
-	return os.WriteFile(confPath, []byte(fmt.Sprintf("CAP_W=%d\nUV_MV=%d\n", c.capW, c.uvMV)), 0o644)
+	return os.WriteFile(confPath, []byte(fmt.Sprintf("CAP_W=%d\nUV_MV=%d\nUV_LIMIT_MV=%d\n", c.capW, c.uvMV, c.uvLimit)), 0o644)
 }
 
 // Voltage offset (RDNA3/RDNA4). Needs amdgpu.ppfeaturemask with the OverDrive bit (0x4000) set;
@@ -131,6 +141,16 @@ func parseOD(table string) (cur, lo, hi int, ok bool) {
 	return cur, lo, hi, true
 }
 
+// odEnabled reports whether amdgpu's OverDrive feature bit is set in the running kernel.
+func odEnabled() bool {
+	b, err := os.ReadFile("/sys/module/amdgpu/parameters/ppfeaturemask")
+	if err != nil {
+		return false
+	}
+	m, err := strconv.ParseUint(strings.TrimSpace(string(b)), 0, 32)
+	return err == nil && m&0x4000 != 0
+}
+
 func readOD(c card) (cur, lo, hi int, ok bool) {
 	b, err := os.ReadFile(c.dev + odFile)
 	if err != nil {
@@ -139,7 +159,7 @@ func readOD(c card) (cur, lo, hi int, ok bool) {
 	return parseOD(string(b))
 }
 
-func applyOffset(cards []card, mv int) error {
+func applyOffset(cards []card, mv, limit int) error {
 	var failed int
 	for _, c := range cards {
 		_, lo, hi, ok := readOD(c)
@@ -151,8 +171,11 @@ func applyOffset(cards []card, mv int) error {
 			failed++
 			continue
 		}
+		if lo < -limit {
+			lo = -limit // gpucap's own safety limit (UV_LIMIT_MV), tighter than the driver's
+		}
 		if mv < lo || mv > hi {
-			fmt.Fprintf(os.Stderr, "%s: %dmV outside allowed %d..%dmV\n", c.name, mv, lo, hi)
+			fmt.Fprintf(os.Stderr, "%s: %dmV outside allowed %d..%dmV (raise UV_LIMIT_MV in %s to go deeper)\n", c.name, mv, lo, hi, confPath)
 			failed++
 			continue
 		}
@@ -216,7 +239,10 @@ func apply(cards []card, watts int) error {
 
 func status(cards []card) {
 	cf := loadConf()
-	fmt.Printf("configured: %dW, %dmV (%s)\n", cf.capW, cf.uvMV, confPath)
+	fmt.Printf("configured: %dW, %dmV, undervolt limit -%dmV (%s)\n", cf.capW, cf.uvMV, cf.uvLimit, confPath)
+	if !odEnabled() {
+		fmt.Println("voltage offset: OverDrive not enabled (run install.sh and reboot)")
+	}
 	for _, c := range cards {
 		cap, _ := readInt(c.hwmon + "/power1_cap")
 		minU, _ := readInt(c.hwmon + "/power1_cap_min")
@@ -292,7 +318,7 @@ func main() {
 		if len(cards) == 0 {
 			die(fmt.Errorf("no amdgpu cards found"))
 		}
-		if err := applyOffset(cards, mv); err != nil {
+		if err := applyOffset(cards, mv, loadConf().uvLimit); err != nil {
 			die(err)
 		}
 		cf := loadConf()
@@ -315,7 +341,7 @@ func main() {
 			die(err)
 		}
 		// a failed offset must not fail the unit and hide that the cap was applied
-		if err := applyOffset(cards, cf.uvMV); err != nil {
+		if err := applyOffset(cards, cf.uvMV, cf.uvLimit); err != nil {
 			fmt.Fprintln(os.Stderr, "warning:", err)
 		}
 	default:
