@@ -243,7 +243,7 @@ def test_hw_text_output():
     assert re.search(r"\bOK\s+TP2\b", rows["qwen3.8-27b-code"]), rows["qwen3.8-27b-code"]
     assert re.search(r"\bNO\s+-", rows["qwen3.8-flash-next-vllm"])
     assert "needs gpus [4], detected 2" in rows["qwen3.8-flash-next-vllm"]
-    assert any("(estimate)" in l for l in rows.values())
+    assert not any("(estimate)" in l for l in rows.values())  # every shipped profile's requirements are measured
     assert re.search(r"\bOK\s+split 2\b", rows["gemma4-12b-q4"])
 
 
