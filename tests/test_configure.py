@@ -301,13 +301,14 @@ def test_real_config_profiles_all_have_requires_and_known_values():
         assert req[k]["gpus"] == [2, 4] and not req[k].get("estimate")
     assert req["qwen3.8-flash-next-vllm"]["gpus"] == [4]
     assert req["qwen3.8-flash-next-vllm"]["host_ram_gib"] == 96
-    assert req["qwen3.8-flash-next"]["min_gpus"] == 3
-    assert req["gemma4-26b-a4b"]["gpus"] == [4] and req["gemma4-26b-a4b"]["estimate"] is True
+    assert req["qwen3.8-flash-next"]["min_gpus"] == 2 and not req["qwen3.8-flash-next"].get("estimate")
+    assert req["gemma4-26b-a4b"]["gpus"] == [4] and not req["gemma4-26b-a4b"].get("estimate")
+    assert req["gemma4-26b-fp8"]["gpus"] == [2, 4] and not req["gemma4-26b-fp8"].get("estimate")
     assert req["qwen3.8-flash-next-vllm"]["vram_total_gib"] == 75
     assert not req["qwen3.8-flash-next-vllm"].get("estimate")
     assert req["gemma4-26b-q8"]["min_gpus"] == 1 and req["gemma4-12b-q4"]["min_gpus"] == 1
     for k in ("qwen3.6-35b-code", "qwen3.6-35b-128k-nomtp", "qwen3.6-35b-fast"):
-        assert req[k]["gpus"] == [2, 4] and req[k]["estimate"] is True
+        assert req[k]["gpus"] == [2, 4] and not req[k].get("estimate")
 
 
 # ── Host RAM ────────────────────────────────────────────────────────────────
