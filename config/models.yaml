@@ -462,6 +462,11 @@ models:
   #          serial/conc8/conc16: sizes<=8 ~52/148/209, <=16 ~37/122/231, <=32 ~27/128/227).
   #          Agents are mostly low-concurrency, so single-stream wins; batches >8 run uncaptured.
   #          Exclusive VRAM: unload other models first.
+  #          llm-prestart (first token of cmd, execs podman): frees host RAM before launch. With the
+  #          page cache full of other models' weights this profile starts at HALF speed for its whole
+  #          life (28 vs 56 tok/s serial at 20 GiB MemFree, 22 at 50, degrading mid-run at 70, 56
+  #          at >= 85), so it drops model-file page cache until MemFree >= 80 GiB. Details and the
+  #          measurements: docs/flash-next-half-speed.md.
   #          reasoning_effort defaults to medium (server-side, requests can override): the
   #          template's own default is xhigh, which runs away on this model (4/32 code-test
   #          passes at a 32K cap, 3/8 even at 256K) while medium scored 29-32/32 across two runs
@@ -482,6 +487,10 @@ models:
     aliases:
       - flash-next-vllm
     cmd: |
+      /home/xin/ai/llmstack/scripts/llm-prestart
+        --need-free-gib 80
+        --keep /mnt/models/llm/albucino/Qwen3.8-Flash-Next-W4A16-FP8PLE
+        --
       podman run --replace --rm
         --name llmstack-vllm-${MODEL_ID}
         --device=/dev/kfd

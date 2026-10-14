@@ -280,6 +280,10 @@ Baselines for removed profiles remain in `docs/models.md` and `bench/baselines/`
   not divisible by 3; Flash-Next: vocab 248320 not divisible by 3). 27B TP2 works
   (serial 46.6, conc=8 219, conc=16 418 tok/s); 27B TP1 and Flash-Next TP2 OOM while loading weights.
   GGUF profiles split on any count. Details: `docs/gpu-counts.md`.
+- Flash-Next pins ~48 GiB in host RAM. If the page cache is full of other models' weights at launch
+  (MemFree below ~80 GiB) it comes up at half speed (~28 vs ~56 tok/s serial) and stays there. The
+  profile's `cmd` therefore starts with `scripts/llm-prestart`, which drops cached model files first.
+  Keep the wrapper in front of podman. Details: `docs/flash-next-half-speed.md`.
 
 **Note:** R9700-tuned MoE configs (-33% at conc=8) were reverted; all 35b profiles use MI300X
 defaults, which outperform at concurrent load.
