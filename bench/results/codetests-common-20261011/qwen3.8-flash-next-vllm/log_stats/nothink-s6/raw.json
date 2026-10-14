@@ -1,0 +1,43 @@
+{
+ "id": "chatcmpl-917e625729fc2bff",
+ "object": "chat.completion",
+ "created": 1791710226,
+ "model": "qwen3.8-flash-next-vllm",
+ "choices": [
+  {
+   "index": 0,
+   "message": {
+    "role": "assistant",
+    "content": "```python\nimport re\nfrom collections import Counter\nfrom typing import Iterable, Dict, Any\n\n# Common Log Format pattern:\n# ip ident user [timestamp] \"METHOD path PROTOCOL\" status bytes\n# Example: 127.0.0.1 - frank [10/Oct/2026:13:55:36 +0000] \"GET /index.html?x=1 HTTP/1.1\" 200 2326\n\nLOG_PATTERN = re.compile(\n    r'^(\\S+)\\s+'           # ip\n    r'(\\S+)\\s+'            # ident\n    r'(\\S+)\\s+'            # user\n    r'\\[([^\\]]+)\\]\\s+'     # timestamp\n    r'\"([A-Z]+)\\s+'        # method\n    r'(\\S+)\\s+'            # path (may include query string)\n    r'(\\S+)\"\\s+'           # protocol\n    r'(\\d+)\\s+'            # status\n    r'(\\d+|-)$'            # bytes\n)\n\n# Month abbreviation to number mapping\nMONTH_MAP = {\n    'Jan': '01', 'Feb': '02', 'Mar': '03', 'Apr': '04',\n    'May': '05', 'Jun': '06', 'Jul': '07', 'Aug': '08',\n    'Sep': '09', 'Oct': '10', 'Nov': '11', 'Dec': '12'\n}\n\n# Timestamp pattern: DD/Mon/YYYY:HH:MM:SS +ZZZZ or -ZZZZ\nTIMESTAMP_PATTERN = re.compile(\n    r'^(\\d{2})/([A-Za-z]{3})/(\\d{4}):(\\d{2}):(\\d{2}):(\\d{2})\\s+[+-]\\d{4}$'\n)\n\n\ndef analyze_log(lines: Iterable[str]) -> Dict[str, Any]:\n    total_requests = 0\n    malformed = 0\n    ips = set()\n    status_counts = Counter()\n    bytes_total = 0\n    path_counts = Counter()\n    requests_per_hour = Counter()\n\n    for line in lines:\n        line = line.strip()\n        if not line:\n            malformed += 1\n            continue\n\n        match = LOG_PATTERN.match(line)\n        if not match:\n            malformed += 1\n            continue\n\n        ip, ident, user, timestamp, method, path_with_query, protocol, status_str, bytes_str = match.groups()\n\n        # Validate status is numeric (already ensured by \\d+ in regex)\n        status = int(status_str)\n\n        # Parse bytes\n        if bytes_str == '-':\n            byte_count = 0\n        else:\n            byte_count = int(bytes_str)\n\n        # Validate timestamp\n        ts_match = TIMESTAMP_PATTERN.match(timestamp)\n        if not ts_match:\n            malformed += 1\n            continue\n\n        day, month_abbr, year, hour, minute, second = ts_match.groups()\n\n        # Validate month abbreviation\n        if month_abbr not in MONTH_MAP:\n            malformed += 1\n            continue\n\n        month_num = MONTH_MAP[month_abbr]\n\n        # Extract path without query string\n        if '?' in path_with_query:\n            path = path_with_query.split('?')[0]\n        else:\n            path = path_with_query\n\n        # Valid line\n        total_requests += 1\n        ips.add(ip)\n        status_counts[status] += 1\n        bytes_total += byte_count\n        path_counts[path] += 1\n\n        # Hour key: YYYY-MM-DD HH\n        hour_key = f\"{year}-{month_num}-{day} {hour}\"\n        requests_per_hour[hour_key] += 1\n\n    # Compute error_rate\n    if total_requests == 0:\n        error_rate = 0.0\n    else:\n        error_count = sum(count for status, count in status_counts.items() if 400 <= status <= 599)\n        error_rate = round(error_count / total_requests, 4)\n\n    # Top 3 paths: sorted by count descending, then path ascending\n    # Get all paths with their counts, sort by (-count, path)\n    sorted_paths = sorted(path_counts.items(), key=lambda x: (-x[1], x[0]))\n    top_paths = sorted_paths[:3]\n\n    return {\n        \"total_requests\": total_requests,\n        \"malformed\": malformed,\n        \"unique_ips\": len(ips),\n        \"status_counts\": dict(status_counts),\n        \"bytes_total\": bytes_total,\n        \"error_rate\": error_rate,\n        \"top_paths\": top_paths,\n        \"requests_per_hour\": dict(requests_per_hour),\n    }\n```",
+    "refusal": null,
+    "annotations": null,
+    "audio": null,
+    "function_call": null,
+    "reasoning": null
+   },
+   "logprobs": null,
+   "finish_reason": "stop",
+   "stop_reason": null,
+   "token_ids": null,
+   "routed_experts": null
+  }
+ ],
+ "service_tier": null,
+ "system_fingerprint": "vllm-0.31.1rc1.dev173+g8cbd5d030-tp4-ep-46ec01eb",
+ "usage": {
+  "prompt_tokens": 472,
+  "total_tokens": 1532,
+  "completion_tokens": 1060,
+  "prompt_tokens_details": null,
+  "completion_tokens_details": {
+   "reasoning_tokens": 0
+  }
+ },
+ "prompt_logprobs": null,
+ "prompt_token_ids": null,
+ "prompt_text": null,
+ "kv_transfer_params": null,
+ "ec_transfer_params": null,
+ "metrics": null,
+ "_wall_s": 64.69977459299844
+}

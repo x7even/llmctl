@@ -1,0 +1,43 @@
+{
+ "id": "chatcmpl-9595c7b8e2826624",
+ "object": "chat.completion",
+ "created": 1791715561,
+ "model": "qwen3.8-flash-next-vllm",
+ "choices": [
+  {
+   "index": 0,
+   "message": {
+    "role": "assistant",
+    "content": "\n\n```python\n\"\"\"Retry decorator factory for flaky functions (standard library only).\"\"\"\n\nfrom __future__ import annotations\n\nimport functools\nimport time\nfrom typing import Callable\n\n\ndef retry(\n    max_attempts: int = 3,\n    delay: float = 1.0,\n    backoff: float = 2.0,\n    exceptions: tuple[type[BaseException], ...] = (Exception,),\n    sleep: Callable[[float], None] = time.sleep,\n) -> Callable:\n    \"\"\"Return a decorator that retries a function on specified exceptions.\n\n    Parameters\n    ----------\n    max_attempts:\n        Total number of calls allowed (including the first).\n    delay:\n        Base delay in seconds before the first retry.\n    backoff:\n        Multiplicative factor applied to *delay* for each subsequent retry.\n    exceptions:\n        Tuple of exception types that trigger a retry.\n    sleep:\n        Callable used to wait between retries (injectable for testing).\n\n    Raises\n    ------\n    ValueError\n        If *max_attempts* < 1, *delay* < 0, or *backoff* < 1.\n    \"\"\"\n    if max_attempts < 1:\n        raise ValueError(f\"max_attempts must be >= 1, got {max_attempts}\")\n    if delay < 0:\n        raise ValueError(f\"delay must be >= 0, got {delay}\")\n    if backoff < 1:\n        raise ValueError(f\"backoff must be >= 1, got {backoff}\")\n\n    def decorator(func: Callable) -> Callable:\n        @functools.wraps(func)\n        def wrapper(*args: object, **kwargs: object) -> object:\n            last_exc: BaseException | None = None\n            for attempt in range(1, max_attempts + 1):\n                wrapper.calls += 1  # type: ignore[attr-defined]\n                try:\n                    return func(*args, **kwargs)\n                except exceptions as exc:\n                    last_exc = exc\n                    if attempt < max_attempts:\n                        wait = delay * backoff ** (attempt - 1)\n                        sleep(wait)\n            # All attempts exhausted \u2013 re-raise the last exception.\n            raise last_exc  # type: ignore[misc]\n\n        wrapper.calls = 0  # type: ignore[attr-defined]\n        return wrapper\n\n    return decorator\n```",
+    "refusal": null,
+    "annotations": null,
+    "audio": null,
+    "function_call": null,
+    "reasoning": "The user wants a Python module implementing a `retry` decorator factory. Let me carefully implement all the requirements:\n\n1. It's a decorator factory - `retry(...)` returns a decorator\n2. Parameters: max_attempts, delay, backoff, exceptions, sleep\n3. Behaviour details:\n   - Call function, return on success\n   - On exception in `exceptions`, wait `delay * backoff ** (k-1)` before retry k (k starts at 1 for wait after first failure)\n   - No wait after final attempt\n   - Re-raise last exception if all attempts fail\n   - Non-matching exceptions propagate immediately\n   - Validate parameters at `retry(...)` call time\n   - Use `functools.wraps`\n   - `calls` attribute tracking total invocations\n\nLet me think about the wait timing:\n- Attempt 1 fails \u2192 wait `delay * backoff^0 = delay` \u2192 Attempt 2\n- Attempt 2 fails \u2192 wait `delay * backoff^1` \u2192 Attempt 3\n- ...\n- Attempt k fails \u2192 wait `delay * backoff^(k-1)` \u2192 Attempt k+1\n- Attempt max_attempts fails \u2192 no wait, re-raise\n\nSo for attempt number `i` (1-indexed), if it fails and `i < max_attempts`, we wait `delay * backoff^(i-1)` seconds.\n\nValidation: `max_attempts < 1`, `delay < 0`, or `backoff < 1` raise `ValueError` when `retry(...)` is called.\n\nThe `calls` attribute should be on the wrapper function, starting at 0, and incrementing each time the wrapped function is actually invoked.\n\nLet me write this carefully:\n\n```python\nimport functools\nimport time\nfrom typing import Callable, TypeVar, Any\n\ndef retry(max_attempts: int = 3, delay: float = 1.0, backoff: float = 2.0,\n          exceptions: tuple[type[BaseException], ...] = (Exception,),\n          sleep: Callable[[float], None] = time.sleep) -> Callable:\n    if max_attempts < 1:\n        raise ValueError(\"max_attempts must be >= 1\")\n    if delay < 0:\n        raise ValueError(\"delay must be >= 0\")\n    if backoff < 1:\n        raise ValueError(\"backoff must be >= 1\")\n    \n    def decorator(func):\n        @functools.wraps(func)\n        def wrapper(*args, **kwargs):\n            last_exception = None\n            for attempt in range(1, max_attempts + 1):\n                wrapper.calls += 1\n                try:\n                    return func(*args, **kwargs)\n                except exceptions as e:\n                    last_exception = e\n                    if attempt < max_attempts:\n                        wait_time = delay * backoff ** (attempt - 1)\n                        sleep(wait_time)\n            raise last_exception\n        wrapper.calls = 0\n        return wrapper\n    return decorator\n```\n\nWait, I need to be careful about the `calls` attribute. It should persist across multiple calls to the wrapper. Since `wrapper.calls = 0` is set once when the decorator is applied, and `wrapper.calls += 1` increments it on each invocation, this should work correctly.\n\nLet me also think about whether `exceptions` could be a single exception type rather than a tuple. The type hint says `tuple[type[BaseException], ...]`, so I'll assume it's always a tuple. But to be safe, I could wrap it if it's a single type. Actually, the spec says the type is `tuple[type[BaseException], ...]`, so I'll trust that.\n\nActually, let me re-read: \"An exception that is not an instance of one of `exceptions` propagates immediately, with no retry and no sleep.\" - this means if the exception is not in the tuple, it should not be caught at all. Using `except exceptions as e` handles this correctly - if the exception isn't an instance of any type in the tuple, it won't be caught.\n\nLet me also make sure the module is complete with proper imports and type hints. I'll use `from __future__ import annotations` or just use the typing module properly.\n\nFor Python 3.9+, `tuple[type[BaseException], ...]` works in type hints. For earlier versions, we'd need `Tuple[Type[BaseException], ...]`. Since the spec uses the modern syntax, I'll go with that.\n\nLet me finalize the code.\n"
+   },
+   "logprobs": null,
+   "finish_reason": "stop",
+   "stop_reason": null,
+   "token_ids": null,
+   "routed_experts": null
+  }
+ ],
+ "service_tier": null,
+ "system_fingerprint": "vllm-0.31.1rc1.dev173+g8cbd5d030-tp4-ep-46ec01eb",
+ "usage": {
+  "prompt_tokens": 431,
+  "total_tokens": 1929,
+  "completion_tokens": 1498,
+  "prompt_tokens_details": null,
+  "completion_tokens_details": {
+   "reasoning_tokens": 977
+  }
+ },
+ "prompt_logprobs": null,
+ "prompt_token_ids": null,
+ "prompt_text": null,
+ "kv_transfer_params": null,
+ "ec_transfer_params": null,
+ "metrics": null,
+ "_wall_s": 90.44373208600155
+}

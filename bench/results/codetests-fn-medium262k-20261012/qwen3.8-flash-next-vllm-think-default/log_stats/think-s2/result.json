@@ -1,0 +1,53 @@
+{
+ "passed": 11,
+ "total": 11,
+ "fatal": null,
+ "timed_out": false,
+ "stderr_tail": "",
+ "tests": [
+  {
+   "test": "test_totals",
+   "ok": true
+  },
+  {
+   "test": "test_status_counts",
+   "ok": true
+  },
+  {
+   "test": "test_error_rate",
+   "ok": true
+  },
+  {
+   "test": "test_top_paths",
+   "ok": true
+  },
+  {
+   "test": "test_query_string_stripped",
+   "ok": true
+  },
+  {
+   "test": "test_requests_per_hour",
+   "ok": true
+  },
+  {
+   "test": "test_malformed_lines",
+   "ok": true
+  },
+  {
+   "test": "test_empty_input",
+   "ok": true
+  },
+  {
+   "test": "test_fewer_than_three_paths",
+   "ok": true
+  },
+  {
+   "test": "test_accepts_generator_and_newlines",
+   "ok": true
+  },
+  {
+   "test": "test_return_keys",
+   "ok": true
+  }
+ ]
+}

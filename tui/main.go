@@ -21,7 +21,17 @@ func main() {
 	logPath := flag.String("log", defaultLog(), "path to llama-swap log")
 	showVersion := flag.Bool("version", false, "print version and exit")
 	status := flag.Bool("status", false, "print stack status as JSON and exit")
+	gpuCount := flag.String("gpu-count", "", "simulate N GPUs instead of detecting (wins over $"+GPUCountEnv+")")
 	flag.Parse()
+
+	gpuOverride, gpuWarn, gpuErr := GPUCountOverride(*gpuCount, os.Getenv)
+	if gpuErr != nil {
+		fmt.Fprintln(os.Stderr, "llmpanel:", gpuErr)
+		os.Exit(2)
+	}
+	if gpuWarn != nil {
+		fmt.Fprintf(os.Stderr, "llmpanel: warning: %v; ignoring it and detecting hardware\n", gpuWarn)
+	}
 
 	if *showVersion {
 		fmt.Println(version)
@@ -34,6 +44,9 @@ func main() {
 	}
 
 	a := newApp(*baseURL, *interval, *configPath, *logPath)
+	// Detect hardware once now and again on 'r'; the same override applies each time.
+	a.detectHW = func() HW { return DetectHW(gpuOverride) }
+	a.refreshHW()
 	p := tea.NewProgram(a, tea.WithAltScreen())
 	if _, err := p.Run(); err != nil {
 		fmt.Fprintln(os.Stderr, "error:", err)

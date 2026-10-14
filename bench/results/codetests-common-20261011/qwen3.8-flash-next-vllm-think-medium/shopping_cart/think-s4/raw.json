@@ -1,0 +1,43 @@
+{
+ "id": "chatcmpl-844bdaa08360b158",
+ "object": "chat.completion",
+ "created": 1791715651,
+ "model": "qwen3.8-flash-next-vllm",
+ "choices": [
+  {
+   "index": 0,
+   "message": {
+    "role": "assistant",
+    "content": "\n\n```python\n\"\"\"Simple online-shop shopping cart using decimal arithmetic.\"\"\"\n\nfrom __future__ import annotations\n\nfrom decimal import Decimal, ROUND_HALF_UP\nfrom typing import Optional\n\n_CENT = Decimal(\"0.01\")\n\n\ndef _to_decimal(value: str | Decimal) -> Decimal:\n    \"\"\"Convert a str or Decimal to Decimal.\"\"\"\n    if isinstance(value, Decimal):\n        return value\n    return Decimal(value)\n\n\ndef _round(value: Decimal) -> Decimal:\n    \"\"\"Round a Decimal to 2 decimal places using ROUND_HALF_UP.\"\"\"\n    return value.quantize(_CENT, rounding=ROUND_HALF_UP)\n\n\nclass Cart:\n    \"\"\"A shopping cart that tracks items, coupons, and computes totals.\"\"\"\n\n    def __init__(self, tax_rate: str | Decimal = \"0\") -> None:\n        rate = _to_decimal(tax_rate)\n        if rate < Decimal(\"0\") or rate > Decimal(\"1\"):\n            raise ValueError(\n                f\"tax_rate must be between 0 and 1 inclusive, got {rate}\"\n            )\n        self._tax_rate: Decimal = rate\n        # sku -> (unit_price, quantity)\n        self._items: dict[str, tuple[Decimal, int]] = {}\n        self._coupon: Optional[str] = None\n\n    # ------------------------------------------------------------------\n    # Item management\n    # ------------------------------------------------------------------\n\n    def add_item(self, sku: str, price: str | Decimal, qty: int = 1) -> None:\n        if not isinstance(qty, int) or qty < 1:\n            raise ValueError(f\"qty must be an int >= 1, got {qty!r}\")\n        unit_price = _to_decimal(price)\n        if unit_price < Decimal(\"0\"):\n            raise ValueError(f\"price must be >= 0, got {unit_price}\")\n\n        if sku in self._items:\n            existing_price, existing_qty = self._items[sku]\n            if existing_price != unit_price:\n                raise ValueError(\n                    f\"SKU {sku!r} already in cart at price {existing_price}, \"\n                    f\"cannot add at price {unit_price}\"\n                )\n            self._items[sku] = (existing_price, existing_qty + qty)\n        else:\n            self._items[sku] = (unit_price, qty)\n\n    def remove_item(self, sku: str, qty: int | None = None) -> None:\n        if sku not in self._items:\n            raise KeyError(sku)\n\n        existing_price, existing_qty = self._items[sku]\n\n        if qty is None:\n            del self._items[sku]\n            return\n\n        if not isinstance(qty, int) or qty < 1:\n            raise ValueError(f\"qty must be an int >= 1, got {qty!r}\")\n        if qty > existing_qty:\n            raise ValueError(\n                f\"Cannot remove {qty} units of {sku!r}; only {existing_qty} in cart\"\n            )\n\n        remaining = existing_qty - qty\n        if remaining == 0:\n            del self._items[sku]\n        else:\n            self._items[sku] = (existing_price, remaining)\n\n    # ------------------------------------------------------------------\n    # Coupons\n    # ------------------------------------------------------------------\n\n    def apply_coupon(self, code: str) -> None:\n        if code not in (\"SAVE10\", \"FIVEOFF\"):\n            raise ValueError(f\"Unknown coupon code: {code!r}\")\n        self._coupon = code\n\n    # ------------------------------------------------------------------\n    # Queries\n    # ------------------------------------------------------------------\n\n    def item_count(self) -> int:\n        return sum(qty for _, qty in self._items.values())\n\n    def summary(self) -> dict[str, Decimal]:\n        # Subtotal\n        subtotal = Decimal(\"0\")\n        for unit_price, qty in self._items.values():\n            subtotal += unit_price * qty\n        subtotal = _round(subtotal)\n\n        # Discount\n        if self._coupon == \"SAVE10\":\n            discount = _round(subtotal * Decimal(\"0.10\"))\n        elif self._coupon == \"FIVEOFF\":\n            discount = _round(min(Decimal(\"5.00\"), subtotal))\n        else:\n            discount = Decimal(\"0.00\")\n\n        # Tax\n        taxable = subtotal - discount\n        tax = _round(taxable * self._tax_rate)\n\n        # Total\n        total = _round(subtotal - discount + tax)\n\n        return {\n            \"subtotal\": subtotal,\n            \"discount\": discount,\n            \"tax\": tax,\n            \"total\": total,\n        }\n```",
+    "refusal": null,
+    "annotations": null,
+    "audio": null,
+    "function_call": null,
+    "reasoning": "The user wants a complete Python module implementing a `Cart` class with specific behavior. Let me carefully implement each requirement:\n\n1. `tax_rate` - fraction between 0 and 1, ValueError otherwise\n2. `add_item` - qty >= 1, price >= 0, same SKU same price or ValueError\n3. `remove_item` - KeyError if not in cart, ValueError if qty < 1 or > cart qty, line disappears at 0\n4. `item_count` - total units\n5. `apply_coupon` - SAVE10 (10% off), FIVEOFF (5.00 off, max subtotal), case-sensitive, one at a time\n6. `summary` - dict with subtotal, discount, tax, total, all Decimal rounded to 2dp\n\nKey considerations:\n- Use `decimal.Decimal` for all money\n- Standard library only\n- `ROUND_HALF_UP` for rounding\n- `str | Decimal` type hints (Python 3.10+)\n- Empty cart gives all zeros\n\nLet me write this carefully:\n\n- `__init__`: validate tax_rate is between 0 and 1 inclusive\n- `add_item`: validate qty >= 1, price >= 0, check existing SKU price matches\n- `remove_item`: KeyError if not in cart, ValueError if qty < 1 or > cart qty\n- `apply_coupon`: SAVE10, FIVEOFF, else ValueError\n- `item_count`: sum of quantities\n- `summary`: compute subtotal, discount, tax, total with proper rounding\n\nFor rounding: use `.quantize(Decimal(\"0.01\"), rounding=ROUND_HALF_UP)`\n\nLet me think about edge cases:\n- tax_rate can be \"0\" (string) or Decimal\n- price can be string or Decimal\n- qty can be None for remove_item (remove whole line)\n- FIVEOFF: \"takes 5.00 off the subtotal but never more than the subtotal\" - so min(5.00, subtotal)\n- SAVE10: 10% off subtotal\n- discount is rounded to cents with ROUND_HALF_UP\n- tax is (subtotal - discount) * tax_rate, rounded to cents with ROUND_HALF_UP\n- total = subtotal - discount + tax\n\nWait, should subtotal be rounded? The spec says \"all Decimal values rounded to cents (2 decimal places)\". So subtotal should also be rounded to 2dp.\n\nLet me also think about the discount calculation:\n- For SAVE10: discount = subtotal * 0.10, then round to 2dp\n- For FIVEOFF: discount = min(5.00, subtotal), then round to 2dp\n\nActually, re-reading: \"discount = the coupon discount (0.00 with no coupon), rounded to cents with ROUND_HALF_UP\"\n\nSo the discount value itself is rounded. For SAVE10, it's subtotal * 0.10 rounded. For FIVEOFF, it's min(5.00, subtotal) rounded.\n\nFor tax: (subtotal - discount) * tax_rate, rounded to cents with ROUND_HALF_UP.\n\nFor total: subtotal - discount + tax. Should this be rounded too? The spec says \"all Decimal values rounded to cents\". Since subtotal, discount, and tax are already rounded to 2dp, the total should also be 2dp (sum of 2dp values is 2dp). But to be safe, I'll quantize it too.\n\nWait, actually subtotal - discount + tax where all three are 2dp will naturally be 2dp. But let me quantize anyway for safety.\n\nLet me also consider: should subtotal be computed as sum of (price * qty) for each line, then rounded? Or should each line be rounded? I think it's the sum that gets rounded, since the spec says \"subtotal = sum of price * quantity over all lines\" and then \"all Decimal values rounded to cents\".\n\nLet me write the code now.\n"
+   },
+   "logprobs": null,
+   "finish_reason": "stop",
+   "stop_reason": null,
+   "token_ids": null,
+   "routed_experts": null
+  }
+ ],
+ "service_tier": null,
+ "system_fingerprint": "vllm-0.31.1rc1.dev173+g8cbd5d030-tp4-ep-46ec01eb",
+ "usage": {
+  "prompt_tokens": 620,
+  "total_tokens": 2482,
+  "completion_tokens": 1862,
+  "prompt_tokens_details": null,
+  "completion_tokens_details": {
+   "reasoning_tokens": 849
+  }
+ },
+ "prompt_logprobs": null,
+ "prompt_token_ids": null,
+ "prompt_text": null,
+ "kv_transfer_params": null,
+ "ec_transfer_params": null,
+ "metrics": null,
+ "_wall_s": 114.54640480798844
+}

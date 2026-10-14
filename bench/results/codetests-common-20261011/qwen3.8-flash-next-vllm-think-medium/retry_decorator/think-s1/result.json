@@ -1,0 +1,57 @@
+{
+ "passed": 12,
+ "total": 12,
+ "fatal": null,
+ "timed_out": false,
+ "stderr_tail": "",
+ "tests": [
+  {
+   "test": "test_success_first_try",
+   "ok": true
+  },
+  {
+   "test": "test_retries_then_succeeds",
+   "ok": true
+  },
+  {
+   "test": "test_exhausts_and_raises_last",
+   "ok": true
+  },
+  {
+   "test": "test_backoff_sequence",
+   "ok": true
+  },
+  {
+   "test": "test_unlisted_exception_propagates_immediately",
+   "ok": true
+  },
+  {
+   "test": "test_listed_tuple_of_exceptions",
+   "ok": true
+  },
+  {
+   "test": "test_default_exceptions_cover_exception_subclasses",
+   "ok": true
+  },
+  {
+   "test": "test_max_attempts_one",
+   "ok": true
+  },
+  {
+   "test": "test_parameter_validation",
+   "ok": true
+  },
+  {
+   "test": "test_preserves_metadata",
+   "ok": true
+  },
+  {
+   "test": "test_calls_counter_accumulates",
+   "ok": true
+  },
+  {
+   "test": "test_independent_decorated_functions",
+   "ok": true
+  }
+ ]
+}

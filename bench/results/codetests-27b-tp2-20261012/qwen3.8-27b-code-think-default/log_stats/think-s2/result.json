@@ -1,0 +1,62 @@
+{
+ "passed": 2,
+ "total": 11,
+ "fatal": null,
+ "timed_out": false,
+ "stderr_tail": "",
+ "tests": [
+  {
+   "test": "test_totals",
+   "ok": false,
+   "err": "AssertionError: "
+  },
+  {
+   "test": "test_status_counts",
+   "ok": false,
+   "err": "AssertionError: "
+  },
+  {
+   "test": "test_error_rate",
+   "ok": false,
+   "err": "AssertionError: "
+  },
+  {
+   "test": "test_top_paths",
+   "ok": false,
+   "err": "AssertionError: "
+  },
+  {
+   "test": "test_query_string_stripped",
+   "ok": false,
+   "err": "AssertionError: "
+  },
+  {
+   "test": "test_requests_per_hour",
+   "ok": false,
+   "err": "AssertionError: "
+  },
+  {
+   "test": "test_malformed_lines",
+   "ok": false,
+   "err": "AssertionError: "
+  },
+  {
+   "test": "test_empty_input",
+   "ok": true
+  },
+  {
+   "test": "test_fewer_than_three_paths",
+   "ok": false,
+   "err": "AssertionError: "
+  },
+  {
+   "test": "test_accepts_generator_and_newlines",
+   "ok": false,
+   "err": "AssertionError: "
+  },
+  {
+   "test": "test_return_keys",
+   "ok": true
+  }
+ ]
+}

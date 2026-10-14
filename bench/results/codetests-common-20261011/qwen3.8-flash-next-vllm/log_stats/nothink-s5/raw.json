@@ -1,0 +1,43 @@
+{
+ "id": "chatcmpl-93c2f534cc53c3d4",
+ "object": "chat.completion",
+ "created": 1791710226,
+ "model": "qwen3.8-flash-next-vllm",
+ "choices": [
+  {
+   "index": 0,
+   "message": {
+    "role": "assistant",
+    "content": "```python\nimport re\nfrom collections import Counter\nfrom typing import Iterable, Dict, List, Tuple\n\n# Common Log Format regex\n# ip ident user [timestamp] \"METHOD path PROTOCOL\" status bytes\nLOG_PATTERN = re.compile(\n    r'^(\\S+)\\s+'           # IP\n    r'(\\S+)\\s+'            # ident\n    r'(\\S+)\\s+'            # user\n    r'\\[([^\\]]+)\\]\\s+'     # timestamp\n    r'\"(\\S+)\\s+'           # method\n    r'(\\S+)\\s+'            # path (including query string)\n    r'(\\S+)\"\\s+'           # protocol\n    r'(\\d+)\\s+'            # status\n    r'(\\d+|-)$'            # bytes\n)\n\nMONTH_MAP = {\n    'Jan': '01', 'Feb': '02', 'Mar': '03', 'Apr': '04',\n    'May': '05', 'Jun': '06', 'Jul': '07', 'Aug': '08',\n    'Sep': '09', 'Oct': '10', 'Nov': '11', 'Dec': '12'\n}\n\ndef _parse_timestamp_to_hour(timestamp: str) -> str:\n    \"\"\"\n    Parse timestamp like '10/Oct/2026:13:55:36 +0000' to 'YYYY-MM-DD HH'\n    ignoring timezone offset.\n    \"\"\"\n    # Format: DD/Mon/YYYY:HH:MM:SS +ZZZZ\n    # Extract day, month, year, hour\n    try:\n        # Split on space to remove timezone part\n        date_time_part = timestamp.split()[0]\n        # date_time_part is like '10/Oct/2026:13:55:36'\n        # Split by '/' and ':'\n        parts = date_time_part.split(':')\n        date_part = parts[0]  # '10/Oct/2026'\n        hour_part = parts[1]  # '13'\n        \n        date_components = date_part.split('/')\n        day = date_components[0]\n        month_abbr = date_components[1]\n        year = date_components[2]\n        \n        month_num = MONTH_MAP.get(month_abbr)\n        if month_num is None:\n            return None\n        \n        # Ensure day is zero-padded\n        day = day.zfill(2)\n        \n        return f\"{year}-{month_num}-{day} {hour_part}\"\n    except (IndexError, ValueError):\n        return None\n\ndef analyze_log(lines: Iterable[str]) -> dict:\n    total_requests = 0\n    malformed = 0\n    ips = set()\n    status_counts = Counter()\n    bytes_total = 0\n    path_counter = Counter()\n    requests_per_hour = Counter()\n    \n    for line in lines:\n        line = line.rstrip('\\n').rstrip('\\r')\n        match = LOG_PATTERN.match(line)\n        if not match:\n            malformed += 1\n            continue\n        \n        ip = match.group(1)\n        # ident = match.group(2)\n        # user = match.group(3)\n        timestamp = match.group(4)\n        # method = match.group(5)\n        path_with_query = match.group(6)\n        # protocol = match.group(7)\n        status_str = match.group(8)\n        bytes_str = match.group(9)\n        \n        # Validate status is numeric\n        try:\n            status = int(status_str)\n        except ValueError:\n            malformed += 1\n            continue\n        \n        # Parse bytes\n        if bytes_str == '-':\n            bytes_val = 0\n        else:\n            try:\n                bytes_val = int(bytes_str)\n            except ValueError:\n                malformed += 1\n                continue\n        \n        # Extract path without query string\n        if '?' in path_with_query:\n            path = path_with_query.split('?')[0]\n        else:\n            path = path_with_query\n        \n        # Parse timestamp for hour\n        hour_key = _parse_timestamp_to_hour(timestamp)\n        if hour_key is None:\n            malformed += 1\n            continue\n        \n        # Valid line\n        total_requests += 1\n        ips.add(ip)\n        status_counts[status] += 1\n        bytes_total += bytes_val\n        path_counter[path] += 1\n        requests_per_hour[hour_key] += 1\n    \n    # Calculate error_rate\n    if total_requests == 0:\n        error_rate = 0.0\n    else:\n        error_count = sum(count for status, count in status_counts.items() if 400 <= status <= 599)\n        error_rate = round(error_count / total_requests, 4)\n    \n    # Top paths: 3 most requested, sorted by count descending then path ascending\n    sorted_paths = sorted(path_counter.items(), key=lambda x: (-x[1], x[0]))\n    top_paths = sorted_paths[:3]\n    \n    return {\n        \"total_requests\": total_requests,\n        \"malformed\": malformed,\n        \"unique_ips\": len(ips),\n        \"status_counts\": dict(status_counts),\n        \"bytes_total\": bytes_total,\n        \"error_rate\": error_rate,\n        \"top_paths\": top_paths,\n        \"requests_per_hour\": dict(requests_per_hour)\n    }\n```",
+    "refusal": null,
+    "annotations": null,
+    "audio": null,
+    "function_call": null,
+    "reasoning": null
+   },
+   "logprobs": null,
+   "finish_reason": "stop",
+   "stop_reason": null,
+   "token_ids": null,
+   "routed_experts": null
+  }
+ ],
+ "service_tier": null,
+ "system_fingerprint": "vllm-0.31.1rc1.dev173+g8cbd5d030-tp4-ep-46ec01eb",
+ "usage": {
+  "prompt_tokens": 472,
+  "total_tokens": 1676,
+  "completion_tokens": 1204,
+  "prompt_tokens_details": null,
+  "completion_tokens_details": {
+   "reasoning_tokens": 0
+  }
+ },
+ "prompt_logprobs": null,
+ "prompt_token_ids": null,
+ "prompt_text": null,
+ "kv_transfer_params": null,
+ "ec_transfer_params": null,
+ "metrics": null,
+ "_wall_s": 73.44012815100723
+}

@@ -134,6 +134,16 @@ type app struct {
 	// Scrollable panels
 	cfgVP viewport.Model
 	logVP viewport.Model
+
+	// Hardware awareness (hw.go, hwpanel.go)
+	hw         HW                 // detected hardware; UnknownHW() until refreshHW runs
+	detectHW   func() HW          // injectable detector; main wires the real one
+	verdicts   map[string]Verdict // per-profile Supports result; empty = fail open
+	showAll    bool               // 'a': list unsupported profiles too (greyed)
+	hwBlockMsg string             // full "cannot run on this hardware" text for the status bar
+	hwBlockAt  time.Time
+
+	swapFn func(baseURL, profile string) error // injectable; swapModel in production
 }
 
 func newApp(baseURL string, interval time.Duration, configPath, logPath string) *app {
@@ -157,6 +167,10 @@ func newApp(baseURL string, interval time.Duration, configPath, logPath string) 
 		logPath:     logPath,
 		reg:         reg,
 		regErr:      regErr,
+		hw:          UnknownHW(),
+		detectHW:    UnknownHW, // never probe the machine from a constructor; main injects the real detector
+		verdicts:    map[string]Verdict{},
+		swapFn:      swapModel,
 		spin:        sp,
 		cfgVP:       viewport.New(40, 10),
 		logVP:       viewport.New(80, 10),
@@ -203,11 +217,27 @@ func (a *app) cmdLog() tea.Cmd {
 }
 
 func (a *app) cmdSwap(profile string) tea.Cmd {
-	url := a.baseURL
+	url, swap := a.baseURL, a.swapFn
 	return func() tea.Msg {
-		err := swapModel(url, profile)
+		err := swap(url, profile)
 		return msgSwapDone{profile: profile, err: err}
 	}
+}
+
+// startSwap begins the confirmed swap of a.pendingSwap. The verdict is checked
+// again here because 'r' can re-detect hardware between the two keypresses.
+func (a *app) startSwap() tea.Cmd {
+	a.confirming = false
+	if a.blockUnsupported(a.pendingSwap) {
+		a.pendingSwap = ""
+		return nil
+	}
+	a.swapping = true
+	a.swapFor = a.pendingSwap
+	a.swapMsg = ""
+	a.hwBlockMsg = ""
+	a.startupPhase = "Starting container…"
+	return tea.Batch(a.cmdSwap(a.pendingSwap), a.spin.Tick, cmdPollStartupPhase(a.pendingSwap))
 }
 
 func (a *app) cmdUnload() tea.Cmd {
@@ -260,6 +290,7 @@ func (a *app) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case tea.WindowSizeMsg:
 		a.w, a.h = msg.Width, msg.Height
 		a.sizeViewports()
+		a.clampModelsScroll() // a shorter window shrinks modelsVisible(); keep the cursor row in view
 		return a, nil
 
 	case tea.KeyMsg:
@@ -343,6 +374,7 @@ func (a *app) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	case "f":
 		a.fullscreen = !a.fullscreen
 		a.sizeViewports()
+		a.clampModelsScroll()
 
 	case "esc":
 		if a.confirming {
@@ -351,6 +383,7 @@ func (a *app) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		} else if a.fullscreen {
 			a.fullscreen = false
 			a.sizeViewports()
+			a.clampModelsScroll()
 		}
 
 	case "tab":
@@ -379,15 +412,23 @@ func (a *app) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		return a, a.cmdTick()
 
 	case "r":
+		sel := a.selectedProfile()
+		a.clearBlock()
 		reg, regErr := loadRegistry(a.configPath)
 		a.reg, a.regErr = reg, regErr
+		a.refreshHW() // re-detect hardware and recompute every verdict
+		a.restoreSelection(sel)
 		a.refreshConfigView()
+
+	case "a":
+		a.toggleShowAll()
 
 	case "up", "k":
 		switch a.focused {
 		case paneModels:
 			if a.cursor > 0 {
 				a.cursor--
+				a.clearBlock()
 				a.clampModelsScroll()
 				a.refreshConfigView()
 			}
@@ -403,6 +444,7 @@ func (a *app) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			profiles := a.profiles()
 			if a.cursor < len(profiles)-1 {
 				a.cursor++
+				a.clearBlock()
 				a.clampModelsScroll()
 				a.refreshConfigView()
 			}
@@ -438,15 +480,14 @@ func (a *app) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		if a.focused == paneModels && !a.swapping {
 			if a.confirming {
 				// second enter = confirm
-				a.confirming = false
-				a.swapping = true
-				a.swapFor = a.pendingSwap
-				a.swapMsg = ""
-				a.startupPhase = "Starting container…"
-				return a, tea.Batch(a.cmdSwap(a.pendingSwap), a.spin.Tick, cmdPollStartupPhase(a.pendingSwap))
+				return a, a.startSwap()
 			}
 			profiles := a.profiles()
 			if a.cursor >= 0 && a.cursor < len(profiles) {
+				a.clearBlock() // a stale refusal about another profile must not sit under the confirm prompt
+				if a.blockUnsupported(profiles[a.cursor]) {
+					return a, nil // hardware cannot run it; llmctl swap --force is the only way
+				}
 				a.confirming = true
 				a.pendingSwap = profiles[a.cursor]
 			}
@@ -454,12 +495,7 @@ func (a *app) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 
 	case "y", "Y":
 		if a.confirming && !a.swapping {
-			a.confirming = false
-			a.swapping = true
-			a.swapFor = a.pendingSwap
-			a.swapMsg = ""
-			a.startupPhase = "Starting container…"
-			return a, tea.Batch(a.cmdSwap(a.pendingSwap), a.spin.Tick, cmdPollStartupPhase(a.pendingSwap))
+			return a, a.startSwap()
 		}
 
 	case "n", "N":
@@ -568,11 +604,29 @@ func (a *app) applyLog(lines []string) {
 	a.logVP.GotoBottom()
 }
 
-func (a *app) profiles() []string {
+// allProfiles lists every profile in models.yaml order, unfiltered. Profiles
+// marked `unlisted` are included, as before.
+func (a *app) allProfiles() []string {
 	if a.reg != nil && len(a.reg.Order) > 0 {
 		return a.reg.Order
 	}
 	return a.data.Profiles
+}
+
+// profiles is the Models panel list: models.yaml order, with profiles this
+// hardware cannot run removed unless show-all is on. The cursor indexes this.
+func (a *app) profiles() []string {
+	all := a.allProfiles()
+	if a.showAll || len(a.verdicts) == 0 {
+		return all
+	}
+	out := make([]string, 0, len(all))
+	for _, p := range all {
+		if a.verdictFor(p).OK {
+			out = append(out, p)
+		}
+	}
+	return out
 }
 
 func (a *app) refreshConfigView() {
@@ -591,7 +645,11 @@ func (a *app) refreshConfigView() {
 	}
 	id := profiles[a.cursor]
 	caps := ParseCapabilities(a.reg.Models[id])
-	a.cfgVP.SetContent(renderCapsSummary(caps) + a.reg.ProfileYAML(id))
+	hwNote := ""
+	if r := a.reasonText(id); r != "" {
+		hwNote = stDim.Render(" not runnable on this hardware: "+r) + "\n"
+	}
+	a.cfgVP.SetContent(renderCapsSummary(caps) + hwNote + a.reg.ProfileYAML(id))
 }
 
 func renderCapsSummary(caps ModelCapabilities) string {
@@ -664,19 +722,29 @@ func colWidths(total int) (left, right int) {
 }
 
 // modelsVisible returns the number of model list rows visible in the panel.
-// h2 includes the panel header (1 line) and a status line (1 line).
+// h2 includes the panel header (1 line), a status line (1 line) and, when
+// there is something to say about hardware, a footer line. When the list does
+// not fit, two more rows are reserved for the "↑ more" / "↓ more" markers so
+// the footer is never pushed out of the panel.
 func (a *app) modelsVisible() int {
 	_, h2, _, _ := rowHeights(a.h)
-	v := h2 - 2 // header + status line
+	v := h2 - 2 - a.modelsFooterLines()
+	if len(a.profiles()) > v {
+		v -= 2
+	}
 	if v < 1 {
 		v = 1
 	}
 	return v
 }
 
-// clampModelsScroll adjusts modelsScroll so the cursor stays in view.
+// clampModelsScroll adjusts modelsScroll so the cursor stays in view and the
+// window never starts past the last page (the list can shrink on 'a' / 'r').
 func (a *app) clampModelsScroll() {
 	vis := a.modelsVisible()
+	if last := len(a.profiles()) - vis; a.modelsScroll > last {
+		a.modelsScroll = max(0, last)
+	}
 	if a.cursor < a.modelsScroll {
 		a.modelsScroll = a.cursor
 	} else if a.cursor >= a.modelsScroll+vis {
@@ -723,7 +791,7 @@ func (a *app) viewFull() string {
 		content = a.renderTokens(a.w - 1)
 	}
 	titleStr := panelNames[a.focused] + " [fullscreen — esc]"
-	body := panelHeader(titleStr, a.w, clrFocused, true) + "\n" + content
+	body := a.headerFor(titleStr, a.focused, a.w, clrFocused, true) + "\n" + content
 	pane := lipgloss.NewStyle().
 		Width(a.w).
 		Height(a.h - 1).
@@ -781,7 +849,7 @@ func (a *app) panel(id panelID, w, h int, content string) string {
 	if focused {
 		fg = clrFocused
 	}
-	header := panelHeader(panelNames[id], w, fg, focused)
+	header := a.headerFor(panelNames[id], id, w, fg, focused)
 	return lipgloss.NewStyle().
 		Width(w).
 		Height(h).
@@ -941,11 +1009,21 @@ func (a *app) renderGPU() string {
 
 func (a *app) renderModels() string {
 	profiles := a.profiles()
+	width := a.modelsWidth()
 	var sb strings.Builder
 
 	// Status line at top
 	if a.confirming {
-		sb.WriteString(stYellow.Render(fmt.Sprintf("Swap to %s? [y/↵ confirm  n/esc cancel]", a.pendingSwap)) + "\n")
+		// One row only: a wrapped prompt makes the status area two rows high and the
+		// panel's MaxHeight then clips the footer / last row. Fall back to a short form.
+		prompt := fmt.Sprintf("Swap to %s? [y/↵ confirm  n/esc cancel]", a.pendingSwap)
+		if len([]rune(prompt)) > width-1 {
+			prompt = fmt.Sprintf("Swap to %s? y/n", a.pendingSwap)
+		}
+		if len([]rune(prompt)) > width-1 {
+			prompt = "y/n? " + a.pendingSwap // the key hint must survive; only the name may be cut
+		}
+		sb.WriteString(stYellow.Render(truncateRunes(prompt, width-1)) + "\n")
 	} else if a.swapping {
 		action := fmt.Sprintf("Loading %s…", a.swapFor)
 		if a.swapFor == "" {
@@ -957,10 +1035,11 @@ func (a *app) renderModels() string {
 		}
 		sb.WriteString(a.spin.View() + " " + action + phase + "\n")
 	} else if a.swapMsg != "" && time.Since(a.swapMsgAt) < 5*time.Second {
+		msg := truncateRunes(a.swapMsg, width-1) // a wrapped message would push rows out of the panel
 		if strings.HasPrefix(a.swapMsg, "✓") {
-			sb.WriteString(stGreen.Render(a.swapMsg) + "\n")
+			sb.WriteString(stGreen.Render(msg) + "\n")
 		} else {
-			sb.WriteString(stRed.Render(a.swapMsg) + "\n")
+			sb.WriteString(stRed.Render(msg) + "\n")
 		}
 	}
 
@@ -991,6 +1070,19 @@ func (a *app) renderModels() string {
 		if loaded {
 			line += " ●"
 		}
+		if !a.verdictFor(p).OK {
+			// Greyed: this hardware cannot run it (only listed in show-all mode).
+			st := stUnsupported
+			if sel {
+				st = stUnsupportedSel
+			}
+			sb.WriteString(st.Render(line))
+			if avail := width - 1 - lipgloss.Width(line); avail >= 6 {
+				sb.WriteString(stUnsupported.Render(truncateRunes(" "+a.compactReasonText(p), avail)))
+			}
+			sb.WriteString("\n")
+			continue
+		}
 		switch {
 		case sel && loaded:
 			sb.WriteString(stActive.Render(line))
@@ -1006,6 +1098,13 @@ func (a *app) renderModels() string {
 
 	if end < len(profiles) {
 		sb.WriteString(stDim.Render("  ↓ more") + "\n")
+	}
+
+	if len(profiles) == 0 && a.hiddenCount() > 0 {
+		sb.WriteString(stDim.Render(" none runnable on this hardware") + "\n")
+	}
+	if footer := a.modelsFooter(width); footer != "" {
+		sb.WriteString(stDim.Render(footer) + "\n")
 	}
 
 	return strings.TrimRight(sb.String(), "\n")
@@ -1097,11 +1196,16 @@ func (a *app) renderStatus() string {
 	d := pollIntervals[a.intervalIdx]
 	dStr := d.String()
 	hint := fmt.Sprintf(
-		" tab panel  f full  ↑↓/jk nav  s/↵ swap  y confirm  esc cancel  u unload  p poll:%s  r reload  q quit ",
+		" tab panel  f full  ↑↓/jk nav  s/↵ swap  y confirm  esc cancel  u unload  a all  p poll:%s  r reload  q quit ",
 		dStr,
 	)
+	fg := clrDim
+	if a.hwBlockMsg != "" && time.Since(a.hwBlockAt) < blockMsgTTL {
+		hint, fg = " "+a.hwBlockMsg, clrRed
+	}
+	// One line only: a wrapped status bar would push the grid past the terminal height.
 	return lipgloss.NewStyle().
-		Foreground(clrDim).
+		Foreground(fg).
 		Width(a.w).
-		Render(hint)
+		Render(truncateRunes(hint, a.w))
 }

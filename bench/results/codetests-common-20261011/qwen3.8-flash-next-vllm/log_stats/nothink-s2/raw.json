@@ -1,0 +1,43 @@
+{
+ "id": "chatcmpl-bcb79a50a96e33e2",
+ "object": "chat.completion",
+ "created": 1791710154,
+ "model": "qwen3.8-flash-next-vllm",
+ "choices": [
+  {
+   "index": 0,
+   "message": {
+    "role": "assistant",
+    "content": "```python\nimport re\nfrom collections import Counter\nfrom datetime import datetime\nfrom typing import Iterable\n\n\ndef analyze_log(lines: Iterable[str]) -> dict:\n    \"\"\"\n    Summarise a web server access log in Common Log Format.\n    \n    Each line should look like:\n    ip ident user [timestamp] \"METHOD path PROTOCOL\" status bytes\n    \n    Returns a dict with summary statistics.\n    \"\"\"\n    # Pattern to match Common Log Format\n    # ip - user [timestamp] \"method path protocol\" status bytes\n    log_pattern = re.compile(\n        r'^(\\S+)\\s+'          # IP\n        r'(\\S+)\\s+'           # ident\n        r'(\\S+)\\s+'           # user\n        r'\\[([^\\]]+)\\]\\s+'    # timestamp\n        r'\"(\\S+)\\s+(\\S+)\\s+(\\S+)\"\\s+'  # method, path, protocol\n        r'(\\d+)\\s+'           # status\n        r'(\\S+)$'             # bytes\n    )\n    \n    total_requests = 0\n    malformed = 0\n    ips = set()\n    status_counts = Counter()\n    bytes_total = 0\n    path_counts = Counter()\n    requests_per_hour = Counter()\n    \n    for line in lines:\n        line = line.strip()\n        if not line:\n            malformed += 1\n            continue\n        \n        match = log_pattern.match(line)\n        if not match:\n            malformed += 1\n            continue\n        \n        ip, ident, user, timestamp, method, path, protocol, status_str, bytes_str = match.groups()\n        \n        # Validate status is numeric\n        try:\n            status = int(status_str)\n        except ValueError:\n            malformed += 1\n            continue\n        \n        # Parse bytes: '-' means 0\n        if bytes_str == '-':\n            bytes_sent = 0\n        else:\n            try:\n                bytes_sent = int(bytes_str)\n            except ValueError:\n                malformed += 1\n                continue\n        \n        # This is a valid line\n        total_requests += 1\n        ips.add(ip)\n        status_counts[status] += 1\n        bytes_total += bytes_sent\n        \n        # Extract path without query string\n        if '?' in path:\n            clean_path = path.split('?')[0]\n        else:\n            clean_path = path\n        path_counts[clean_path] += 1\n        \n        # Parse timestamp for requests_per_hour\n        # Timestamp format: 10/Oct/2026:13:55:36 +0000\n        # We need to extract the hour ignoring timezone\n        try:\n            # Parse the timestamp\n            # Format: DD/Mon/YYYY:HH:MM:SS +ZZZZ\n            ts_match = re.match(r'(\\d+)/(\\w+)/(\\d+):(\\d+):(\\d+):(\\d+)', timestamp)\n            if ts_match:\n                day, month_str, year, hour, minute, second = ts_match.groups()\n                # Convert month name to number\n                month_names = {\n                    'Jan': 1, 'Feb': 2, 'Mar': 3, 'Apr': 4,\n                    'May': 5, 'Jun': 6, 'Jul': 7, 'Aug': 8,\n                    'Sep': 9, 'Oct': 10, 'Nov': 11, 'Dec': 12\n                }\n                if month_str in month_names:\n                    month = month_names[month_str]\n                    # Format as \"YYYY-MM-DD HH\"\n                    hour_key = f\"{year}-{month:02d}-{int(day):02d} {int(hour):02d}\"\n                    requests_per_hour[hour_key] += 1\n                else:\n                    # Invalid month name, treat as malformed? \n                    # The problem says lines that don't match format are malformed.\n                    # But we already matched the regex. Let's be lenient here and just skip hour counting.\n                    pass\n            else:\n                # Timestamp doesn't match expected pattern, but we still count it as valid request\n                # since the overall line matched. Just don't add to requests_per_hour.\n                pass\n        except Exception:\n            # If timestamp parsing fails, still count the request but don't add to hourly stats\n            pass\n    \n    # Calculate error rate\n    if total_requests == 0:\n        error_rate = 0.0\n    else:\n        error_count = sum(count for status, count in status_counts.items() if 400 <= status <= 599)\n        error_rate = round(error_count / total_requests, 4)\n    \n    # Get top 3 paths sorted by count descending, then path ascending\n    top_paths = sorted(path_counts.items(), key=lambda x: (-x[1], x[0]))[:3]\n    \n    return {\n        \"total_requests\": total_requests,\n        \"malformed\": malformed,\n        \"unique_ips\": len(ips),\n        \"status_counts\": dict(status_counts),\n        \"bytes_total\": bytes_total,\n        \"error_rate\": error_rate,\n        \"top_paths\": top_paths,\n        \"requests_per_hour\": dict(requests_per_hour),\n    }\n```",
+    "refusal": null,
+    "annotations": null,
+    "audio": null,
+    "function_call": null,
+    "reasoning": null
+   },
+   "logprobs": null,
+   "finish_reason": "stop",
+   "stop_reason": null,
+   "token_ids": null,
+   "routed_experts": null
+  }
+ ],
+ "service_tier": null,
+ "system_fingerprint": "vllm-0.31.1rc1.dev173+g8cbd5d030-tp4-ep-46ec01eb",
+ "usage": {
+  "prompt_tokens": 472,
+  "total_tokens": 1632,
+  "completion_tokens": 1160,
+  "prompt_tokens_details": null,
+  "completion_tokens_details": {
+   "reasoning_tokens": 0
+  }
+ },
+ "prompt_logprobs": null,
+ "prompt_token_ids": null,
+ "prompt_text": null,
+ "kv_transfer_params": null,
+ "ec_transfer_params": null,
+ "metrics": null,
+ "_wall_s": 181.98570579400985
+}

@@ -137,6 +137,86 @@ Use `--default-chat-template-kwargs '<json>'` to set server-side template defaul
 
 ---
 
+## Profile requirements (metadata.requires)
+
+Every profile declares what hardware it can run on, in a `metadata:` block placed directly
+after `ttl:` (same position in every profile). It is the **single source of truth** for GPU
+and host-RAM requirements: `scripts/configure` has no in-code table any more.
+
+```yaml
+    metadata:
+      requires:
+        gpus: [2, 4]          # vLLM: allowed GPU counts (valid tensor-parallel sizes)
+        # min_gpus: 3         # llama-server (GGUF) instead: works on any count >= N
+        host_ram_gib: 96      # optional: system RAM the profile needs
+        vram_total_gib: 75    # optional, informational: approx GPU memory across all cards
+        estimate: true        # present only when the numbers are not measured on this rig
+        note: "short human reason"   # optional, one line
+```
+
+| Field | Meaning |
+|-------|---------|
+| `gpus` | Flow list of GPU counts the profile can run at. For vLLM these are valid `--tensor-parallel-size` values (head counts and vocab must divide evenly). With N cards the largest listed count <= N is used (3 cards and `[2, 4]` gives TP2, one card idle); no such count means the profile is unsupported. Mutually exclusive with `min_gpus`. |
+| `min_gpus` | llama-server (GGUF) profiles: supported when the GPU count is >= N. `--tensor-split` simply follows the count, there is no divisibility rule. Mutually exclusive with `gpus`. |
+| `host_ram_gib` | System RAM needed (pinned host buffers, offloaded tables). Not supported when host RAM is known and below 0.92 x this value; unknown RAM is not a failure. |
+| `vram_total_gib` | Approximate GPU memory the profile holds across all cards. Informational only, never used to gate. |
+| `estimate` | `true` = derived from checkpoint sizes, not run at the reduced GPU count on this rig. Drop it (and say what was measured in `note`) once someone has run the profile. Tools show estimated requirements as such. |
+| `note` | One line of why: the measured failure or the size arithmetic. |
+
+Format rules (a line-oriented regex parser, Go `yaml.v3` and llama-swap must all read the
+block identically): one key per line, plain scalars and flow-style lists only, double-quote
+the `note`, no anchors, no multi-line values. llama-swap v235 accepts `metadata:` (an
+arbitrary map, exposed in `/v1/models` as `meta.llamaswap.requires`) but **rejects other
+unknown per-model fields**, so the block must live under `metadata:`, never at profile top level.
+
+**Rule: every new profile must declare `requires`.** A profile without one is treated as
+runnable anywhere (unknown is permissive) and tools flag it. Check the values against the
+profile's actual `cmd` (`--tensor-parallel-size`, `--tensor-split`, `--ulimit memlock`) and
+`docs/gpu-counts.md`; if the cmd and the requirements disagree, fix one of them.
+
+### Who uses it
+
+- `scripts/configure` reads it: picks the TP size (largest `gpus` entry <= detected count),
+  sizes `--tensor-split` for `min_gpus` profiles, and reports profiles that cannot run
+  (including host-RAM shortfalls). Hardware detection and the support check live in
+  `scripts/llmhw.py` (`detect()`, `supports()`, `parse_requires()`).
+- `llmctl` reads it through `scripts/llmhw.py`: `llmctl hw` prints the verdict per profile,
+  `llmctl list` / `pick` hide unsupported profiles (`--all` shows them), and `llmctl swap`
+  refuses them with exit 2 unless `--force`. It fails open (no llmhw, no detected GPU count,
+  or a profile without `requires` means allowed). `LLMSTACK_GPU_COUNT=N` / `--gpu-count N`
+  simulate a different rig. See `docs/llmctl.md`.
+- `llmpanel` reads it too (`tui/config.go` parses it, `tui/hw.go` is a Go port of
+  `scripts/llmhw.py` kept in step by `tests/fixtures/llmhw_cases.json`). The Models panel lists
+  only runnable profiles, `a` shows the rest greyed with the reason, and a swap of an
+  unsupported profile is refused (the panel points at `llmctl swap --force`). It fails open
+  like `llmctl`, and honours `--gpu-count` / `LLMSTACK_GPU_COUNT`. Every consumer
+  (`scripts/configure`, `llmctl`, `llmpanel`) is now wired.
+- llama-swap exposes it as `meta.llamaswap.requires` on `GET /v1/models`, so clients can read it.
+
+### `unlisted: true  # llmstack:auto` lines
+
+For each profile that cannot run at the detected (or `--gpu-count`) count, `scripts/configure`
+maintains one line directly under the profile's other top-level keys:
+
+```yaml
+    unlisted: true  # llmstack:auto - needs gpus [4], detected 2
+```
+
+`unlisted: true` hides the profile from `/v1/models` only; `llmctl list` / `pick` hide it too
+and `llmctl swap` refuses it (exit 2 unless `--force`) because they apply the same llmhw verdict
+from `metadata.requires`. A hand-written `unlisted: true` or `false` does not change that
+verdict. On a
+later run where the profile becomes supported (more GPUs, `--gpu-count` raised), configure
+removes **only** lines carrying the `llmstack:auto` marker. A hand-written `unlisted: true`
+without the marker is never touched, and a profile that is hand-unlisted and unsupported does
+not get a second line; if a marker line is already there when a hand-written `unlisted:` line
+appears, configure drops the marker so the profile never has two `unlisted:` keys (a duplicate
+key is invalid YAML). A hand-written `unlisted: false` also wins: the unsupported profile stays
+listed and configure prints a warning. The profile's `cmd` block is not modified for
+unsupported profiles, and the file's line endings (LF or CRLF) are preserved.
+
+---
+
 ## Template for a new vLLM profile
 
 ```yaml
@@ -144,6 +224,11 @@ Use `--default-chat-template-kwargs '<json>'` to set server-side template defaul
     aliases:
       - <short-alias>
     ttl: 0
+    metadata:                         # required, see "Profile requirements" above
+      requires:
+        gpus: [2, 4]                  # valid tensor-parallel sizes for this model
+        estimate: true                # remove once measured on this rig
+        note: "why these counts"
     concurrencyLimit: 32
     proxy:
       - url: http://127.0.0.1:9200        # pick a free port
@@ -190,6 +275,11 @@ After adding a profile:
     aliases:
       - <short-alias>
     ttl: 0
+    metadata:                         # required, see "Profile requirements" above
+      requires:
+        min_gpus: 1                   # works on any count >= N (tensor-split follows the count)
+        estimate: true                # remove once measured on this rig
+        note: "why this minimum"
     concurrencyLimit: 8
     proxy:
       - url: http://127.0.0.1:9300        # pick a free port

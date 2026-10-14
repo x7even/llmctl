@@ -83,7 +83,7 @@ llmpanel
 | `qwen3.8-27b-think` | vLLM TP=4 | ~31 GB + KV | 131K | Same model without MTP — better for parallel agent fleets |
 | `qwen3.8-27b-fast` | vLLM TP=4 + MTP | ~31 GB + KV | 131K | Thinking off by default — quick answers, bulk work |
 | `qwen3.8-flash-next` | llama-server Vulkan | ~81 GB | 262K (2 slots) | Qwen3.8-Flash-Next 125B (6B active), UD-IQ4_XS GGUF; single-user. For concurrent agents use `qwen3.8-flash-next-vllm` |
-| `qwen3.8-flash-next-vllm` | vLLM TP=4 + EP (nightly image) | ~19 GB/GPU + ~13 GB pinned host RAM/rank | 131K | Same model, W4A16 INT4; decode scales with concurrency (**149 tok/s conc=8** vs ~34 for GGUF at 4 streams). Needs `memlock` unlimited; exclusive VRAM |
+| `qwen3.8-flash-next-vllm` | vLLM TP=4 + EP (nightly image) | ~19 GB/GPU + ~12 GB pinned host RAM/rank (~96 GB host RAM) | 262K | Same model, W4A16 INT4; decode scales with concurrency (**~150-185 tok/s conc=8**, 182 in the best run, vs ~34 for GGUF at 4 streams), flat ~55 tok/s out to 258K context; defaults to medium reasoning effort. Needs `memlock` unlimited; exclusive VRAM; needs all 4 GPUs |
 | `qwen3.6-35b-code` | vLLM TP=4 + MTP | ~35 GB | 131K | Previous generation (MoE, 3B active) — MTP + thinking |
 | `qwen3.6-35b-128k-nomtp` | vLLM TP=4 | ~35 GB | 131K | Previous generation — thinking, no MTP, high concurrency |
 | `qwen3.6-35b-fast` | vLLM TP=4 | ~35 GB | 262K | Previous generation — thinking disabled by default |
@@ -111,7 +111,7 @@ Qwen3.5-122B) were removed from the shipped config; their benchmark data is kept
 | `gemma4`, `gemma4-26b`, `gemma4-moe`, `gemma4-vision` | `gemma4-26b-q8` |
 | `gemma4-vllm`, `gemma4-concurrent` | `gemma4-26b-a4b` |
 
-See `docs/models.md` for benchmark data, architecture details, and tuning notes.
+See `docs/models.md` for benchmark data, architecture details, and tuning notes. Fewer than four GPUs: see `docs/gpu-counts.md`.
 
 ---
 
@@ -123,6 +123,7 @@ Metric: decode tok/s.
 | Profile | serial | conc=4 | conc=8 | conc=16 |
 |---------|--------|--------|--------|---------|
 | `qwen3.8-27b-code` (medium-256, MTP)² | 66 | 194 | **361** | 549 |
+| `qwen3.8-flash-next-vllm` (nightly image, TP4+EP)² | 56 | — | **~150-185** | 216 |
 | `gemma4-26b-a4b` (medium-256, BF16, thinking on¹)² | 53 | 167 | 287 | **528** |
 | `qwen3.6-35b-code` (xlarge-2048, MTP)² | 43 | 155 | **335** | 651 |
 | `qwen3.6-35b-code` (medium-256, MTP)² | 43 | 145 | **261** | 481 |
@@ -144,8 +145,9 @@ See `docs/models.md` for full tables across all prompt sizes and concurrency lev
 llmctl up                 start llama-swap (auto-downloads binary if missing)
 llmctl down               stop llama-swap
 llmctl status             running state, loaded models, GPU VRAM snapshot
-llmctl list               list all profiles [* = loaded]
-llmctl swap <profile>     load a model and wait until ready
+llmctl list [--all]       list profiles this hardware can run [* = loaded]; --all shows every profile
+llmctl hw [--json]        detected GPUs / RAM and which profiles fit (LLMSTACK_GPU_COUNT=N simulates)
+llmctl swap <profile>     load a model and wait until ready (refuses unsupported ones; --force overrides, expect the start to fail)
 llmctl unload             unload all backends, free VRAM (llama-swap stays up)
 llmctl pick               interactive fzf / numbered picker
 llmctl logs               tail the llama-swap process log
@@ -194,8 +196,10 @@ llmctl pick
 terminal window.
 
 ```bash
-llmpanel [--url URL] [--interval DURATION] [--config PATH] [--log PATH]
+llmpanel [--url URL] [--interval DURATION] [--config PATH] [--log PATH] [--gpu-count N]
 ```
+
+The Models panel applies the same hardware check as `llmctl`: it lists only the profiles this machine can run (from each profile's `metadata.requires`), shows the detected hardware in its header, and `a` toggles a greyed-out view of the rest with the reason. Swapping an unsupported profile is refused; use `llmctl swap --force` to try it anyway.
 
 **Panels** (press `1`–`5` or `Tab` to focus, `f` for fullscreen):
 
@@ -203,7 +207,7 @@ llmpanel [--url URL] [--interval DURATION] [--config PATH] [--log PATH]
 |---|-------|-------|
 | 1 | Inference | Active model, running/waiting requests, KV%, decode tok/s, TTFT, prefix hit rate |
 | 2 | GPU | Per-GPU VRAM, use%, temperature — colour-coded |
-| 3 | Models | All profiles; `▶` cursor, `●` loaded; `Enter`/`s` to swap, `u` to unload |
+| 3 | Models | Profiles this hardware can run; `▶` cursor, `●` loaded; `Enter`/`s` to swap, `u` to unload, `a` to show the rest |
 | 4 | Config | Scrollable YAML for the selected profile; updates as cursor moves |
 | 5 | Logs | Live tail of llama-swap log |
 
@@ -217,8 +221,9 @@ llmpanel [--url URL] [--interval DURATION] [--config PATH] [--log PATH]
 | `↑↓` / `jk` | Navigate model list or scroll Config/Logs |
 | `Enter` / `s` | Swap to selected model |
 | `u` | Unload all models |
+| `a` | Show / hide profiles this hardware cannot run (greyed, with the reason) |
 | `p` | Cycle poll interval (500ms → 1s → 2s → 5s → 15s) |
-| `r` | Reload models.yaml from disk |
+| `r` | Reload models.yaml from disk and re-detect hardware |
 | `q` / `Ctrl+C` | Quit |
 
 Build from source: `cd tui && make install`  
@@ -286,7 +291,7 @@ Clients  ──►  llmproxy :9000  ──►  llama-swap :8080  ──►  vLLM
 
 ## Hardware compatibility
 
-The containers and config in this repo are built for the **AMD Radeon AI PRO R9700 (gfx1201 / RDNA4)**. **1 to 4 GPUs are supported** — `scripts/configure` auto-detects your count and patches `tensor-parallel-size`, `tensor-split`, and expert-parallel settings accordingly. The benchmarks in this repo use 4× R9700 (128 GB total); fewer GPUs reduce throughput and limit which models fit. Here is what each backend requires if you want to adapt it to other hardware:
+The containers and config in this repo are built for the **AMD Radeon AI PRO R9700 (gfx1201 / RDNA4)**. **1 to 4 GPUs are supported** — `scripts/configure` auto-detects your count and patches `tensor-parallel-size` and `tensor-split` accordingly and hides profiles that cannot run on your machine. The benchmarks in this repo use 4× R9700 (128 GB total); fewer GPUs reduce throughput and limit which models fit. Here is what each backend requires if you want to adapt it to other hardware:
 
 | Backend | Requirement | Notes |
 |---------|-------------|-------|
@@ -297,14 +302,16 @@ The containers and config in this repo are built for the **AMD Radeon AI PRO R97
 
 ### Configuration (required after cloning)
 
-`scripts/configure` must be run once after cloning. It does two things:
+`scripts/configure` must be run once after cloning. It does three things:
 
 1. **Replaces `__LLMSTACK_DIR__`** — `config/models.yaml` ships with this literal placeholder in all volume mount paths. llama-swap executes container commands without a shell, so environment variables like `$HOME` aren't expanded at runtime. `configure` substitutes the placeholder with the absolute path to your repo clone.
 
-2. **Patches GPU count** — auto-detected via `rocm-smi`, or set with `--gpu-count`.
+2. **Patches GPU count** — auto-detected from sysfs VRAM size (with `rocm-smi` as fallback), or set with `--gpu-count`. What each profile needs is declared in its own `metadata: requires:` block in `config/models.yaml` (`gpus: [2, 4]` for vLLM, `min_gpus: 3` for llama-server, optional `host_ram_gib`; schema in `config/CLAUDE.md`), and `configure` reads it from there.
+
+3. **Hides profiles this machine cannot run** — see [VRAM limits](#configuration-required-after-cloning) below.
 
 ```bash
-scripts/configure                  # auto-detect GPU count, apply both fixes
+scripts/configure                  # auto-detect GPU count, apply all fixes
 scripts/configure --dry-run        # preview the result without writing
 scripts/configure --gpu-count 2    # override GPU count (if rocm-smi isn't available)
 ```
@@ -314,11 +321,11 @@ What it adjusts in `config/models.yaml`:
 | Setting | What changes |
 |---------|-------------|
 | `__LLMSTACK_DIR__` | Replaced with the absolute path to this repo (e.g. `/home/alice/ai/llmstack`) |
-| `--tensor-parallel-size` | Set to your GPU count |
-| `--tensor-split` (llama-server) | Set to `1,1,...` matching GPU count (removed for 1 GPU) |
-| `--enable-expert-parallel` | Removed when GPU count is 1 |
+| `--tensor-parallel-size` | Set to the largest valid TP size (1, 2 or 4) not above your GPU count; TP must divide the model's head counts, so 3 GPUs gives TP2 |
+| `--tensor-split` (llama-server) | Set to `1,1,...` matching GPU count (`1` for a single GPU) |
+| `--enable-expert-parallel` | Never changed by `configure` |
 
-**VRAM limits** — `qwen3.8-flash-next` (~81 GB) won't fit on fewer than 3 GPUs. The script warns if your GPU count is below the minimum; those profiles should be removed from `models.yaml` in that case.
+**VRAM limits** — `qwen3.8-flash-next` (~81 GB) won't fit on fewer than 3 GPUs, and `qwen3.8-flash-next-vllm` needs all 4. The script reports profiles below their minimum GPU count (or host RAM) as `SKIP`. Their `cmd` stays untouched, but they get an auto-managed `unlisted: true  # llmstack:auto - needs gpus [4], detected 2` line, so llama-swap hides them from `/v1/models`. `llmctl list` / `pick` / `swap` apply the same `scripts/llmhw.py` verdict (hidden from the lists; `llmctl swap` refuses them with exit 2 unless `--force`, and they will probably fail to start). That verdict comes only from `metadata.requires`; a hand-written `unlisted: true` or `false` does not change it. Re-running `configure` on a machine where the profile is supported removes only those marker lines. A hand-written `unlisted:` line is never touched or duplicated. Per-profile behaviour on 3, 2 and 1 GPUs, with measured numbers: `docs/gpu-counts.md`.
 
 ---
 
@@ -335,6 +342,7 @@ containers/llama-server/ llama-server Vulkan Containerfile
 tui/                     Go source for llmpanel
 docs/llmctl.md           Full llmctl command reference
 docs/models.md           Model benchmark data and tuning notes
+docs/gpu-counts.md       Running with fewer than 4 GPUs (valid TP sizes, per-profile limits)
 docs/workarounds.md      Known issues and active workarounds
 tests/smoke.sh           Smoke test (both backends)
 bench/                   Benchmark scripts and saved baselines
