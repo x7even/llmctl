@@ -3,6 +3,7 @@
 //	gpucap                 summary: settings, clocks, temperatures per card (also `gpucap status`)
 //	gpucap --settings      just the current settings and their allowed ranges
 //	gpucap --all           every value we can read, per card
+//	gpucap --help          usage, guidance and risk warning
 //	gpucap set <watts>     write config and apply now (needs root)
 //	gpucap undervolt <mV>  write config and apply a GFX voltage offset now (e.g. -50; 0 clears; needs root)
 //	gpucap apply [watts]   apply configured (or given) cap and voltage offset; used by systemd
@@ -364,12 +365,54 @@ func die(err error) {
 	os.Exit(1)
 }
 
+const helpText = `gpucap - view and tune power cap and GFX voltage offset on AMD GPUs
+
+USAGE
+  gpucap                  summary per card: settings, clocks, temperatures
+  gpucap --settings       current settings and their allowed ranges
+  gpucap --all            everything readable per card (fan, busy %, VRAM, PCIe...)
+  sudo gpucap set <W>     set the power cap in watts, save it, apply now
+  sudo gpucap undervolt <mV>
+                          set a GFX voltage offset (0 or negative, e.g. -50), save it, apply now
+  sudo gpucap apply [W]   re-apply the saved settings (what the boot/resume services run)
+  gpucap --help           this text
+
+WARNING
+  Changing power limits and voltages can damage your hardware, cause instability or
+  data loss, and may void your warranty. Settings are applied at your own risk.
+  Undervolting is generally safe to try because too low a voltage crashes the GPU
+  instead of overheating it, but a crash can take down running jobs and may need a
+  reboot to recover. Raising the power cap above the card's stock limit increases
+  heat and stress on the card and its power connectors: check your PSU and cooling.
+  Nothing here is guaranteed stable on your particular GPUs.
+
+GUIDANCE
+  Power cap   Lower caps cut heat and power with a modest speed cost. Each card reports
+              its allowed range (gpucap --settings). Values outside it are rejected.
+  Undervolt   Start small (-30 mV) and step down in 10-20 mV increments. After each step,
+              run a sustained load for several minutes and watch for crashes, GPU resets
+              or wrong output. Back off to a step or two above the last stable value.
+              Every chip is different, so test each card. gpucap refuses offsets deeper
+              than -100 mV unless you raise UV_LIMIT_MV in /etc/gpucap.conf.
+  Undo        sudo gpucap undervolt 0   clears the offset
+              sudo gpucap set <max W>   returns to a higher cap
+              A reboot also resets the hardware to stock, but saved settings are
+              re-applied at boot: change or remove them in /etc/gpucap.conf to stop that.
+  Requires    root for set/undervolt/apply. The voltage offset also needs amdgpu's OverDrive
+              bit; install.sh enables it and needs one reboot.
+
+FILES
+  /etc/gpucap.conf        CAP_W, UV_MV, UV_LIMIT_MV
+`
+
 func main() {
 	cmd := "status"
 	if len(os.Args) > 1 {
 		cmd = os.Args[1]
 	}
 	switch cmd {
+	case "help", "--help", "-h":
+		fmt.Print(helpText)
 	case "status", "--summary":
 		status(findCards(), "summary")
 	case "--settings":
@@ -425,6 +468,9 @@ func main() {
 			die(err)
 		}
 		fmt.Printf("saved %dmV to %s\n", mv, confPath)
+		if mv < 0 {
+			fmt.Println("note: stress-test before relying on this; an unstable offset can crash a GPU (see gpucap --help)")
+		}
 	case "apply":
 		cf := loadConf()
 		w := cf.capW
@@ -443,7 +489,7 @@ func main() {
 			fmt.Fprintln(os.Stderr, "warning:", err)
 		}
 	default:
-		fmt.Fprintln(os.Stderr, "usage: gpucap [--settings | --all] | set <watts> | undervolt <mV> | apply [watts]")
+		fmt.Fprintf(os.Stderr, "unknown command %q; run gpucap --help\n", cmd)
 		os.Exit(2)
 	}
 }

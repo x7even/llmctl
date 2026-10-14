@@ -13,6 +13,7 @@ gpucap                 summary table per card: cap, draw, voltage offset, live v
 gpucap --settings      just the current settings (cap, voltage offset) and their allowed ranges
 gpucap --all           everything readable per card: adds fan, busy %, VRAM, PCIe link and the ranges
                        (`gpucap status` is the same as plain `gpucap`)
+gpucap --help          usage, tuning guidance and the risk warning
 gpucap set <watts>     write /etc/gpucap.conf and apply now (needs root)
 gpucap apply [watts]   apply the configured (or given) cap; this is what the systemd units run
 ```
@@ -35,6 +36,9 @@ It works through the amdgpu hwmon files (`/sys/class/drm/card*/device/hwmon/*/po
 AMD cards with a power-cap sysfs entry.
 
 ## Undervolting (optional, RDNA3/RDNA4)
+
+> **Warning:** changing power limits and voltages can damage your hardware, cause instability or data loss, and may void
+> your warranty. You use this at your own risk. Run `gpucap --help` for guidance.
 
 ```
 gpucap undervolt <mV>  write UV_MV to /etc/gpucap.conf and apply a GFX voltage offset now (e.g. -50; 0 clears; needs root)
