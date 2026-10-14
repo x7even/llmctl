@@ -458,10 +458,10 @@ func TestRequires_realConfig(t *testing.T) {
 	if r := reg.Models["qwen3.8-27b-code"].Requirements(); r == nil || !reflect.DeepEqual(r.GPUs, []int{2, 4}) || r.Estimate {
 		t.Errorf("qwen3.8-27b-code = %+v", r)
 	}
-	if r := reg.Models["qwen3.6-35b-code"].Requirements(); r == nil || !r.Estimate {
-		t.Errorf("qwen3.6-35b-code must be an estimate, got %+v", r)
+	if r := reg.Models["qwen3.6-35b-code"].Requirements(); r == nil || !reflect.DeepEqual(r.GPUs, []int{2, 4}) || r.Estimate {
+		t.Errorf("qwen3.6-35b-code must be measured at [2 4], got %+v", r)
 	}
-	if r := reg.Models["qwen3.8-flash-next"].Requirements(); r == nil || r.MinGPUs != 3 || !r.Estimate {
+	if r := reg.Models["qwen3.8-flash-next"].Requirements(); r == nil || r.MinGPUs != 2 || r.Estimate {
 		t.Errorf("qwen3.8-flash-next = %+v", r)
 	}
 }

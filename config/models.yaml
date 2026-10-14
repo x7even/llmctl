@@ -227,8 +227,7 @@ models:
     metadata:
       requires:
         gpus: [2, 4]
-        estimate: true
-        note: "35 GB FP8 weights need at least 2 x 32 GB cards; not run at TP2, head-count divisibility not checked"
+        note: "measured (qwen3.6-35b-code/-fast, same weights): TP2 works (27.4 GiB/card, 483K KV tokens, 58.9 tok/s serial), TP1 OOMs loading, TP3 fails (16 attention heads not divisible by 3)"
     checkEndpoint: /health
     concurrencyLimit: 64
     aliases:
@@ -289,8 +288,7 @@ models:
     metadata:
       requires:
         gpus: [2, 4]
-        estimate: true
-        note: "35 GB FP8 weights need at least 2 x 32 GB cards; not run at TP2, head-count divisibility not checked"
+        note: "measured (qwen3.6-35b-code/-fast, same weights): TP2 works (27.4 GiB/card, 483K KV tokens, 58.9 tok/s serial), TP1 OOMs loading, TP3 fails (16 attention heads not divisible by 3)"
     checkEndpoint: /health
     concurrencyLimit: 64
     aliases:
@@ -347,8 +345,7 @@ models:
     metadata:
       requires:
         gpus: [2, 4]
-        estimate: true
-        note: "35 GB FP8 weights need at least 2 x 32 GB cards; not run at TP2, head-count divisibility not checked"
+        note: "measured (qwen3.6-35b-code/-fast, same weights): TP2 works (27.4 GiB/card, 483K KV tokens, 58.9 tok/s serial), TP1 OOMs loading, TP3 fails (16 attention heads not divisible by 3)"
     checkEndpoint: /health
     concurrencyLimit: 64
     aliases:
@@ -410,10 +407,9 @@ models:
     ttl: 0
     metadata:
       requires:
-        min_gpus: 3
+        min_gpus: 2
         vram_total_gib: 81
-        estimate: true
-        note: "~81 GB VRAM across 4 cards via layer split, but the GGUF shards are ~87 GiB plus a 2.6 GiB MTP draft and 3 cards offer 95.6 GiB, so 3 is tight and unmeasured; raise min_gpus to 4 if it OOMs"
+        note: "measured: loads and serves on 2 cards (31.7/31.3 GiB used, no headroom, 17.4 tok/s serial) and 3 cards (24.5/22.8/26.2 GiB, 33.2 tok/s); 1 card cannot hold the ~87 GiB of shards. 4 cards is the tested/benchmarked layout; with 2 cards expect no room to raise --ctx-size or --parallel"
     checkEndpoint: /health
     concurrencyLimit: 4
     aliases:
@@ -541,8 +537,7 @@ models:
     metadata:
       requires:
         min_gpus: 1
-        estimate: true
-        note: "27 GB Q8 GGUF + mmproj + KV may not fit one 32 GB card; lower --parallel and --ctx-size if it OOMs"
+        note: "measured: runs on a single card (29.3 GiB used of 32, 91.7 tok/s serial) with the shipped --parallel/--ctx-size"
     checkEndpoint: /health
     concurrencyLimit: 16
     aliases:
@@ -584,8 +579,7 @@ models:
     metadata:
       requires:
         min_gpus: 1
-        estimate: true
-        note: "7.1 GB Q4 GGUF should fit any single card; not run at reduced GPU counts"
+        note: "measured: runs on a single card (11.6 GiB used, 61.6 tok/s serial)"
     checkEndpoint: /health
     concurrencyLimit: 16
     aliases:
@@ -634,8 +628,7 @@ models:
     metadata:
       requires:
         gpus: [4]
-        estimate: true
-        note: "BF16 ~123 GB exclusive with KV; only benchmarked at TP4, so [4] is a conservative cap, not a measured failure (49 GB of weights alone would fit TP2, untested)"
+        note: "measured: TP2 loads weights (25.6 GiB/card) but dies in the profiling run with an NCCL/CUDA error at the shipped settings, TP1 OOMs, TP3 fails (16 attention heads not divisible by 3). A TP2 run with lower --max-num-seqs / --gpu-memory-utilization is untested"
     checkEndpoint: /health
     concurrencyLimit: 32
     aliases:
@@ -694,8 +687,7 @@ models:
     metadata:
       requires:
         gpus: [2, 4]
-        estimate: true
-        note: "~26 GB FP8 weights + KV do not fit one card; not run at TP2, head-count divisibility not checked"
+        note: "measured: TP2 works (27.8 GiB/card, 284K KV tokens, 56.4 tok/s serial), TP1 OOMs, TP3 fails (16 attention heads not divisible by 3)"
     checkEndpoint: /health
     concurrencyLimit: 32
     aliases:
