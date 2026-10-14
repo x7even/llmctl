@@ -120,13 +120,14 @@ func saveConf(c conf) error {
 const odFile = "/pp_od_clk_voltage"
 
 var (
-	reOffset = regexp.MustCompile(`(?m)^OD_VDDGFX_OFFSET:\s*\n\s*(-?\d+)\s*mV`)
-	reRange  = regexp.MustCompile(`(?m)^VDDGFX_OFFSET:\s*(-?\d+)\s*mV\s+(-?\d+)\s*mV`)
+	reOffset = regexp.MustCompile(`(?mi)^OD_VDDGFX_OFFSET:\s*\n\s*(-?\d+)\s*mV`)
+	reRange  = regexp.MustCompile(`(?mi)^VDDGFX_OFFSET:\s*(-?\d+)\s*mV\s+(-?\d+)\s*mV`)
 )
 
 // parseOD extracts the current GFX voltage offset and its allowed range (mV) from the contents
 // of pp_od_clk_voltage. ok is false when the table has no VDDGFX offset entry.
 func parseOD(table string) (cur, lo, hi int, ok bool) {
+	table = strings.ReplaceAll(table, "\x00", "") // the driver pads sections with NUL bytes
 	m := reOffset.FindStringSubmatch(table)
 	if m == nil {
 		return 0, 0, 0, false
