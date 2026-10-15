@@ -128,6 +128,13 @@ The official Qwen3.8-27B-FP8 and Qwen3.6-35B-A3B-FP8 checkpoints include it; raw
 `ValueError: GGUF model with architecture qwen35moe is not supported yet.`
 Use llama-server (Vulkan) for all GGUF files. Use vLLM for safetensors only.
 
+### Pinned host RAM: keep `scripts/llm-prestart` in front of podman
+
+`qwen3.8-flash-next-vllm` pins ~48 GiB of host RAM; started with the page cache full it runs at half
+speed for its whole life. Its `cmd` begins `scripts/llm-prestart --need-free-gib 80 --keep <model dir> --
+podman run ...` (absolute main-checkout path, no shell expansion). Do not remove it, and give any new
+profile that pins a large host buffer the same wrapper. See `docs/flash-next-half-speed.md`.
+
 ### Per-profile chat-template defaults
 
 Use `--default-chat-template-kwargs '<json>'` to set server-side template defaults

@@ -1,0 +1,100 @@
+#!/usr/bin/env python3
+"""llm-prestart - make host RAM available, then exec the real launch command.
+
+    llm-prestart [--need-free-gib N] [--root DIR] [--keep PATH]... -- CMD [ARG...]
+
+Why: qwen3.8-flash-next-vllm pins ~48 GiB of host RAM (the PLE table). When the kernel page
+cache is full of other models' weights (MemFree ~20 GiB), the pinned allocation is slow and
+the whole process comes up at half speed (~28 tok/s instead of ~55) for its entire life; a
+reload fixes it only because the first load already evicted the cache. See
+docs/flash-next-half-speed.md.
+
+If MemFree is below --need-free-gib, drop the clean page cache of the model files under
+--root (default /mnt/models/llm) with posix_fadvise(DONTNEED) until MemFree reaches the
+target. That needs no root: clean pages of any file the user can open are evictable.
+Paths under --keep (the model about to be loaded) are skipped, so its weights stay cached.
+Best effort: any failure is logged and the command is exec'd anyway, so this can never
+prevent a model from starting. llama-swap runs `cmd` without a shell and tracks the PID,
+which `exec` preserves.
+"""
+import argparse
+import os
+import sys
+
+GIB = 2**30
+
+
+def mem_free_gib():
+    with open("/proc/meminfo") as f:
+        for line in f:
+            if line.startswith("MemFree:"):
+                return int(line.split()[1]) * 1024 / GIB
+    raise RuntimeError("MemFree not found in /proc/meminfo")
+
+
+def evict(root, keep, need_free_gib, free_fn=mem_free_gib):
+    """Evict page cache of files under root (skipping keep) until free_fn() >= need_free_gib.
+
+    Returns (files_touched, bytes_covered). Stops as soon as the target is reached.
+    """
+    keep = [os.path.abspath(k) for k in keep]
+    files = bytes_ = 0
+    for dirpath, _dirs, names in os.walk(root):
+        d = os.path.abspath(dirpath)
+        if any(d == k or d.startswith(k + os.sep) for k in keep):
+            continue
+        for name in names:
+            if free_fn() >= need_free_gib:
+                return files, bytes_
+            path = os.path.join(dirpath, name)
+            try:
+                fd = os.open(path, os.O_RDONLY)
+            except OSError:
+                continue
+            try:
+                size = os.fstat(fd).st_size
+                os.posix_fadvise(fd, 0, 0, os.POSIX_FADV_DONTNEED)
+                files += 1
+                bytes_ += size
+            except OSError:
+                pass
+            finally:
+                os.close(fd)
+    return files, bytes_
+
+
+def main(argv):
+    if "--" not in argv:
+        sys.exit("usage: llm-prestart [--need-free-gib N] [--root DIR] [--keep PATH]... -- CMD [ARG...]")
+    split = argv.index("--")
+    ap = argparse.ArgumentParser(prog="llm-prestart")
+    ap.add_argument("--need-free-gib", type=float, default=0.0)
+    ap.add_argument("--root", default="/mnt/models/llm")
+    ap.add_argument("--keep", action="append", default=[])
+    opts = ap.parse_args(argv[:split])
+    cmd = argv[split + 1:]
+    if not cmd:
+        sys.exit("llm-prestart: nothing to exec after --")
+    try:
+        before = mem_free_gib()
+        if opts.need_free_gib and before < opts.need_free_gib:
+            files, covered = evict(opts.root, opts.keep, opts.need_free_gib)
+            if mem_free_gib() < opts.need_free_gib and opts.keep:
+                # other models' cache was not enough: give up the target's own cached weights too
+                # (costs a colder read of them, still far cheaper than a half-speed model)
+                f2, c2 = evict(opts.root, [], opts.need_free_gib)
+                files, covered = files + f2, covered + c2
+            after = mem_free_gib()
+            print(f"llm-prestart: MemFree {before:.1f} GiB < {opts.need_free_gib:g} GiB needed; dropped page cache of "
+                  f"{files} files ({covered / GIB:.0f} GiB) under {opts.root} -> MemFree {after:.1f} GiB"
+                  + ("" if after >= opts.need_free_gib else "  [still below target: expect a possibly slow start]"),
+                  file=sys.stderr, flush=True)
+        else:
+            print(f"llm-prestart: MemFree {before:.1f} GiB, need {opts.need_free_gib:g} - ok", file=sys.stderr, flush=True)
+    except Exception as e:  # never block the launch
+        print(f"llm-prestart: skipped ({e})", file=sys.stderr, flush=True)
+    os.execvp(cmd[0], cmd)
+
+
+if __name__ == "__main__":
+    main(sys.argv[1:])
