@@ -1,0 +1,79 @@
+{
+ "passed": 0,
+ "total": 14,
+ "fatal": null,
+ "timed_out": false,
+ "stderr_tail": "",
+ "tests": [
+  {
+   "test": "test_basic_values",
+   "ok": false,
+   "err": "NameError: name '_parse_number' is not defined"
+  },
+  {
+   "test": "test_number_values",
+   "ok": false,
+   "err": "NameError: name '_parse_number' is not defined"
+  },
+  {
+   "test": "test_number_errors_pos",
+   "ok": false,
+   "err": "AssertionError: '01': raised NameError: name '_parse_number' is not defined, expected JSONError"
+  },
+  {
+   "test": "test_string_values",
+   "ok": false,
+   "err": "Timeout: test timed out (10s)"
+  },
+  {
+   "test": "test_string_errors_pos",
+   "ok": false,
+   "err": "AssertionError: '\"a\\x00b\"': raised Timeout: test timed out (10s), expected JSONError"
+  },
+  {
+   "test": "test_structure_whitespace_trailing_pos",
+   "ok": false,
+   "err": "NameError: name '_parse_number' is not defined"
+  },
+  {
+   "test": "test_duplicate_keys",
+   "ok": false,
+   "err": "Timeout: test timed out (10s)"
+  },
+  {
+   "test": "test_depth_limit_ok",
+   "ok": false,
+   "err": "NameError: name '_parse_number' is not defined"
+  },
+  {
+   "test": "test_depth_limit_exceeded",
+   "ok": false,
+   "err": "AssertionError: '{\"a\":{\"a\":{\"a\":{\"a\":{\"a\":{\"a\":{\"a\":{\"a\":{\"a\":{\"a\":{\"a\":{\"a\":': raised Timeout: test timed out (10s), expected JSONError"
+  },
+  {
+   "test": "test_error_api",
+   "ok": false,
+   "err": "NameError: name '_parse_number' is not defined"
+  },
+  {
+   "test": "test_no_json_module_no_eval",
+   "ok": false,
+   "err": "NameError: name '_parse_number' is not defined"
+  },
+  {
+   "test": "test_differential_valid",
+   "ok": false,
+   "err": "NameError: name '_parse_number' is not defined"
+  },
+  {
+   "test": "test_differential_mutations",
+   "ok": false,
+   "err": "Timeout: test timed out (10s)"
+  },
+  {
+   "test": "test_performance_scale",
+   "ok": false,
+   "err": "Timeout: test timed out (10s)"
+  }
+ ]
+}

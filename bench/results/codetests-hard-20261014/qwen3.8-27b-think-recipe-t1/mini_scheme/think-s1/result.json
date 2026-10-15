@@ -1,0 +1,79 @@
+{
+ "passed": 0,
+ "total": 14,
+ "fatal": null,
+ "timed_out": false,
+ "stderr_tail": "",
+ "tests": [
+  {
+   "test": "test_lexical_syntax_and_display",
+   "ok": false,
+   "err": "AttributeError: module 'solution' has no attribute 'run'"
+  },
+  {
+   "test": "test_integer_arithmetic",
+   "ok": false,
+   "err": "AttributeError: module 'solution' has no attribute 'run'"
+  },
+  {
+   "test": "test_truthiness_equality_and_predicates",
+   "ok": false,
+   "err": "AttributeError: module 'solution' has no attribute 'run'"
+  },
+  {
+   "test": "test_lists_apply_and_shadowing",
+   "ok": false,
+   "err": "AttributeError: module 'solution' has no attribute 'run'"
+  },
+  {
+   "test": "test_closures_and_mutation",
+   "ok": false,
+   "err": "AttributeError: module 'solution' has no attribute 'run'"
+  },
+  {
+   "test": "test_binding_forms_and_internal_defines",
+   "ok": false,
+   "err": "AttributeError: module 'solution' has no attribute 'run'"
+  },
+  {
+   "test": "test_evaluation_order",
+   "ok": false,
+   "err": "AttributeError: module 'solution' has no attribute 'run'"
+  },
+  {
+   "test": "test_error_handling",
+   "ok": false,
+   "err": "AssertionError: '(display \"a\") (car \\'()) (display \"b\")': raised AttributeError: module 'solution' has no attribute 'run' instead of SchemeError"
+  },
+  {
+   "test": "test_tail_calls_long_loops",
+   "ok": false,
+   "err": "AttributeError: module 'solution' has no attribute 'run'"
+  },
+  {
+   "test": "test_tail_calls_in_conditionals",
+   "ok": false,
+   "err": "AttributeError: module 'solution' has no attribute 'run'"
+  },
+  {
+   "test": "test_tail_calls_in_binding_forms_and_apply",
+   "ok": false,
+   "err": "AttributeError: module 'solution' has no attribute 'run'"
+  },
+  {
+   "test": "test_deep_recursion_and_long_lists",
+   "ok": false,
+   "err": "AttributeError: module 'solution' has no attribute 'run'"
+  },
+  {
+   "test": "test_classic_programs",
+   "ok": false,
+   "err": "AttributeError: module 'solution' has no attribute 'run'"
+  },
+  {
+   "test": "test_randomized_differential",
+   "ok": false,
+   "err": "AttributeError: module 'solution' has no attribute 'run'"
+  }
+ ]
+}

@@ -1,0 +1,67 @@
+{
+ "passed": 12,
+ "total": 14,
+ "fatal": null,
+ "timed_out": false,
+ "stderr_tail": "",
+ "tests": [
+  {
+   "test": "test_no_forbidden_imports",
+   "ok": true
+  },
+  {
+   "test": "test_leap_and_month_lengths",
+   "ok": true
+  },
+  {
+   "test": "test_ordinal_weekday",
+   "ok": true
+  },
+  {
+   "test": "test_iso_week_vs_stdlib",
+   "ok": true
+  },
+  {
+   "test": "test_from_iso_week_rules",
+   "ok": true
+  },
+  {
+   "test": "test_add_days",
+   "ok": true
+  },
+  {
+   "test": "test_add_months_oracle",
+   "ok": true
+  },
+  {
+   "test": "test_parse_accepts",
+   "ok": true
+  },
+  {
+   "test": "test_parse_rejects",
+   "ok": false,
+   "err": "AssertionError: parse('2024-01-01\\n') returned (2024, 1, 1), expected ValueError"
+  },
+  {
+   "test": "test_format_date",
+   "ok": true
+  },
+  {
+   "test": "test_diff_rule",
+   "ok": true
+  },
+  {
+   "test": "test_diff_oracle_and_identity",
+   "ok": true
+  },
+  {
+   "test": "test_validation_and_types",
+   "ok": false,
+   "err": "AssertionError: raised ValueError: day out of range; expected TypeError"
+  },
+  {
+   "test": "test_scale",
+   "ok": true
+  }
+ ]
+}

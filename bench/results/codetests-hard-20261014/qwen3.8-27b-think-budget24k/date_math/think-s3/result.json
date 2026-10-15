@@ -1,0 +1,74 @@
+{
+ "passed": 5,
+ "total": 14,
+ "fatal": null,
+ "timed_out": false,
+ "stderr_tail": "",
+ "tests": [
+  {
+   "test": "test_no_forbidden_imports",
+   "ok": true
+  },
+  {
+   "test": "test_leap_and_month_lengths",
+   "ok": true
+  },
+  {
+   "test": "test_ordinal_weekday",
+   "ok": false,
+   "err": "AssertionError: from_ordinal(584388)"
+  },
+  {
+   "test": "test_iso_week_vs_stdlib",
+   "ok": false,
+   "err": "AssertionError: from_iso_week(1950, 52, 7)"
+  },
+  {
+   "test": "test_from_iso_week_rules",
+   "ok": false,
+   "err": "AssertionError: from_iso_week(7305, 1, 3) = (7305, 1, 0)"
+  },
+  {
+   "test": "test_add_days",
+   "ok": false,
+   "err": "AssertionError: add_days((8286, 7, 26),16593) = (8332, 1, 0), want (8331, 12, 31)"
+  },
+  {
+   "test": "test_add_months_oracle",
+   "ok": true
+  },
+  {
+   "test": "test_parse_accepts",
+   "ok": false,
+   "err": "AssertionError: parse('1996-366') = (1997, 1, 0), want (1996, 12, 31)"
+  },
+  {
+   "test": "test_parse_rejects",
+   "ok": false,
+   "err": "AssertionError: parse('2023-365')"
+  },
+  {
+   "test": "test_format_date",
+   "ok": false,
+   "err": "AssertionError: parse(format_date((1999, 12, 31), 'ordinal')) round trip"
+  },
+  {
+   "test": "test_diff_rule",
+   "ok": true
+  },
+  {
+   "test": "test_diff_oracle_and_identity",
+   "ok": false,
+   "err": "AssertionError: "
+  },
+  {
+   "test": "test_validation_and_types",
+   "ok": true
+  },
+  {
+   "test": "test_scale",
+   "ok": false,
+   "err": "ValueError: day 0 out of range 1..31 for 1090-01"
+  }
+ ]
+}

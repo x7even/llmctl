@@ -1,0 +1,74 @@
+{
+ "passed": 0,
+ "total": 13,
+ "fatal": "import failed: SyntaxError: unmatched ')' (solution.py, line 1)",
+ "timed_out": false,
+ "stderr_tail": "",
+ "tests": [
+  {
+   "test": "test_api_and_examples",
+   "ok": false,
+   "err": "import failed: SyntaxError: unmatched ')' (solution.py, line 1)"
+  },
+  {
+   "test": "test_classes_escapes_anchors",
+   "ok": false,
+   "err": "import failed: SyntaxError: unmatched ')' (solution.py, line 1)"
+  },
+  {
+   "test": "test_priority_and_laziness",
+   "ok": false,
+   "err": "import failed: SyntaxError: unmatched ')' (solution.py, line 1)"
+  },
+  {
+   "test": "test_capture_semantics",
+   "ok": false,
+   "err": "import failed: SyntaxError: unmatched ')' (solution.py, line 1)"
+  },
+  {
+   "test": "test_empty_iteration_loops",
+   "ok": false,
+   "err": "import failed: SyntaxError: unmatched ')' (solution.py, line 1)"
+  },
+  {
+   "test": "test_invalid_patterns",
+   "ok": false,
+   "err": "import failed: SyntaxError: unmatched ')' (solution.py, line 1)"
+  },
+  {
+   "test": "test_strict_dialect_rejections",
+   "ok": false,
+   "err": "import failed: SyntaxError: unmatched ')' (solution.py, line 1)"
+  },
+  {
+   "test": "test_random_captures_diff",
+   "ok": false,
+   "err": "import failed: SyntaxError: unmatched ')' (solution.py, line 1)"
+  },
+  {
+   "test": "test_random_empty_loops_diff",
+   "ok": false,
+   "err": "import failed: SyntaxError: unmatched ')' (solution.py, line 1)"
+  },
+  {
+   "test": "test_random_classes_anchors_diff",
+   "ok": false,
+   "err": "import failed: SyntaxError: unmatched ')' (solution.py, line 1)"
+  },
+  {
+   "test": "test_random_syntax_validity",
+   "ok": false,
+   "err": "import failed: SyntaxError: unmatched ')' (solution.py, line 1)"
+  },
+  {
+   "test": "test_scale_memoisation",
+   "ok": false,
+   "err": "import failed: SyntaxError: unmatched ')' (solution.py, line 1)"
+  },
+  {
+   "test": "test_long_input_no_recursion",
+   "ok": false,
+   "err": "import failed: SyntaxError: unmatched ')' (solution.py, line 1)"
+  }
+ ]
+}

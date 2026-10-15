@@ -1,0 +1,68 @@
+{
+ "passed": 11,
+ "total": 14,
+ "fatal": null,
+ "timed_out": false,
+ "stderr_tail": "",
+ "tests": [
+  {
+   "test": "test_no_forbidden_imports",
+   "ok": true
+  },
+  {
+   "test": "test_leap_and_month_lengths",
+   "ok": true
+  },
+  {
+   "test": "test_ordinal_weekday",
+   "ok": true
+  },
+  {
+   "test": "test_iso_week_vs_stdlib",
+   "ok": true
+  },
+  {
+   "test": "test_from_iso_week_rules",
+   "ok": true
+  },
+  {
+   "test": "test_add_days",
+   "ok": true
+  },
+  {
+   "test": "test_add_months_oracle",
+   "ok": true
+  },
+  {
+   "test": "test_parse_accepts",
+   "ok": false,
+   "err": "ValueError: invalid"
+  },
+  {
+   "test": "test_parse_rejects",
+   "ok": false,
+   "err": "ValueError: invalid"
+  },
+  {
+   "test": "test_format_date",
+   "ok": false,
+   "err": "ValueError: invalid"
+  },
+  {
+   "test": "test_diff_rule",
+   "ok": true
+  },
+  {
+   "test": "test_diff_oracle_and_identity",
+   "ok": true
+  },
+  {
+   "test": "test_validation_and_types",
+   "ok": true
+  },
+  {
+   "test": "test_scale",
+   "ok": true
+  }
+ ]
+}

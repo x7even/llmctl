@@ -1,0 +1,91 @@
+{
+ "model": "qwen3.8-flash-next-vllm",
+ "rows": [
+  {
+   "task": "regex_engine",
+   "mode": "think",
+   "sample": 1,
+   "passed": 10,
+   "total": 13,
+   "full_pass": false,
+   "fatal": null,
+   "finish": "stop",
+   "completion_tokens": 66317,
+   "wall_s": 2486.7,
+   "reasoning_chars": 221633,
+   "failed_tests": [
+    "test_random_captures_diff",
+    "test_random_empty_loops_diff",
+    "test_random_classes_anchors_diff"
+   ]
+  },
+  {
+   "task": "regex_engine",
+   "mode": "think",
+   "sample": 0,
+   "passed": 11,
+   "total": 13,
+   "full_pass": false,
+   "fatal": null,
+   "finish": "stop",
+   "completion_tokens": 67122,
+   "wall_s": 2516.6,
+   "reasoning_chars": 219377,
+   "failed_tests": [
+    "test_random_captures_diff",
+    "test_scale_memoisation"
+   ]
+  },
+  {
+   "task": "regex_engine",
+   "mode": "think",
+   "sample": 3,
+   "passed": 5,
+   "total": 13,
+   "full_pass": false,
+   "fatal": null,
+   "finish": "stop",
+   "completion_tokens": 73092,
+   "wall_s": 2746.0,
+   "reasoning_chars": 232797,
+   "failed_tests": [
+    "test_priority_and_laziness",
+    "test_capture_semantics",
+    "test_empty_iteration_loops",
+    "test_invalid_patterns",
+    "test_random_captures_diff",
+    "test_random_empty_loops_diff",
+    "test_random_classes_anchors_diff",
+    "test_scale_memoisation"
+   ]
+  },
+  {
+   "task": "regex_engine",
+   "mode": "think",
+   "sample": 2,
+   "passed": 0,
+   "total": 13,
+   "full_pass": false,
+   "fatal": null,
+   "finish": "stop",
+   "completion_tokens": 73103,
+   "wall_s": 2746.6,
+   "reasoning_chars": 193528,
+   "failed_tests": [
+    "test_api_and_examples",
+    "test_classes_escapes_anchors",
+    "test_priority_and_laziness",
+    "test_capture_semantics",
+    "test_empty_iteration_loops",
+    "test_invalid_patterns",
+    "test_strict_dialect_rejections",
+    "test_random_captures_diff",
+    "test_random_empty_loops_diff",
+    "test_random_classes_anchors_diff",
+    "test_random_syntax_validity",
+    "test_scale_memoisation",
+    "test_long_input_no_recursion"
+   ]
+  }
+ ]
+}

@@ -1,0 +1,66 @@
+{
+ "passed": 13,
+ "total": 14,
+ "fatal": null,
+ "timed_out": false,
+ "stderr_tail": "",
+ "tests": [
+  {
+   "test": "test_basic_values",
+   "ok": true
+  },
+  {
+   "test": "test_number_values",
+   "ok": true
+  },
+  {
+   "test": "test_number_errors_pos",
+   "ok": true
+  },
+  {
+   "test": "test_string_values",
+   "ok": true
+  },
+  {
+   "test": "test_string_errors_pos",
+   "ok": false,
+   "err": "AssertionError: '{\"a\":1,}': accepted -> \"{'a': 1}\", expected JSONError at 7"
+  },
+  {
+   "test": "test_structure_whitespace_trailing_pos",
+   "ok": true
+  },
+  {
+   "test": "test_duplicate_keys",
+   "ok": true
+  },
+  {
+   "test": "test_depth_limit_ok",
+   "ok": true
+  },
+  {
+   "test": "test_depth_limit_exceeded",
+   "ok": true
+  },
+  {
+   "test": "test_error_api",
+   "ok": true
+  },
+  {
+   "test": "test_no_json_module_no_eval",
+   "ok": true
+  },
+  {
+   "test": "test_differential_valid",
+   "ok": true
+  },
+  {
+   "test": "test_differential_mutations",
+   "ok": true
+  },
+  {
+   "test": "test_performance_scale",
+   "ok": true
+  }
+ ]
+}
