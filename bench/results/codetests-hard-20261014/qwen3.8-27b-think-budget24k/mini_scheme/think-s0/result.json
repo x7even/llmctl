@@ -1,0 +1,79 @@
+{
+ "passed": 0,
+ "total": 14,
+ "fatal": "import failed: SyntaxError: '(' was never closed (solution.py, line 933)",
+ "timed_out": false,
+ "stderr_tail": "",
+ "tests": [
+  {
+   "test": "test_lexical_syntax_and_display",
+   "ok": false,
+   "err": "import failed: SyntaxError: '(' was never closed (solution.py, line 933)"
+  },
+  {
+   "test": "test_integer_arithmetic",
+   "ok": false,
+   "err": "import failed: SyntaxError: '(' was never closed (solution.py, line 933)"
+  },
+  {
+   "test": "test_truthiness_equality_and_predicates",
+   "ok": false,
+   "err": "import failed: SyntaxError: '(' was never closed (solution.py, line 933)"
+  },
+  {
+   "test": "test_lists_apply_and_shadowing",
+   "ok": false,
+   "err": "import failed: SyntaxError: '(' was never closed (solution.py, line 933)"
+  },
+  {
+   "test": "test_closures_and_mutation",
+   "ok": false,
+   "err": "import failed: SyntaxError: '(' was never closed (solution.py, line 933)"
+  },
+  {
+   "test": "test_binding_forms_and_internal_defines",
+   "ok": false,
+   "err": "import failed: SyntaxError: '(' was never closed (solution.py, line 933)"
+  },
+  {
+   "test": "test_evaluation_order",
+   "ok": false,
+   "err": "import failed: SyntaxError: '(' was never closed (solution.py, line 933)"
+  },
+  {
+   "test": "test_error_handling",
+   "ok": false,
+   "err": "import failed: SyntaxError: '(' was never closed (solution.py, line 933)"
+  },
+  {
+   "test": "test_tail_calls_long_loops",
+   "ok": false,
+   "err": "import failed: SyntaxError: '(' was never closed (solution.py, line 933)"
+  },
+  {
+   "test": "test_tail_calls_in_conditionals",
+   "ok": false,
+   "err": "import failed: SyntaxError: '(' was never closed (solution.py, line 933)"
+  },
+  {
+   "test": "test_tail_calls_in_binding_forms_and_apply",
+   "ok": false,
+   "err": "import failed: SyntaxError: '(' was never closed (solution.py, line 933)"
+  },
+  {
+   "test": "test_deep_recursion_and_long_lists",
+   "ok": false,
+   "err": "import failed: SyntaxError: '(' was never closed (solution.py, line 933)"
+  },
+  {
+   "test": "test_classic_programs",
+   "ok": false,
+   "err": "import failed: SyntaxError: '(' was never closed (solution.py, line 933)"
+  },
+  {
+   "test": "test_randomized_differential",
+   "ok": false,
+   "err": "import failed: SyntaxError: '(' was never closed (solution.py, line 933)"
+  }
+ ]
+}

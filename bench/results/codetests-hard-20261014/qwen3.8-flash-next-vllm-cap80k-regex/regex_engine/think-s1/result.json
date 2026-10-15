@@ -1,0 +1,64 @@
+{
+ "passed": 10,
+ "total": 13,
+ "fatal": null,
+ "timed_out": false,
+ "stderr_tail": "",
+ "tests": [
+  {
+   "test": "test_api_and_examples",
+   "ok": true
+  },
+  {
+   "test": "test_classes_escapes_anchors",
+   "ok": true
+  },
+  {
+   "test": "test_priority_and_laziness",
+   "ok": true
+  },
+  {
+   "test": "test_capture_semantics",
+   "ok": true
+  },
+  {
+   "test": "test_empty_iteration_loops",
+   "ok": true
+  },
+  {
+   "test": "test_invalid_patterns",
+   "ok": true
+  },
+  {
+   "test": "test_strict_dialect_rejections",
+   "ok": true
+  },
+  {
+   "test": "test_random_captures_diff",
+   "ok": false,
+   "err": "AssertionError: search('(?:)(aa?){3}', 'aabaaa'): expected ((3, 6), ('a',), ((3, 6, 'aaa'), (5, 6, 'a')), ((3, 6), (5, 6))), got None"
+  },
+  {
+   "test": "test_random_empty_loops_diff",
+   "ok": false,
+   "err": "AssertionError: search('b(?:a?|b){1,2}a$', 'bbaaa'): expected ((1, 5), (), ((1, 5, 'baaa'),), ((1, 5),)), got None"
+  },
+  {
+   "test": "test_random_classes_anchors_diff",
+   "ok": false,
+   "err": "AssertionError: fullmatch('[-a]{0,}(?:[\\\\d_]+[^\\\\s]){2,3}?', '--11_-'): expected ((0, 6), (), ((0, 6, '--11_-'),), ((0, 6),)), got None"
+  },
+  {
+   "test": "test_random_syntax_validity",
+   "ok": true
+  },
+  {
+   "test": "test_scale_memoisation",
+   "ok": true
+  },
+  {
+   "test": "test_long_input_no_recursion",
+   "ok": true
+  }
+ ]
+}

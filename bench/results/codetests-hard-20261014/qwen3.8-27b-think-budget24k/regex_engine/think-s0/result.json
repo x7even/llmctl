@@ -1,0 +1,74 @@
+{
+ "passed": 0,
+ "total": 13,
+ "fatal": null,
+ "timed_out": false,
+ "stderr_tail": "",
+ "tests": [
+  {
+   "test": "test_api_and_examples",
+   "ok": false,
+   "err": "TypeError: 'Alt' object is not iterable"
+  },
+  {
+   "test": "test_classes_escapes_anchors",
+   "ok": false,
+   "err": "AssertionError: fullmatch('[a-c]+x', 'abcx'): expected ((0, 4), (), ((0, 4, 'abcx'),), ((0, 4),)), got None"
+  },
+  {
+   "test": "test_priority_and_laziness",
+   "ok": false,
+   "err": "TypeError: 'Alt' object is not iterable"
+  },
+  {
+   "test": "test_capture_semantics",
+   "ok": false,
+   "err": "TypeError: 'Alt' object is not iterable"
+  },
+  {
+   "test": "test_empty_iteration_loops",
+   "ok": false,
+   "err": "AssertionError: fullmatch('(a*)*?', 'aa'): expected ((0, 2), ('aa',), ((0, 2, 'aa'), (0, 2, 'aa')), ((0, 2), (0, 2))), got None"
+  },
+  {
+   "test": "test_invalid_patterns",
+   "ok": false,
+   "err": "ValueError: Unclosed character class"
+  },
+  {
+   "test": "test_strict_dialect_rejections",
+   "ok": false,
+   "err": "AssertionError: fullmatch('a{1}\\\\{', 'a{'): expected ((0, 2), (), ((0, 2, 'a{'),), ((0, 2),)), got None"
+  },
+  {
+   "test": "test_random_captures_diff",
+   "ok": false,
+   "err": "TypeError: 'Alt' object is not iterable"
+  },
+  {
+   "test": "test_random_empty_loops_diff",
+   "ok": false,
+   "err": "TypeError: 'Alt' object is not iterable"
+  },
+  {
+   "test": "test_random_classes_anchors_diff",
+   "ok": false,
+   "err": "TypeError: 'Alt' object is not iterable"
+  },
+  {
+   "test": "test_random_syntax_validity",
+   "ok": false,
+   "err": "TypeError: 'Alt' object is not iterable"
+  },
+  {
+   "test": "test_scale_memoisation",
+   "ok": false,
+   "err": "TypeError: 'Alt' object is not iterable"
+  },
+  {
+   "test": "test_long_input_no_recursion",
+   "ok": false,
+   "err": "TypeError: 'Alt' object is not iterable"
+  }
+ ]
+}

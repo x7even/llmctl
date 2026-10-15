@@ -1,0 +1,71 @@
+{
+ "passed": 8,
+ "total": 14,
+ "fatal": null,
+ "timed_out": false,
+ "stderr_tail": "",
+ "tests": [
+  {
+   "test": "test_no_forbidden_imports",
+   "ok": true
+  },
+  {
+   "test": "test_leap_and_month_lengths",
+   "ok": true
+  },
+  {
+   "test": "test_ordinal_weekday",
+   "ok": true
+  },
+  {
+   "test": "test_iso_week_vs_stdlib",
+   "ok": false,
+   "err": "AssertionError: iso_week(1954, 1, 4) = (1954, 2, 1), want (1954, 1, 1)"
+  },
+  {
+   "test": "test_from_iso_week_rules",
+   "ok": false,
+   "err": "AssertionError: from_iso_week(5306, 10, 4) = (5306, 3, 4)"
+  },
+  {
+   "test": "test_add_days",
+   "ok": true
+  },
+  {
+   "test": "test_add_months_oracle",
+   "ok": true
+  },
+  {
+   "test": "test_parse_accepts",
+   "ok": false,
+   "err": "AssertionError: parse('1999-W01-1') = (1998, 12, 28), want (1999, 1, 4)"
+  },
+  {
+   "test": "test_parse_rejects",
+   "ok": false,
+   "err": "AssertionError: parse('9999-W52-6') returned (9999, 12, 25), expected ValueError"
+  },
+  {
+   "test": "test_format_date",
+   "ok": false,
+   "err": "AssertionError: format_date((1999, 1, 4), 'week') = '1999-W02-1', want '1999-W01-1'"
+  },
+  {
+   "test": "test_diff_rule",
+   "ok": true
+  },
+  {
+   "test": "test_diff_oracle_and_identity",
+   "ok": true
+  },
+  {
+   "test": "test_validation_and_types",
+   "ok": true
+  },
+  {
+   "test": "test_scale",
+   "ok": false,
+   "err": "ValueError: week out of range"
+  }
+ ]
+}

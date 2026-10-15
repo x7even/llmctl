@@ -1,0 +1,63 @@
+{
+ "passed": 11,
+ "total": 13,
+ "fatal": null,
+ "timed_out": false,
+ "stderr_tail": "",
+ "tests": [
+  {
+   "test": "test_api_and_examples",
+   "ok": true
+  },
+  {
+   "test": "test_classes_escapes_anchors",
+   "ok": true
+  },
+  {
+   "test": "test_priority_and_laziness",
+   "ok": true
+  },
+  {
+   "test": "test_capture_semantics",
+   "ok": true
+  },
+  {
+   "test": "test_empty_iteration_loops",
+   "ok": true
+  },
+  {
+   "test": "test_invalid_patterns",
+   "ok": true
+  },
+  {
+   "test": "test_strict_dialect_rejections",
+   "ok": true
+  },
+  {
+   "test": "test_random_captures_diff",
+   "ok": false,
+   "err": "Timeout: test timed out (10s)"
+  },
+  {
+   "test": "test_random_empty_loops_diff",
+   "ok": true
+  },
+  {
+   "test": "test_random_classes_anchors_diff",
+   "ok": true
+  },
+  {
+   "test": "test_random_syntax_validity",
+   "ok": true
+  },
+  {
+   "test": "test_scale_memoisation",
+   "ok": false,
+   "err": "Timeout: test timed out (10s)"
+  },
+  {
+   "test": "test_long_input_no_recursion",
+   "ok": true
+  }
+ ]
+}

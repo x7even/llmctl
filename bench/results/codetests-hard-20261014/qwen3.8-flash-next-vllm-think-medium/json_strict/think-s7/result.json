@@ -1,0 +1,70 @@
+{
+ "passed": 9,
+ "total": 14,
+ "fatal": null,
+ "timed_out": false,
+ "stderr_tail": "",
+ "tests": [
+  {
+   "test": "test_basic_values",
+   "ok": false,
+   "err": "AssertionError: "
+  },
+  {
+   "test": "test_number_values",
+   "ok": true
+  },
+  {
+   "test": "test_number_errors_pos",
+   "ok": true
+  },
+  {
+   "test": "test_string_values",
+   "ok": true
+  },
+  {
+   "test": "test_string_errors_pos",
+   "ok": true
+  },
+  {
+   "test": "test_structure_whitespace_trailing_pos",
+   "ok": true
+  },
+  {
+   "test": "test_duplicate_keys",
+   "ok": false,
+   "err": "AssertionError: "
+  },
+  {
+   "test": "test_depth_limit_ok",
+   "ok": true
+  },
+  {
+   "test": "test_depth_limit_exceeded",
+   "ok": true
+  },
+  {
+   "test": "test_error_api",
+   "ok": true
+  },
+  {
+   "test": "test_no_json_module_no_eval",
+   "ok": true
+  },
+  {
+   "test": "test_differential_valid",
+   "ok": false,
+   "err": "AssertionError: '{ \\r\"\"\\t:60870.0247035580556E+309,\"\"\\r:{\\n\\r\\t\"c\\\\\"\":false,\"\\\\ud83dAZ\":\"b\\\\f-\\\\u0001\\ude00\",\"\\\\udbff\\\\udfff\\xa0-\":[\\t[\\n \" A\u00e9\\\\\\\\\\\\r\\u2028A\"\\n ,\\n\\r[true'\n got  {'': inf, '\\r0': {'c\"': False, '\\ud83dAZ': 'b\\x0c-\\x01\\ude00', '-': [[' A\u00e9\\\\\\r\\u2028A', [True, -5]],\n want {'': {'c\"': Fal"
+  },
+  {
+   "test": "test_differential_mutations",
+   "ok": false,
+   "err": "AssertionError: '{\"A\":\\n\\n\"\\udc00a\" ,\"\":{\\n \\t},\"a\":{\"\\\\u0000bu/\":{\\t}}  }\\r \\n'\n got  {'A': '\\udc00a', '': {}, '\\x00bu/': {'\\x00bu/': {}}}\n want {'A': '\\udc00a', '': {}, 'a': {'\\x00bu/': {}}}"
+  },
+  {
+   "test": "test_performance_scale",
+   "ok": false,
+   "err": "AssertionError: "
+  }
+ ]
+}

@@ -1,0 +1,73 @@
+{
+ "passed": 1,
+ "total": 13,
+ "fatal": null,
+ "timed_out": false,
+ "stderr_tail": "",
+ "tests": [
+  {
+   "test": "test_api_and_examples",
+   "ok": false,
+   "err": "AssertionError: fullmatch('(a|ab)(c|bcd)(d*)', 'abcd') returned None"
+  },
+  {
+   "test": "test_classes_escapes_anchors",
+   "ok": false,
+   "err": "AssertionError: fullmatch('[a-c]+x', 'abcx'): expected ((0, 4), (), ((0, 4, 'abcx'),), ((0, 4),)), got None"
+  },
+  {
+   "test": "test_priority_and_laziness",
+   "ok": false,
+   "err": "AssertionError: fullmatch('a|ab', 'ab'): expected ((0, 2), (), ((0, 2, 'ab'),), ((0, 2),)), got None"
+  },
+  {
+   "test": "test_capture_semantics",
+   "ok": false,
+   "err": "AssertionError: fullmatch('(a|b)+', 'ab'): expected ((0, 2), ('b',), ((0, 2, 'ab'), (1, 2, 'b')), ((0, 2), (1, 2))), got None"
+  },
+  {
+   "test": "test_empty_iteration_loops",
+   "ok": false,
+   "err": "AssertionError: fullmatch('(a*)*', 'aa'): expected ((0, 2), ('',), ((0, 2, 'aa'), (2, 2, '')), ((0, 2), (2, 2))), got ((0, 2), ('aa',), ((0, 2, 'aa'), (0, 2, 'aa')), ((0, 2), (0, 2)))"
+  },
+  {
+   "test": "test_invalid_patterns",
+   "ok": false,
+   "err": "AssertionError: compile('^*'): did not raise ValueError"
+  },
+  {
+   "test": "test_strict_dialect_rejections",
+   "ok": true
+  },
+  {
+   "test": "test_random_captures_diff",
+   "ok": false,
+   "err": "TypeError: cannot unpack non-iterable NoneType object"
+  },
+  {
+   "test": "test_random_empty_loops_diff",
+   "ok": false,
+   "err": "AssertionError: fullmatch('(b(|(b)){2,3}((a*)){3}?b*)+?', 'bb'): expected ((0, 2), ('bb', '', None, '', ''), ((0, 2, 'bb'), (0, 2, 'bb'), (1, 1, ''), (-1, -1, None), (1, 1, ''), (1, 1, '')), ((0, 2), (0, 2), (1, 1), (-1, -1), (1, 1), (1, 1))), got None"
+  },
+  {
+   "test": "test_random_classes_anchors_diff",
+   "ok": false,
+   "err": "AssertionError: search('[ab]+?$$|(?:\\\\t+\\\\w|[^a]{0,2})[a\\\\-]?', '._\\n\\t '): expected ((0, 2), (), ((0, 2, '._'),), ((0, 2),)), got None"
+  },
+  {
+   "test": "test_random_syntax_validity",
+   "ok": false,
+   "err": "AssertionError: compile('$?'): did not raise ValueError"
+  },
+  {
+   "test": "test_scale_memoisation",
+   "ok": false,
+   "err": "AssertionError: "
+  },
+  {
+   "test": "test_long_input_no_recursion",
+   "ok": false,
+   "err": "AssertionError: "
+  }
+ ]
+}

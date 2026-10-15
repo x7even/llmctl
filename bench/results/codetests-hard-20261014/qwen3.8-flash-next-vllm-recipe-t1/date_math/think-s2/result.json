@@ -1,0 +1,79 @@
+{
+ "passed": 0,
+ "total": 14,
+ "fatal": "import failed: SyntaxError: '(' was never closed (solution.py, line 345)",
+ "timed_out": false,
+ "stderr_tail": "",
+ "tests": [
+  {
+   "test": "test_no_forbidden_imports",
+   "ok": false,
+   "err": "import failed: SyntaxError: '(' was never closed (solution.py, line 345)"
+  },
+  {
+   "test": "test_leap_and_month_lengths",
+   "ok": false,
+   "err": "import failed: SyntaxError: '(' was never closed (solution.py, line 345)"
+  },
+  {
+   "test": "test_ordinal_weekday",
+   "ok": false,
+   "err": "import failed: SyntaxError: '(' was never closed (solution.py, line 345)"
+  },
+  {
+   "test": "test_iso_week_vs_stdlib",
+   "ok": false,
+   "err": "import failed: SyntaxError: '(' was never closed (solution.py, line 345)"
+  },
+  {
+   "test": "test_from_iso_week_rules",
+   "ok": false,
+   "err": "import failed: SyntaxError: '(' was never closed (solution.py, line 345)"
+  },
+  {
+   "test": "test_add_days",
+   "ok": false,
+   "err": "import failed: SyntaxError: '(' was never closed (solution.py, line 345)"
+  },
+  {
+   "test": "test_add_months_oracle",
+   "ok": false,
+   "err": "import failed: SyntaxError: '(' was never closed (solution.py, line 345)"
+  },
+  {
+   "test": "test_parse_accepts",
+   "ok": false,
+   "err": "import failed: SyntaxError: '(' was never closed (solution.py, line 345)"
+  },
+  {
+   "test": "test_parse_rejects",
+   "ok": false,
+   "err": "import failed: SyntaxError: '(' was never closed (solution.py, line 345)"
+  },
+  {
+   "test": "test_format_date",
+   "ok": false,
+   "err": "import failed: SyntaxError: '(' was never closed (solution.py, line 345)"
+  },
+  {
+   "test": "test_diff_rule",
+   "ok": false,
+   "err": "import failed: SyntaxError: '(' was never closed (solution.py, line 345)"
+  },
+  {
+   "test": "test_diff_oracle_and_identity",
+   "ok": false,
+   "err": "import failed: SyntaxError: '(' was never closed (solution.py, line 345)"
+  },
+  {
+   "test": "test_validation_and_types",
+   "ok": false,
+   "err": "import failed: SyntaxError: '(' was never closed (solution.py, line 345)"
+  },
+  {
+   "test": "test_scale",
+   "ok": false,
+   "err": "import failed: SyntaxError: '(' was never closed (solution.py, line 345)"
+  }
+ ]
+}

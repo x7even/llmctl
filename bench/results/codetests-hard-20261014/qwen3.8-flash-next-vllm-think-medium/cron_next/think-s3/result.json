@@ -1,0 +1,63 @@
+{
+ "passed": 11,
+ "total": 13,
+ "fatal": null,
+ "timed_out": false,
+ "stderr_tail": "",
+ "tests": [
+  {
+   "test": "test_basic_rollovers_and_strictness",
+   "ok": true
+  },
+  {
+   "test": "test_field_syntax_steps_and_lists",
+   "ok": true
+  },
+  {
+   "test": "test_names_case_insensitive_and_mixed",
+   "ok": true
+  },
+  {
+   "test": "test_day_of_week_zero_and_seven_are_sunday",
+   "ok": true
+  },
+  {
+   "test": "test_dom_dow_or_vs_and_rule",
+   "ok": true
+  },
+  {
+   "test": "test_month_lengths_and_leap_years",
+   "ok": true
+  },
+  {
+   "test": "test_search_horizon_and_lookup_error",
+   "ok": true
+  },
+  {
+   "test": "test_invalid_structure_ranges_and_steps",
+   "ok": false,
+   "err": "AssertionError: expected ValueError: '60/5 * * * *' -> IndexError; '* 24/2 * * *' -> IndexError; '* * 32/2 * *' -> LookupError; '* * * 13/2 *' -> LookupError; '* * * * 8/2' -> LookupError"
+  },
+  {
+   "test": "test_invalid_number_tokens_names_and_chars",
+   "ok": true
+  },
+  {
+   "test": "test_validation_fuzz_against_independent_checker",
+   "ok": false,
+   "err": "AssertionError: field 0 '60/13,1-1/7' should be invalid but got datetime.datetime(2024, 1, 1, 0, 1)"
+  },
+  {
+   "test": "test_random_expressions_and_chains_vs_oracle",
+   "ok": true
+  },
+  {
+   "test": "test_random_day_logic_across_centuries_vs_oracle",
+   "ok": true
+  },
+  {
+   "test": "test_performance_sparse_expressions",
+   "ok": true
+  }
+ ]
+}

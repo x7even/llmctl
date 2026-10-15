@@ -29,6 +29,8 @@ TEMPERATURE = 0.6
 TOP_P = 0.95
 MAX_TOKENS = 24000
 REASONING_EFFORT = None  # think mode only; Qwen3.8 template default is xhigh
+# Opt-in request extras for sampling / reasoning-length experiments (None = not sent, server default applies).
+EXTRA = {"top_k": None, "min_p": None, "presence_penalty": None, "thinking_token_budget": None}
 
 WORKER = r'''
 import importlib.util, json, signal, sys, traceback
@@ -134,6 +136,7 @@ def call_model(url, model, prompt, mode, max_tokens, timeout=3600):
         "temperature": TEMPERATURE,
         "top_p": TOP_P,
     }
+    body.update({k: v for k, v in EXTRA.items() if v is not None})
     if mode == "nothink":
         body["chat_template_kwargs"] = {"enable_thinking": False}
     elif REASONING_EFFORT:
@@ -184,7 +187,8 @@ def summarize(rows, out, model):
     ok = [r for r in rows if "error" not in r]
     lines = [f"# Code test results — {model}", "", f"Generated {time.strftime('%Y-%m-%d %H:%M:%S')}  "
              f"(temperature {TEMPERATURE}, top_p {TOP_P}, max_tokens {MAX_TOKENS}, "
-             f"reasoning_effort {REASONING_EFFORT or 'template default'})", "",
+             f"reasoning_effort {REASONING_EFFORT or 'template default'}"
+             + "".join(f", {k} {v}" for k, v in EXTRA.items() if v is not None) + ")", "",
              "| task | mode | samples | full passes | mean tests passed | mean completion tok | truncated | import failures |",
              "|---|---|---|---|---|---|---|---|"]
     for task in sorted({r["task"] for r in ok}):
@@ -230,9 +234,15 @@ def cmd_validate(_):
 
 
 def cmd_run(args):
-    global MAX_TOKENS, REASONING_EFFORT
+    global MAX_TOKENS, REASONING_EFFORT, TEMPERATURE, TOP_P
     MAX_TOKENS = args.max_tokens  # recorded in summary.md; was always the 24000 default
     REASONING_EFFORT = args.reasoning_effort
+    if args.temperature is not None:
+        TEMPERATURE = args.temperature
+    if args.top_p is not None:
+        TOP_P = args.top_p
+    EXTRA.update(top_k=args.top_k, min_p=args.min_p, presence_penalty=args.presence_penalty,
+                 thinking_token_budget=args.thinking_budget)
     out = Path(args.out)
     out.mkdir(parents=True, exist_ok=True)
     names = [t for t in task_names() if not args.tasks or t in args.tasks.split(",")]
@@ -279,6 +289,13 @@ def main():
     r.add_argument("--parallel", type=int, default=8)
     r.add_argument("--reasoning-effort", default=None, choices=["low", "medium", "xhigh"],
                    help="think-mode reasoning_effort chat-template kwarg (default: template default, xhigh)")
+    r.add_argument("--temperature", type=float, default=None, help=f"default {TEMPERATURE}")
+    r.add_argument("--top-p", type=float, default=None, help=f"default {TOP_P}")
+    r.add_argument("--top-k", type=int, default=None, help="sent in the request body when set (Qwen3.8 recipe: 20)")
+    r.add_argument("--min-p", type=float, default=None)
+    r.add_argument("--presence-penalty", type=float, default=None)
+    r.add_argument("--thinking-budget", type=int, default=None,
+                   help="vLLM thinking_token_budget: forces </think> after N reasoning tokens (needs --reasoning-parser)")
     r.add_argument("--tasks", default="", help="comma list of task names (default: all)")
     r.add_argument("--timeout", type=int, default=3600,
                    help="per-request read timeout in seconds; a 64k-token thinking sample can take over an hour")

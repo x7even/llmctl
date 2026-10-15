@@ -1,0 +1,77 @@
+{
+ "passed": 2,
+ "total": 14,
+ "fatal": null,
+ "timed_out": false,
+ "stderr_tail": "",
+ "tests": [
+  {
+   "test": "test_lexical_syntax_and_display",
+   "ok": false,
+   "err": "AssertionError: '(display 1) ( . 1)': did not raise SchemeError"
+  },
+  {
+   "test": "test_integer_arithmetic",
+   "ok": false,
+   "err": "AssertionError: \"(display (let ((add +) (ops (list + - *))) (list (add 1 2) (apply (car ops) '(5 3)) (apply (car (cdr (cdr ops))) '(5 3)))))\": got '<solution._TailCall object at 0x75f029b0c460>', want '(3 8 15)'"
+  },
+  {
+   "test": "test_truthiness_equality_and_predicates",
+   "ok": false,
+   "err": "AssertionError: '(display (let ((p (list 1))) (eq? p p)))': got '<solution._TailCall object at 0x75f0291bbc70>', want '#t'"
+  },
+  {
+   "test": "test_lists_apply_and_shadowing",
+   "ok": false,
+   "err": "AssertionError: \"(display (reverse '(1 (2 3) 4)))\": got '(1 (2 3) 4)', want '(4 (2 3) 1)'"
+  },
+  {
+   "test": "test_closures_and_mutation",
+   "ok": false,
+   "err": "AssertionError: '\\n    (define (make-account balance)\\n      (define (withdraw amount)\\n        (if (>= balance amount)\\n            (begin (set! balance (- balance amount)) balance)\\n            \\'insufficient))\\n      (define (deposit amount) (set! balance (+ balance amount)) balance)\\n      (defi"
+  },
+  {
+   "test": "test_binding_forms_and_internal_defines",
+   "ok": false,
+   "err": "AssertionError: '(define x 10) (display (let ((x 1) (y x)) (list x y)))': got '<solution._TailCall object at 0x75f0291be680>', want '(1 10)'"
+  },
+  {
+   "test": "test_evaluation_order",
+   "ok": false,
+   "err": "AssertionError: '(display (let ((a (begin (display \"1\") 1)) (b (begin (display \"2\") 2)) (c (begin (display \"3\") 3))) (list a b c)))': got '123<solution._TailCall object at 0x75f0291b8340>', want '123(1 2 3)'"
+  },
+  {
+   "test": "test_error_handling",
+   "ok": false,
+   "err": "AssertionError: '()': did not raise SchemeError"
+  },
+  {
+   "test": "test_tail_calls_long_loops",
+   "ok": true
+  },
+  {
+   "test": "test_tail_calls_in_conditionals",
+   "ok": true
+  },
+  {
+   "test": "test_tail_calls_in_binding_forms_and_apply",
+   "ok": false,
+   "err": "SchemeError: uninitialized variable: m"
+  },
+  {
+   "test": "test_deep_recursion_and_long_lists",
+   "ok": false,
+   "err": "SchemeError: expected integer"
+  },
+  {
+   "test": "test_classic_programs",
+   "ok": false,
+   "err": "SchemeError: uninitialized variable: place"
+  },
+  {
+   "test": "test_randomized_differential",
+   "ok": false,
+   "err": "SchemeError: expected integer"
+  }
+ ]
+}

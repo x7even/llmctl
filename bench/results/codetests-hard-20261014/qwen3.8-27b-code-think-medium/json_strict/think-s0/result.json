@@ -1,0 +1,79 @@
+{
+ "passed": 0,
+ "total": 14,
+ "fatal": "import failed: SyntaxError: unterminated string literal (detected at line 277) (solution.py, line 277)",
+ "timed_out": false,
+ "stderr_tail": "",
+ "tests": [
+  {
+   "test": "test_basic_values",
+   "ok": false,
+   "err": "import failed: SyntaxError: unterminated string literal (detected at line 277) (solution.py, line 277)"
+  },
+  {
+   "test": "test_number_values",
+   "ok": false,
+   "err": "import failed: SyntaxError: unterminated string literal (detected at line 277) (solution.py, line 277)"
+  },
+  {
+   "test": "test_number_errors_pos",
+   "ok": false,
+   "err": "import failed: SyntaxError: unterminated string literal (detected at line 277) (solution.py, line 277)"
+  },
+  {
+   "test": "test_string_values",
+   "ok": false,
+   "err": "import failed: SyntaxError: unterminated string literal (detected at line 277) (solution.py, line 277)"
+  },
+  {
+   "test": "test_string_errors_pos",
+   "ok": false,
+   "err": "import failed: SyntaxError: unterminated string literal (detected at line 277) (solution.py, line 277)"
+  },
+  {
+   "test": "test_structure_whitespace_trailing_pos",
+   "ok": false,
+   "err": "import failed: SyntaxError: unterminated string literal (detected at line 277) (solution.py, line 277)"
+  },
+  {
+   "test": "test_duplicate_keys",
+   "ok": false,
+   "err": "import failed: SyntaxError: unterminated string literal (detected at line 277) (solution.py, line 277)"
+  },
+  {
+   "test": "test_depth_limit_ok",
+   "ok": false,
+   "err": "import failed: SyntaxError: unterminated string literal (detected at line 277) (solution.py, line 277)"
+  },
+  {
+   "test": "test_depth_limit_exceeded",
+   "ok": false,
+   "err": "import failed: SyntaxError: unterminated string literal (detected at line 277) (solution.py, line 277)"
+  },
+  {
+   "test": "test_error_api",
+   "ok": false,
+   "err": "import failed: SyntaxError: unterminated string literal (detected at line 277) (solution.py, line 277)"
+  },
+  {
+   "test": "test_no_json_module_no_eval",
+   "ok": false,
+   "err": "import failed: SyntaxError: unterminated string literal (detected at line 277) (solution.py, line 277)"
+  },
+  {
+   "test": "test_differential_valid",
+   "ok": false,
+   "err": "import failed: SyntaxError: unterminated string literal (detected at line 277) (solution.py, line 277)"
+  },
+  {
+   "test": "test_differential_mutations",
+   "ok": false,
+   "err": "import failed: SyntaxError: unterminated string literal (detected at line 277) (solution.py, line 277)"
+  },
+  {
+   "test": "test_performance_scale",
+   "ok": false,
+   "err": "import failed: SyntaxError: unterminated string literal (detected at line 277) (solution.py, line 277)"
+  }
+ ]
+}

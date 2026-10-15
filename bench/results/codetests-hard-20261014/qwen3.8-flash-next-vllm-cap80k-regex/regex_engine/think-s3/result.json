@@ -1,0 +1,69 @@
+{
+ "passed": 5,
+ "total": 13,
+ "fatal": null,
+ "timed_out": false,
+ "stderr_tail": "",
+ "tests": [
+  {
+   "test": "test_api_and_examples",
+   "ok": true
+  },
+  {
+   "test": "test_classes_escapes_anchors",
+   "ok": true
+  },
+  {
+   "test": "test_priority_and_laziness",
+   "ok": false,
+   "err": "AssertionError: search('a{2,4}?b', 'aaaaab'): expected ((1, 6), (), ((1, 6, 'aaaab'),), ((1, 6),)), got ((2, 6), (), ((2, 6, 'aaab'),), ((2, 6),))"
+  },
+  {
+   "test": "test_capture_semantics",
+   "ok": false,
+   "err": "AssertionError: fullmatch('(a(b)?)+', 'abab'): expected ((0, 4), ('ab', 'b'), ((0, 4, 'abab'), (2, 4, 'ab'), (3, 4, 'b')), ((0, 4), (2, 4), (3, 4))), got None"
+  },
+  {
+   "test": "test_empty_iteration_loops",
+   "ok": false,
+   "err": "AssertionError: fullmatch('(a?)*', 'aa'): expected ((0, 2), ('',), ((0, 2, 'aa'), (2, 2, '')), ((0, 2), (2, 2))), got None"
+  },
+  {
+   "test": "test_invalid_patterns",
+   "ok": false,
+   "err": "AssertionError: compile('[\\\\d-z]'): did not raise ValueError"
+  },
+  {
+   "test": "test_strict_dialect_rejections",
+   "ok": true
+  },
+  {
+   "test": "test_random_captures_diff",
+   "ok": false,
+   "err": "AssertionError: fullmatch('a*ba??|(?:|ab{1,2})*ba?', 'abababb'): expected ((0, 7), (), ((0, 7, 'abababb'),), ((0, 7),)), got None"
+  },
+  {
+   "test": "test_random_empty_loops_diff",
+   "ok": false,
+   "err": "AssertionError: search('((?:a*b*){1,2}?b*){2,3}?', 'bbbaaa'): expected ((0, 6), ('aaa',), ((0, 6, 'bbbaaa'), (3, 6, 'aaa')), ((0, 6), (3, 6))), got ((0, 3), ('',), ((0, 3, 'bbb'), (3, 3, '')), ((0, 3), (3, 3)))"
+  },
+  {
+   "test": "test_random_classes_anchors_diff",
+   "ok": false,
+   "err": "AssertionError: fullmatch('[-a]{0,}(?:[\\\\d_]+[^\\\\s]){2,3}?', '1--'): expected None, got ((0, 3), (), ((0, 3, '1--'),), ((0, 3),))"
+  },
+  {
+   "test": "test_random_syntax_validity",
+   "ok": true
+  },
+  {
+   "test": "test_scale_memoisation",
+   "ok": false,
+   "err": "Timeout: test timed out (10s)"
+  },
+  {
+   "test": "test_long_input_no_recursion",
+   "ok": true
+  }
+ ]
+}

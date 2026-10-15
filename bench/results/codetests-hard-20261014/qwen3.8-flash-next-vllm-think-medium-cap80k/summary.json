@@ -1,0 +1,233 @@
+{
+ "model": "qwen3.8-flash-next-vllm",
+ "rows": [
+  {
+   "task": "json_strict",
+   "mode": "think",
+   "sample": 1,
+   "passed": 12,
+   "total": 14,
+   "full_pass": false,
+   "fatal": null,
+   "finish": "stop",
+   "completion_tokens": 28076,
+   "wall_s": 1695.6,
+   "reasoning_chars": 84205,
+   "failed_tests": [
+    "test_string_errors_pos",
+    "test_differential_mutations"
+   ]
+  },
+  {
+   "task": "json_strict",
+   "mode": "think",
+   "sample": 0,
+   "passed": 12,
+   "total": 14,
+   "full_pass": false,
+   "fatal": null,
+   "finish": "stop",
+   "completion_tokens": 30113,
+   "wall_s": 1819.6,
+   "reasoning_chars": 92776,
+   "failed_tests": [
+    "test_string_errors_pos",
+    "test_differential_mutations"
+   ]
+  },
+  {
+   "task": "json_strict",
+   "mode": "think",
+   "sample": 2,
+   "passed": 1,
+   "total": 14,
+   "full_pass": false,
+   "fatal": null,
+   "finish": "stop",
+   "completion_tokens": 37185,
+   "wall_s": 2248.7,
+   "reasoning_chars": 112558,
+   "failed_tests": [
+    "test_basic_values",
+    "test_number_values",
+    "test_string_values",
+    "test_string_errors_pos",
+    "test_structure_whitespace_trailing_pos",
+    "test_duplicate_keys",
+    "test_depth_limit_ok",
+    "test_depth_limit_exceeded",
+    "test_error_api",
+    "test_no_json_module_no_eval",
+    "test_differential_valid",
+    "test_differential_mutations",
+    "test_performance_scale"
+   ]
+  },
+  {
+   "task": "date_math",
+   "mode": "think",
+   "sample": 0,
+   "passed": 14,
+   "total": 14,
+   "full_pass": true,
+   "fatal": null,
+   "finish": "stop",
+   "completion_tokens": 39448,
+   "wall_s": 2386.2,
+   "reasoning_chars": 87893,
+   "failed_tests": []
+  },
+  {
+   "task": "json_strict",
+   "mode": "think",
+   "sample": 3,
+   "passed": 12,
+   "total": 14,
+   "full_pass": false,
+   "fatal": null,
+   "finish": "stop",
+   "completion_tokens": 40102,
+   "wall_s": 2414.1,
+   "reasoning_chars": 121822,
+   "failed_tests": [
+    "test_string_errors_pos",
+    "test_differential_mutations"
+   ]
+  },
+  {
+   "task": "mini_scheme",
+   "mode": "think",
+   "sample": 0,
+   "passed": 9,
+   "total": 14,
+   "full_pass": false,
+   "fatal": null,
+   "finish": "stop",
+   "completion_tokens": 41936,
+   "wall_s": 2489.6,
+   "reasoning_chars": 120202,
+   "failed_tests": [
+    "test_integer_arithmetic",
+    "test_truthiness_equality_and_predicates",
+    "test_closures_and_mutation",
+    "test_error_handling",
+    "test_randomized_differential"
+   ]
+  },
+  {
+   "task": "mini_scheme",
+   "mode": "think",
+   "sample": 2,
+   "passed": 9,
+   "total": 14,
+   "full_pass": false,
+   "fatal": null,
+   "finish": "stop",
+   "completion_tokens": 42159,
+   "wall_s": 2498.8,
+   "reasoning_chars": 119237,
+   "failed_tests": [
+    "test_lexical_syntax_and_display",
+    "test_integer_arithmetic",
+    "test_lists_apply_and_shadowing",
+    "test_error_handling",
+    "test_randomized_differential"
+   ]
+  },
+  {
+   "task": "mini_scheme",
+   "mode": "think",
+   "sample": 1,
+   "passed": 12,
+   "total": 14,
+   "full_pass": false,
+   "fatal": null,
+   "finish": "stop",
+   "completion_tokens": 42193,
+   "wall_s": 2499.8,
+   "reasoning_chars": 119287,
+   "failed_tests": [
+    "test_lexical_syntax_and_display",
+    "test_randomized_differential"
+   ]
+  },
+  {
+   "task": "date_math",
+   "mode": "think",
+   "sample": 2,
+   "passed": 11,
+   "total": 14,
+   "full_pass": false,
+   "fatal": null,
+   "finish": "stop",
+   "completion_tokens": 42624,
+   "wall_s": 2516.0,
+   "reasoning_chars": 90735,
+   "failed_tests": [
+    "test_parse_accepts",
+    "test_parse_rejects",
+    "test_format_date"
+   ]
+  },
+  {
+   "task": "date_math",
+   "mode": "think",
+   "sample": 1,
+   "passed": 14,
+   "total": 14,
+   "full_pass": true,
+   "fatal": null,
+   "finish": "stop",
+   "completion_tokens": 44083,
+   "wall_s": 2569.7,
+   "reasoning_chars": 91452,
+   "failed_tests": []
+  },
+  {
+   "task": "mini_scheme",
+   "mode": "think",
+   "sample": 3,
+   "passed": 0,
+   "total": 14,
+   "full_pass": false,
+   "fatal": null,
+   "finish": "stop",
+   "completion_tokens": 47669,
+   "wall_s": 2705.8,
+   "reasoning_chars": 145177,
+   "failed_tests": [
+    "test_lexical_syntax_and_display",
+    "test_integer_arithmetic",
+    "test_truthiness_equality_and_predicates",
+    "test_lists_apply_and_shadowing",
+    "test_closures_and_mutation",
+    "test_binding_forms_and_internal_defines",
+    "test_evaluation_order",
+    "test_error_handling",
+    "test_tail_calls_long_loops",
+    "test_tail_calls_in_conditionals",
+    "test_tail_calls_in_binding_forms_and_apply",
+    "test_deep_recursion_and_long_lists",
+    "test_classic_programs",
+    "test_randomized_differential"
+   ]
+  },
+  {
+   "task": "date_math",
+   "mode": "think",
+   "sample": 3,
+   "passed": 12,
+   "total": 14,
+   "full_pass": false,
+   "fatal": null,
+   "finish": "stop",
+   "completion_tokens": 53123,
+   "wall_s": 2896.1,
+   "reasoning_chars": 109135,
+   "failed_tests": [
+    "test_parse_rejects",
+    "test_validation_and_types"
+   ]
+  }
+ ]
+}

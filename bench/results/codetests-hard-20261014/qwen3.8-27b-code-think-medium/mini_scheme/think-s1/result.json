@@ -1,0 +1,78 @@
+{
+ "passed": 1,
+ "total": 14,
+ "fatal": null,
+ "timed_out": false,
+ "stderr_tail": "",
+ "tests": [
+  {
+   "test": "test_lexical_syntax_and_display",
+   "ok": false,
+   "err": "AssertionError: '(display 1) .': .output '1', want ''"
+  },
+  {
+   "test": "test_integer_arithmetic",
+   "ok": false,
+   "err": "SchemeError: attempt to apply non-procedure: 1"
+  },
+  {
+   "test": "test_truthiness_equality_and_predicates",
+   "ok": true
+  },
+  {
+   "test": "test_lists_apply_and_shadowing",
+   "ok": false,
+   "err": "AssertionError: \"(display (let ((t (list 3))) (eq? t (cdr (cdr (append '(1 2) t))))))\": got '#f', want '#t'"
+  },
+  {
+   "test": "test_closures_and_mutation",
+   "ok": false,
+   "err": "SchemeError: invalid formals"
+  },
+  {
+   "test": "test_binding_forms_and_internal_defines",
+   "ok": false,
+   "err": "SchemeError: attempt to apply non-procedure: #t"
+  },
+  {
+   "test": "test_evaluation_order",
+   "ok": false,
+   "err": "SchemeError: invalid formals"
+  },
+  {
+   "test": "test_error_handling",
+   "ok": false,
+   "err": "AssertionError: '(display 1 2)': did not raise SchemeError"
+  },
+  {
+   "test": "test_tail_calls_long_loops",
+   "ok": false,
+   "err": "SchemeError: stack overflow"
+  },
+  {
+   "test": "test_tail_calls_in_conditionals",
+   "ok": false,
+   "err": "SchemeError: stack overflow"
+  },
+  {
+   "test": "test_tail_calls_in_binding_forms_and_apply",
+   "ok": false,
+   "err": "SchemeError: stack overflow"
+  },
+  {
+   "test": "test_deep_recursion_and_long_lists",
+   "ok": false,
+   "err": "SchemeError: attempt to apply non-procedure: ()"
+  },
+  {
+   "test": "test_classic_programs",
+   "ok": false,
+   "err": "SchemeError: attempt to apply non-procedure: 1"
+  },
+  {
+   "test": "test_randomized_differential",
+   "ok": false,
+   "err": "SchemeError: attempt to apply non-procedure: -7"
+  }
+ ]
+}

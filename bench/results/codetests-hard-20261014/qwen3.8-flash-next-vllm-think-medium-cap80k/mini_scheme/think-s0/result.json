@@ -1,0 +1,70 @@
+{
+ "passed": 9,
+ "total": 14,
+ "fatal": null,
+ "timed_out": false,
+ "stderr_tail": "",
+ "tests": [
+  {
+   "test": "test_lexical_syntax_and_display",
+   "ok": true
+  },
+  {
+   "test": "test_integer_arithmetic",
+   "ok": false,
+   "err": "AssertionError: '(display (list (list (quotient -9 -5) (remainder -9 -5) (modulo -9 -5)) (list (quotient -9 -4) (remainder -9 -4) (modulo -9 -4)) (list (quotient -9 -3) (remainder -9 -3) (modulo -9 -3)) (list (quotient -9 -2) (remainder -9 -2) (modulo -9 -2)) (list (quotient -9 -1) (remainder -9 -1)"
+  },
+  {
+   "test": "test_truthiness_equality_and_predicates",
+   "ok": false,
+   "err": "AssertionError: \"(display (eq? 'a 'a))\": got '#f', want '#t'"
+  },
+  {
+   "test": "test_lists_apply_and_shadowing",
+   "ok": true
+  },
+  {
+   "test": "test_closures_and_mutation",
+   "ok": false,
+   "err": "AssertionError: '\\n    (define (make-account balance)\\n      (define (withdraw amount)\\n        (if (>= balance amount)\\n            (begin (set! balance (- balance amount)) balance)\\n            \\'insufficient))\\n      (define (deposit amount) (set! balance (+ balance amount)) balance)\\n      (defi"
+  },
+  {
+   "test": "test_binding_forms_and_internal_defines",
+   "ok": true
+  },
+  {
+   "test": "test_evaluation_order",
+   "ok": true
+  },
+  {
+   "test": "test_error_handling",
+   "ok": false,
+   "err": "AssertionError: '(display \"o\") (if 1 2 3 4)': did not raise SchemeError"
+  },
+  {
+   "test": "test_tail_calls_long_loops",
+   "ok": true
+  },
+  {
+   "test": "test_tail_calls_in_conditionals",
+   "ok": true
+  },
+  {
+   "test": "test_tail_calls_in_binding_forms_and_apply",
+   "ok": true
+  },
+  {
+   "test": "test_deep_recursion_and_long_lists",
+   "ok": true
+  },
+  {
+   "test": "test_classic_programs",
+   "ok": true
+  },
+  {
+   "test": "test_randomized_differential",
+   "ok": false,
+   "err": "AssertionError: program '(define a 7) (define b -6) (define c 7)\\n(display (let ((n (+ (- c) (apply + c (list -1)))) (d (cond ((and b c -3) (let ((c -3) (c a)) a)) (else (begin (set! c b) 9))))) (if (= d 0) 0 (modulo n d))))': got '1', want '6'"
+  }
+ ]
+}

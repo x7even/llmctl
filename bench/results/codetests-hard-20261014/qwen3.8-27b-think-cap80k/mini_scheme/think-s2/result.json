@@ -1,0 +1,79 @@
+{
+ "passed": 0,
+ "total": 14,
+ "fatal": null,
+ "timed_out": false,
+ "stderr_tail": "",
+ "tests": [
+  {
+   "test": "test_lexical_syntax_and_display",
+   "ok": false,
+   "err": "AssertionError: \"(display (list (number? '+5) (number? '1_000) (symbol? '1_000) (symbol? '.5) (symbol? '-)))\": got '(1 0 1 1 1)', want '(#t #f #t #t #t)'"
+  },
+  {
+   "test": "test_integer_arithmetic",
+   "ok": false,
+   "err": "AssertionError: '(display (list (< 1 2 3) (< 1 2 2) (<= 1 2 2) (> 3 2 1) (> 3 3 1) (>= 3 3 1) (>= 3 3 4) (= 2 2 2) (= 2 2 3) (= 5) (< 3) (> 3) (<= 3) (>= 3)))': got '(1 0 1 1 0 1 0 1 0 1 1 1 1 1)', want '(#t #f #t #t #f #t #f #t #f #t #t #t #t #t)'"
+  },
+  {
+   "test": "test_truthiness_equality_and_predicates",
+   "ok": false,
+   "err": "AssertionError: \"(display (not '()))\": got '0', want '#f'"
+  },
+  {
+   "test": "test_lists_apply_and_shadowing",
+   "ok": false,
+   "err": "AssertionError: \"(display (let ((t (list 3))) (eq? t (cdr (cdr (append '(1 2) t))))))\": got '1', want '#t'"
+  },
+  {
+   "test": "test_closures_and_mutation",
+   "ok": false,
+   "err": "SchemeError: unbound variable: lambda"
+  },
+  {
+   "test": "test_binding_forms_and_internal_defines",
+   "ok": false,
+   "err": "SchemeError: unbound variable: lambda"
+  },
+  {
+   "test": "test_evaluation_order",
+   "ok": false,
+   "err": "AssertionError: '((lambda () 1) (display \"y\"))': .output '', want 'y'"
+  },
+  {
+   "test": "test_error_handling",
+   "ok": false,
+   "err": "AssertionError: '(error \"x\" \\'sym #t #f \\'() -3)': str(e) 'x sym 1 0 () -3', want 'x sym #t #f () -3'"
+  },
+  {
+   "test": "test_tail_calls_long_loops",
+   "ok": false,
+   "err": "AssertionError: '\\n    (define (my-even? n) (if (= n 0) #t (my-odd? (- n 1))))\\n    (define (my-odd? n) (if (= n 0) #f (my-even? (- n 1))))\\n    (display (list (my-even? 200000) (my-odd? 199999)))\\n    ': got '(1 1)', want '(#t #t)'"
+  },
+  {
+   "test": "test_tail_calls_in_conditionals",
+   "ok": false,
+   "err": "AssertionError: \"\\n    (define counter 0)\\n    (define (t-cond n) (cond ((= n 0) 'done) ((> n 0) (t-cond (- n 1))) (else 'neg)))\\n    (define (t-cond-multi n) (cond ((= n 0) 'done) (else (set! counter (+ counter 1)) (t-cond-multi (- n 1)))))\\n    (define (t-and n) (and #t (if (= n 0) 'done (t-and (-"
+  },
+  {
+   "test": "test_tail_calls_in_binding_forms_and_apply",
+   "ok": false,
+   "err": "SchemeError: malformed define"
+  },
+  {
+   "test": "test_deep_recursion_and_long_lists",
+   "ok": false,
+   "err": "SchemeError: unbound variable: lambda"
+  },
+  {
+   "test": "test_classic_programs",
+   "ok": false,
+   "err": "SchemeError: unbound variable: lambda"
+  },
+  {
+   "test": "test_randomized_differential",
+   "ok": false,
+   "err": "SchemeError: unbound variable: lambda"
+  }
+ ]
+}

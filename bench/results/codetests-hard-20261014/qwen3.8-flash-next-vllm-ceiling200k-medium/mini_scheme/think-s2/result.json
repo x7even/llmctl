@@ -1,0 +1,78 @@
+{
+ "passed": 1,
+ "total": 14,
+ "fatal": null,
+ "timed_out": false,
+ "stderr_tail": "",
+ "tests": [
+  {
+   "test": "test_lexical_syntax_and_display",
+   "ok": false,
+   "err": "SchemeError: unbound variable: lambda"
+  },
+  {
+   "test": "test_integer_arithmetic",
+   "ok": true
+  },
+  {
+   "test": "test_truthiness_equality_and_predicates",
+   "ok": false,
+   "err": "SchemeError: unbound variable: lambda"
+  },
+  {
+   "test": "test_lists_apply_and_shadowing",
+   "ok": false,
+   "err": "SchemeError: unbound variable: lambda"
+  },
+  {
+   "test": "test_closures_and_mutation",
+   "ok": false,
+   "err": "SchemeError: unbound variable: lambda"
+  },
+  {
+   "test": "test_binding_forms_and_internal_defines",
+   "ok": false,
+   "err": "SchemeError: unbound variable: lambda"
+  },
+  {
+   "test": "test_evaluation_order",
+   "ok": false,
+   "err": "AssertionError: '((lambda () 1) (display \"y\"))': .output '', want 'y'"
+  },
+  {
+   "test": "test_error_handling",
+   "ok": false,
+   "err": "AssertionError: '(display \"o\") (if 1 2 3 4)': did not raise SchemeError"
+  },
+  {
+   "test": "test_tail_calls_long_loops",
+   "ok": false,
+   "err": "SchemeError: maximum recursion depth exceeded"
+  },
+  {
+   "test": "test_tail_calls_in_conditionals",
+   "ok": false,
+   "err": "SchemeError: maximum recursion depth exceeded"
+  },
+  {
+   "test": "test_tail_calls_in_binding_forms_and_apply",
+   "ok": false,
+   "err": "SchemeError: maximum recursion depth exceeded"
+  },
+  {
+   "test": "test_deep_recursion_and_long_lists",
+   "ok": false,
+   "err": "SchemeError: unbound variable: lambda"
+  },
+  {
+   "test": "test_classic_programs",
+   "ok": false,
+   "err": "SchemeError: unbound variable: lambda"
+  },
+  {
+   "test": "test_randomized_differential",
+   "ok": false,
+   "err": "SchemeError: unbound variable: lambda"
+  }
+ ]
+}

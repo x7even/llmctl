@@ -1,0 +1,77 @@
+{
+ "passed": 2,
+ "total": 14,
+ "fatal": null,
+ "timed_out": false,
+ "stderr_tail": "",
+ "tests": [
+  {
+   "test": "test_basic_values",
+   "ok": false,
+   "err": "JSONError: trailing garbage"
+  },
+  {
+   "test": "test_number_values",
+   "ok": false,
+   "err": "JSONError: expected ':'"
+  },
+  {
+   "test": "test_number_errors_pos",
+   "ok": false,
+   "err": "AssertionError: '{\"a\":Infinity}': pos 3, expected 5"
+  },
+  {
+   "test": "test_string_values",
+   "ok": false,
+   "err": "JSONError: trailing garbage"
+  },
+  {
+   "test": "test_string_errors_pos",
+   "ok": false,
+   "err": "JSONError: trailing garbage"
+  },
+  {
+   "test": "test_structure_whitespace_trailing_pos",
+   "ok": false,
+   "err": "JSONError: expected ':'"
+  },
+  {
+   "test": "test_duplicate_keys",
+   "ok": false,
+   "err": "JSONError: expected ':'"
+  },
+  {
+   "test": "test_depth_limit_ok",
+   "ok": false,
+   "err": "JSONError: expected ':'"
+  },
+  {
+   "test": "test_depth_limit_exceeded",
+   "ok": false,
+   "err": "AssertionError: '{\"a\":{\"a\":{\"a\":{\"a\":{\"a\":{\"a\":{\"a\":{\"a\":{\"a\":{\"a\":{\"a\":{\"a\":': pos 3, expected 2500"
+  },
+  {
+   "test": "test_error_api",
+   "ok": true
+  },
+  {
+   "test": "test_no_json_module_no_eval",
+   "ok": true
+  },
+  {
+   "test": "test_differential_valid",
+   "ok": false,
+   "err": "JSONError: expected ':'"
+  },
+  {
+   "test": "test_differential_mutations",
+   "ok": false,
+   "err": "JSONError: trailing garbage"
+  },
+  {
+   "test": "test_performance_scale",
+   "ok": false,
+   "err": "JSONError: expected ':'"
+  }
+ ]
+}
