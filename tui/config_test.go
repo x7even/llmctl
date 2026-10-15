@@ -241,6 +241,16 @@ func TestParseCapabilities_contextLen_absent(t *testing.T) {
 	}
 }
 
+// --max-model-len -1 is vLLM auto-fit (Flash-Next ships it): the panel has no fixed number to show, so the
+// context length stays 0 ("model native") rather than being misread from the "-1".
+func TestParseCapabilities_contextLen_autoFit(t *testing.T) {
+	cmd := `vllm serve /models/Foo --max-model-len -1 --port 9100`
+	caps := ParseCapabilities(ModelConfig{Cmd: cmd})
+	if caps.ContextLen != 0 {
+		t.Errorf("ContextLen: want 0 for auto-fit (-1), got %d", caps.ContextLen)
+	}
+}
+
 func TestParseCapabilities_combined(t *testing.T) {
 	cmd := `vllm serve /models/Foo --reasoning-parser qwen3 ` +
 		`--speculative-config '{"method": "mtp", "num_speculative_tokens": 3}' ` +

@@ -22,8 +22,9 @@
 # canary first, then update all refs at once (validation record and bench
 # results: docs/upgrade-plan-2026-07.md). v0.31.0 was canaried in 2026-10 and held
 # back — conc=8/16 decode is 6-9% below v0.26.0 (docs/upgrade-plan-2026-10.md).
-# Rollback anchor: localhost/vllm-openai-rocm:v0.22.1-baseline stays on disk —
-# revert a profile by swapping its ref back.
+# Rollback anchor: localhost/llmstack-vllm-rollback:v0.26.0 (same image as the v0.26.0
+# pin, kept under a local tag so it survives a registry pull) — revert a profile by
+# swapping its ref back. Older anchors (v0.22.1-baseline, v0.24.0) were pruned in 2026-10.
 # CLIENT NOTE: vLLM 0.24.0 renames the chat reasoning field from
 # message.reasoning_content to message.reasoning — adapt clients that parse it.
 
@@ -471,8 +472,10 @@ models:
   #          template's own default is xhigh, which runs away on this model (4/32 code-test
   #          passes at a 32K cap, 3/8 even at 256K) while medium scored 29-32/32 across two runs
   #          and solves them in 2-4K tokens.
-  #          --max-model-len 262144 (native) costs nothing: same KV pool (~551K tokens vs ~535K
-  #          at 131K) and speed, and Flash-Next decode stays ~55 tok/s from 1K to 258K of context.
+  #          --max-model-len -1 (vLLM auto-fit) picks the largest context the KV memory allows:
+  #          the native 262144 on this rig (KV pool ~551K tokens, measured 2026-10-15), and
+  #          fewer tokens rather than an OOM if memory is ever tighter. 262K costs nothing: same
+  #          speed as 131K, and decode stays ~55 tok/s from 1K to 258K of context.
   qwen3.8-flash-next-vllm:
     name: "Qwen3.8-Flash-Next W4A16 (vLLM, TP4+EP)"
     ttl: 0
@@ -518,7 +521,7 @@ models:
         --enable-expert-parallel
         --language-model-only
         --load-format safetensors
-        --max-model-len 262144
+        --max-model-len -1
         --max-num-seqs 32
         --max-num-batched-tokens 8192
         --gpu-memory-utilization 0.90
