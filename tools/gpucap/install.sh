@@ -5,7 +5,7 @@ cd "$(dirname "$0")"
 # CAP_W is the power cap in watts applied at boot and after resume. 230 is just the value for the
 # machine this was written for: change it here for a new install, or later with `sudo gpucap set <watts>`
 # (or by editing CAP_W in /etc/gpucap.conf). An existing /etc/gpucap.conf is never overwritten.
-[ -f /etc/gpucap.conf ] || printf 'CAP_W=230\nUV_MV=0\nUV_LIMIT_MV=100\n' > /etc/gpucap.conf
+[ -f /etc/gpucap.conf ] || printf 'CAP_W=230\nUV_MV=0\nSCLK_MHZ=0\nMCLK_MHZ=0\nUV_LIMIT_MV=100\nSCLK_LIMIT_MHZ=150\nMCLK_LIMIT_MHZ=1350\n' > /etc/gpucap.conf
 install -m 755 gpucap /usr/local/bin/gpucap
 install -m 644 gpu-power-cap.service gpu-power-cap-resume.service /etc/systemd/system/
 rm -f /usr/local/sbin/gpu-power-cap.sh
@@ -31,7 +31,8 @@ if [ -r "$PARAM" ]; then
     else echo "WARNING: rebuild your initramfs manually so the amdgpu option applies at boot"; fi
     echo
     echo "*** REBOOT REQUIRED once to enable voltage offset (ppfeaturemask $(printf '0x%x' "$cur") -> $new). ***"
-    echo "*** After the reboot, undervolting is enabled: sudo gpucap undervolt -XX   (e.g. -30; XX = mV, max 100) ***"
+    echo "*** After the reboot, voltage and clock tuning is enabled: sudo gpucap undervolt -XX | sclk +XX | mclk XXXX ***"
+    echo "*** Run gpucap --help first: tuning can damage hardware, start small and stress-test.                  ***"
     echo "*** Changing the offset later never needs another reboot. ***"
   fi
 fi

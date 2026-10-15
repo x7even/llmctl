@@ -5,7 +5,9 @@
 //	gpucap --all           every value we can read, per card
 //	gpucap --help          usage, guidance and risk warning
 //	gpucap set <watts>     write config and apply now (needs root)
-//	gpucap undervolt <mV>  write config and apply a GFX voltage offset now (e.g. -50; 0 clears; needs root)
+//	gpucap undervolt <mV>  apply and save a GFX voltage offset (e.g. -50; 0 clears; needs root)
+//	gpucap sclk <MHz>      apply and save a core clock offset (e.g. +50; 0 clears; needs root)
+//	gpucap mclk <MHz>      apply and save a memory max clock (e.g. 1310; 0 = stock; needs root)
 //	gpucap apply [watts]   apply configured (or given) cap and voltage offset; used by systemd
 package main
 
@@ -13,7 +15,6 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
-	"regexp"
 	"slices"
 	"strconv"
 	"strings"
@@ -35,6 +36,13 @@ const (
 	// /etc/gpucap.conf raises it. The driver range is usually wider (about -200 mV) but offsets that
 	// deep are rarely stable; typical stable values are -30 to -80 mV and this varies per chip.
 	defaultUVLimit = 100
+
+	// defaultSclkLimit is the largest core clock offset (MHz) and defaultMclkLimit the highest memory max
+	// clock (MHz) gpucap accepts unless SCLK_LIMIT_MHZ / MCLK_LIMIT_MHZ in /etc/gpucap.conf raise them.
+	// The driver ranges are far wider (+1000 MHz, 1500 MHz). These defaults suit a Radeon AI PRO R9700
+	// (stock memory max 1259 MHz); set your own limits for other cards.
+	defaultSclkLimit = 150
+	defaultMclkLimit = 1350
 )
 
 type card struct {
@@ -85,10 +93,15 @@ type conf struct {
 	capW    int // power cap in watts
 	uvMV    int // GFX voltage offset in mV; 0 = stock, negative = undervolt
 	uvLimit int // deepest undervolt allowed, mV magnitude
+
+	sclkMHz   int // core clock offset in MHz; 0 = stock
+	mclkMHz   int // memory max clock in MHz; 0 = stock
+	sclkLimit int // largest core clock offset allowed, MHz
+	mclkLimit int // highest memory max clock allowed, MHz
 }
 
 func loadConf() conf {
-	c := conf{capW: defaultCap, uvLimit: defaultUVLimit}
+	c := conf{capW: defaultCap, uvLimit: defaultUVLimit, sclkLimit: defaultSclkLimit, mclkLimit: defaultMclkLimit}
 	b, err := os.ReadFile(confPath)
 	if err != nil {
 		return c
@@ -111,40 +124,27 @@ func loadConf() conf {
 			if n > 0 {
 				c.uvLimit = n
 			}
+		case "SCLK_MHZ":
+			c.sclkMHz = n
+		case "MCLK_MHZ":
+			c.mclkMHz = n
+		case "SCLK_LIMIT_MHZ":
+			if n > 0 {
+				c.sclkLimit = n
+			}
+		case "MCLK_LIMIT_MHZ":
+			if n > 0 {
+				c.mclkLimit = n
+			}
 		}
 	}
 	return c
 }
 
 func saveConf(c conf) error {
-	return os.WriteFile(confPath, []byte(fmt.Sprintf("CAP_W=%d\nUV_MV=%d\nUV_LIMIT_MV=%d\n", c.capW, c.uvMV, c.uvLimit)), 0o644)
-}
-
-// Voltage offset (RDNA3/RDNA4). Needs amdgpu.ppfeaturemask with the OverDrive bit (0x4000) set;
-// otherwise pp_od_clk_voltage does not exist and the offset is reported as unavailable.
-const odFile = "/pp_od_clk_voltage"
-
-var (
-	reOffset = regexp.MustCompile(`(?mi)^OD_VDDGFX_OFFSET:\s*\n\s*(-?\d+)\s*mV`)
-	reRange  = regexp.MustCompile(`(?mi)^VDDGFX_OFFSET:\s*(-?\d+)\s*mV\s+(-?\d+)\s*mV`)
-)
-
-// parseOD extracts the current GFX voltage offset and its allowed range (mV) from the contents
-// of pp_od_clk_voltage. ok is false when the table has no VDDGFX offset entry.
-func parseOD(table string) (cur, lo, hi int, ok bool) {
-	table = strings.ReplaceAll(table, "\x00", "") // the driver pads sections with NUL bytes
-	m := reOffset.FindStringSubmatch(table)
-	if m == nil {
-		return 0, 0, 0, false
-	}
-	cur, _ = strconv.Atoi(m[1])
-	if r := reRange.FindStringSubmatch(table); r != nil {
-		lo, _ = strconv.Atoi(r[1])
-		hi, _ = strconv.Atoi(r[2])
-	} else {
-		lo, hi = -200, 0 // range line missing: allow undervolt only, conservative
-	}
-	return cur, lo, hi, true
+	return os.WriteFile(confPath, []byte(fmt.Sprintf(
+		"CAP_W=%d\nUV_MV=%d\nSCLK_MHZ=%d\nMCLK_MHZ=%d\nUV_LIMIT_MV=%d\nSCLK_LIMIT_MHZ=%d\nMCLK_LIMIT_MHZ=%d\n",
+		c.capW, c.uvMV, c.sclkMHz, c.mclkMHz, c.uvLimit, c.sclkLimit, c.mclkLimit)), 0o644)
 }
 
 // odEnabled reports whether amdgpu's OverDrive feature bit is set in the running kernel.
@@ -155,59 +155,6 @@ func odEnabled() bool {
 	}
 	m, err := strconv.ParseUint(strings.TrimSpace(string(b)), 0, 32)
 	return err == nil && m&0x4000 != 0
-}
-
-func readOD(c card) (cur, lo, hi int, ok bool) {
-	b, err := os.ReadFile(c.dev + odFile)
-	if err != nil {
-		return 0, 0, 0, false
-	}
-	return parseOD(string(b))
-}
-
-func applyOffset(cards []card, mv, limit int) error {
-	var failed int
-	for _, c := range cards {
-		_, lo, hi, ok := readOD(c)
-		if !ok {
-			if mv == 0 {
-				continue // nothing to clear
-			}
-			fmt.Fprintf(os.Stderr, "%s: voltage offset unavailable (is amdgpu.ppfeaturemask OverDrive bit 0x4000 set?)\n", c.name)
-			failed++
-			continue
-		}
-		if lo < -limit {
-			lo = -limit // gpucap's own safety limit (UV_LIMIT_MV), tighter than the driver's
-		}
-		if mv < lo || mv > hi {
-			fmt.Fprintf(os.Stderr, "%s: %dmV outside allowed %d..%dmV (raise UV_LIMIT_MV in %s to go deeper)\n", c.name, mv, lo, hi, confPath)
-			failed++
-			continue
-		}
-		// "vo" stages the offset, "c" commits it
-		var err error
-		for _, cmd := range []string{fmt.Sprintf("vo %d", mv), "c"} {
-			if err = os.WriteFile(c.dev+odFile, []byte(cmd+"\n"), 0); err != nil {
-				break
-			}
-		}
-		if err != nil {
-			fmt.Fprintf(os.Stderr, "%s: %v\n", c.name, err)
-			failed++
-			continue
-		}
-		if got, _, _, _ := readOD(c); got != mv {
-			fmt.Fprintf(os.Stderr, "%s: wrote %dmV but read back %dmV\n", c.name, mv, got)
-			failed++
-			continue
-		}
-		fmt.Printf("%s offset=%dmV\n", c.name, mv)
-	}
-	if failed > 0 {
-		return fmt.Errorf("%d card(s) failed", failed)
-	}
-	return nil
 }
 
 func apply(cards []card, watts int) error {
@@ -275,15 +222,39 @@ var columns = []column{
 		return fmt.Sprintf("%d-%d", lo/1e6, hi/1e6)
 	}},
 	{"DRAW W", func(c card) string { return stat(c.hwmon+"/power1_average", 1e6, "%.0f") }},
-	{"OFFSET mV", func(c card) string {
-		if cur, _, _, ok := readOD(c); ok {
-			return strconv.Itoa(cur)
+	{"V OFFSET mV", func(c card) string {
+		if t, ok := readOD(c); ok && t.hasV {
+			return strconv.Itoa(t.vo)
 		}
 		return "n/a"
 	}},
-	{"OFFSET RANGE mV", func(c card) string {
-		if _, lo, hi, ok := readOD(c); ok {
-			return fmt.Sprintf("%d..%d", lo, hi)
+	{"V RANGE mV", func(c card) string {
+		if t, ok := readOD(c); ok && t.hasV {
+			return fmt.Sprintf("%d..%d", t.voLo, t.voHi)
+		}
+		return "n/a"
+	}},
+	{"SCLK OFFSET MHz", func(c card) string {
+		if t, ok := readOD(c); ok && t.hasS {
+			return fmt.Sprintf("%+d", t.sclk)
+		}
+		return "n/a"
+	}},
+	{"SCLK RANGE MHz", func(c card) string {
+		if t, ok := readOD(c); ok && t.hasS {
+			return fmt.Sprintf("%d..%d", t.sLo, t.sHi)
+		}
+		return "n/a"
+	}},
+	{"MCLK MAX MHz", func(c card) string {
+		if t, ok := readOD(c); ok && t.hasM {
+			return strconv.Itoa(t.mMax)
+		}
+		return "n/a"
+	}},
+	{"MCLK RANGE MHz", func(c card) string {
+		if t, ok := readOD(c); ok && t.hasM {
+			return fmt.Sprintf("%d..%d", t.mLo, t.mHi)
 		}
 		return "n/a"
 	}},
@@ -321,13 +292,21 @@ var columns = []column{
 
 // Views of the column set, selected by the first argument to `gpucap`.
 var views = map[string][]string{
-	"summary":  {"CARD", "CAP W", "DRAW W", "OFFSET mV", "VGFX mV", "SCLK MHz", "MCLK MHz", "EDGE C", "JUNC C", "MEM C"},
-	"settings": {"CARD", "CAP W", "CAP RANGE W", "OFFSET mV", "OFFSET RANGE mV"},
+	"summary":  {"CARD", "CAP W", "DRAW W", "V OFFSET mV", "VGFX mV", "SCLK OFFSET MHz", "SCLK MHz", "MCLK MAX MHz", "MCLK MHz", "EDGE C", "JUNC C", "MEM C"},
+	"settings": {"CARD", "CAP W", "CAP RANGE W", "V OFFSET mV", "V RANGE mV", "SCLK OFFSET MHz", "SCLK RANGE MHz", "MCLK MAX MHz", "MCLK RANGE MHz"},
+}
+
+func mclkStr(mhz int) string {
+	if mhz == 0 {
+		return "stock"
+	}
+	return fmt.Sprintf("%dMHz", mhz)
 }
 
 func status(cards []card, view string) {
 	cf := loadConf()
-	fmt.Printf("configured: %dW, %dmV, undervolt limit -%dmV (%s)\n", cf.capW, cf.uvMV, cf.uvLimit, confPath)
+	fmt.Printf("configured: cap %dW, voltage %dmV, core %+dMHz, memory max %s (%s)\n", cf.capW, cf.uvMV, cf.sclkMHz, mclkStr(cf.mclkMHz), confPath)
+	fmt.Printf("limits:     voltage -%dmV, core +%dMHz, memory max %dMHz\n", cf.uvLimit, cf.sclkLimit, cf.mclkLimit)
 	if !odEnabled() {
 		fmt.Println("voltage offset: OverDrive not enabled (run install.sh and reboot)")
 	}
@@ -365,45 +344,104 @@ func die(err error) {
 	os.Exit(1)
 }
 
-const helpText = `gpucap - view and tune power cap and GFX voltage offset on AMD GPUs
+const helpText = `gpucap - view and tune power cap, voltage and clocks on AMD GPUs
 
 USAGE
   gpucap                  summary per card: settings, clocks, temperatures
   gpucap --settings       current settings and their allowed ranges
   gpucap --all            everything readable per card (fan, busy %, VRAM, PCIe...)
-  sudo gpucap set <W>     set the power cap in watts, save it, apply now
+  sudo gpucap set <W>     power cap in watts
   sudo gpucap undervolt <mV>
-                          set a GFX voltage offset (0 or negative, e.g. -50), save it, apply now
-  sudo gpucap apply [W]   re-apply the saved settings (what the boot/resume services run)
+                          GFX voltage offset, 0 or negative (e.g. -30); 0 clears
+  sudo gpucap sclk <MHz>  core clock offset (e.g. +50); 0 clears
+  sudo gpucap mclk <MHz>  memory max clock (e.g. 1310); 0 restores stock
+  sudo gpucap apply [W]   re-apply all saved settings (what the boot/resume services run)
   gpucap --help           this text
 
+  Each set command validates the value on every card, applies it, reads it back, and only
+  then saves it to /etc/gpucap.conf so it is re-applied at boot and after suspend.
+
 WARNING
-  Changing power limits and voltages can damage your hardware, cause instability or
-  data loss, and may void your warranty. Settings are applied at your own risk.
-  Undervolting is generally safe to try because too low a voltage crashes the GPU
-  instead of overheating it, but a crash can take down running jobs and may need a
-  reboot to recover. Raising the power cap above the card's stock limit increases
-  heat and stress on the card and its power connectors: check your PSU and cooling.
+  Changing power limits, voltages and clocks can damage your hardware, cause instability
+  or data loss, and may void your warranty. Settings are applied at your own risk.
+  A too-low voltage or too-high clock usually crashes the GPU rather than damaging it, but
+  a crash can take down running jobs and may need a reboot. Memory overclocks can pass
+  short tests and still corrupt results later. Raising the power cap above the card's stock
+  limit adds heat and stress on the card and its power connectors: check PSU and cooling.
   Nothing here is guaranteed stable on your particular GPUs.
 
 GUIDANCE
-  Power cap   Lower caps cut heat and power with a modest speed cost. Each card reports
-              its allowed range (gpucap --settings). Values outside it are rejected.
-  Undervolt   Start small (-30 mV) and step down in 10-20 mV increments. After each step,
-              run a sustained load for several minutes and watch for crashes, GPU resets
-              or wrong output. Back off to a step or two above the last stable value.
-              Every chip is different, so test each card. gpucap refuses offsets deeper
-              than -100 mV unless you raise UV_LIMIT_MV in /etc/gpucap.conf.
-  Undo        sudo gpucap undervolt 0   clears the offset
-              sudo gpucap set <max W>   returns to a higher cap
-              A reboot also resets the hardware to stock, but saved settings are
-              re-applied at boot: change or remove them in /etc/gpucap.conf to stop that.
-  Requires    root for set/undervolt/apply. The voltage offset also needs amdgpu's OverDrive
-              bit; install.sh enables it and needs one reboot.
+  Change one thing at a time, test it under sustained load for several minutes (watch
+  gpucap for temperatures and clocks, and check the output of your workload), then move on.
+  Every chip is different: test each card.
+  Power cap   Lower caps cut heat and power at a modest speed cost. Allowed range per card:
+              gpucap --settings.
+  Undervolt   Start at -30 mV, step down 10-20 mV at a time, back off a step or two from the
+              last stable value. Lets the card hold higher clocks at the same power.
+              Refused beyond -100 mV unless UV_LIMIT_MV is raised in /etc/gpucap.conf.
+  Core clock  Start at +25..+50 MHz and step up. Needs a stable undervolt/power headroom to
+              help; under a tight power cap it often changes little.
+              Refused beyond +150 MHz unless SCLK_LIMIT_MHZ is raised.
+  Memory      Start about 2-3% above stock and step up slowly, comparing real results
+              (not just "no crash"). Refused above MCLK_LIMIT_MHZ (default 1350, set for a
+              Radeon AI PRO R9700 with 1259 MHz stock; set your own for other cards).
+  Undo        sudo gpucap undervolt 0 / sclk 0 / mclk 0, or sudo gpucap set <max W>.
+              Settings are saved and re-applied at boot: remove them from /etc/gpucap.conf
+              (UV_MV, SCLK_MHZ, MCLK_MHZ) to stop that. A reboot resets the hardware to stock.
+  Requires    root for set/undervolt/sclk/mclk/apply. Voltage and clock tuning also need amdgpu's
+              OverDrive bit; install.sh enables it and needs one reboot.
 
 FILES
-  /etc/gpucap.conf        CAP_W, UV_MV, UV_LIMIT_MV
+  /etc/gpucap.conf        CAP_W, UV_MV, SCLK_MHZ, MCLK_MHZ and the *_LIMIT settings
 `
+
+// setOD handles `gpucap undervolt|sclk|mclk <value>`: validate and apply the new value on every
+// card, and only then save it to the config so a bad value is never persisted.
+func setOD(cmd string) {
+	usage := map[string]string{
+		"undervolt": "gpucap undervolt <mV>   (0 or negative, e.g. -30; 0 clears)",
+		"sclk":      "gpucap sclk <MHz>       (core clock offset, e.g. +50; 0 clears)",
+		"mclk":      "gpucap mclk <MHz>       (memory max clock, e.g. 1310; 0 restores stock)",
+	}[cmd]
+	if len(os.Args) < 3 {
+		fmt.Fprintln(os.Stderr, "usage: "+usage)
+		os.Exit(2)
+	}
+	arg := strings.ToLower(os.Args[2])
+	arg = strings.TrimSuffix(strings.TrimSuffix(arg, "mhz"), "mv")
+	v, err := strconv.Atoi(strings.TrimPrefix(arg, "+"))
+	if err != nil || (cmd == "undervolt" && v > 0) || (cmd == "mclk" && v < 0) {
+		fmt.Fprintf(os.Stderr, "invalid value %q\nusage: %s\n", os.Args[2], usage)
+		os.Exit(2)
+	}
+	if os.Geteuid() != 0 {
+		die(fmt.Errorf("must be root (sudo gpucap %s %s)", cmd, os.Args[2]))
+	}
+	cards := findCards()
+	if len(cards) == 0 {
+		die(fmt.Errorf("no amdgpu cards found"))
+	}
+	cf := loadConf()
+	switch cmd {
+	case "undervolt":
+		cf.uvMV = v
+	case "sclk":
+		cf.sclkMHz = v
+	case "mclk":
+		cf.mclkMHz = v
+	}
+	// going back to the stock memory clock is only possible by restoring the boot table
+	if err := applyOD(cards, cf.od(), cmd == "mclk" && v == 0); err != nil {
+		die(err)
+	}
+	if err := saveConf(cf); err != nil {
+		die(err)
+	}
+	fmt.Printf("saved to %s\n", confPath)
+	if v != 0 {
+		fmt.Println("note: stress-test before relying on this; an unstable setting can crash a GPU (see gpucap --help)")
+	}
+}
 
 func main() {
 	cmd := "status"
@@ -442,35 +480,8 @@ func main() {
 			die(err)
 		}
 		fmt.Printf("saved %dW to %s\n", w, confPath)
-	case "undervolt":
-		if len(os.Args) < 3 {
-			fmt.Fprintln(os.Stderr, "usage: gpucap undervolt <mV>  (e.g. -50; 0 clears)")
-			os.Exit(2)
-		}
-		mv, err := strconv.Atoi(strings.TrimSuffix(strings.ToLower(os.Args[2]), "mv"))
-		if err != nil || mv > 0 {
-			fmt.Fprintf(os.Stderr, "invalid offset %q (must be 0 or negative mV)\n", os.Args[2])
-			os.Exit(2)
-		}
-		if os.Geteuid() != 0 {
-			die(fmt.Errorf("must be root (sudo gpucap undervolt %d)", mv))
-		}
-		cards := findCards()
-		if len(cards) == 0 {
-			die(fmt.Errorf("no amdgpu cards found"))
-		}
-		if err := applyOffset(cards, mv, loadConf().uvLimit); err != nil {
-			die(err)
-		}
-		cf := loadConf()
-		cf.uvMV = mv
-		if err := saveConf(cf); err != nil {
-			die(err)
-		}
-		fmt.Printf("saved %dmV to %s\n", mv, confPath)
-		if mv < 0 {
-			fmt.Println("note: stress-test before relying on this; an unstable offset can crash a GPU (see gpucap --help)")
-		}
+	case "undervolt", "sclk", "mclk":
+		setOD(cmd)
 	case "apply":
 		cf := loadConf()
 		w := cf.capW
@@ -484,8 +495,8 @@ func main() {
 		if err := apply(cards, w); err != nil {
 			die(err)
 		}
-		// a failed offset must not fail the unit and hide that the cap was applied
-		if err := applyOffset(cards, cf.uvMV, cf.uvLimit); err != nil {
+		// failed voltage/clock settings must not fail the unit and hide that the cap was applied
+		if err := applyOD(cards, cf.od(), false); err != nil {
 			fmt.Fprintln(os.Stderr, "warning:", err)
 		}
 	default:
