@@ -155,7 +155,8 @@ throughput by ~10–20%. The user explicitly rejected this trade-off. Use
 
 ### localhost/llmstack-vllm:latest is broken
 
-The locally-built image (`localhost/llmstack-vllm:latest`) uses vLLM 0.10.2rc2 with
+The locally-built image (`localhost/llmstack-vllm:latest`, deleted from the build host in the 2026-10 podman
+cleanup; the rollback image is `localhost/llmstack-vllm-rollback:v0.26.0`) used vLLM 0.10.2rc2 with
 transformers 5.7.0.dev0. Transformers 5.x removed `all_special_tokens_extended`, which
 causes `AttributeError` on Qwen3 models at startup. **Do not use this image.**
 
@@ -272,6 +273,13 @@ Baselines for removed profiles remain in `docs/models.md` and `bench/baselines/`
 
 ### Flash-Next and GPU-count facts (0.4.1)
 
+- Hard code needs a generation cap of 64K-96K on Flash-Next (at 32K it truncates; at 81,920 nothing does),
+  and a 200K cap buys nothing more. The 4-bit weights show no visible quality loss against the FP8 27B at
+  equal room. The 27B sometimes ends a reply early (`<|im_end|>` mid-reasoning, empty content, `finish=stop`):
+  clients should retry. Findings: `docs/hard-code-tasks.md`.
+- vLLM `--max-model-len -1` (auto-fit) picks the native 262,144 on Flash-Next TP4 and the 27B at TP4 and TP2, so
+  the 27B's shipped 131,072 is policy (decode slows with depth), not memory. Table in `docs/gpu-counts.md`.
+
 - `qwen3.8-flash-next-vllm` defaults to `reasoning_effort=medium` (`--default-chat-template-kwargs`).
   The template's xhigh default runs away on this model (4/32 code-test passes vs 29-32/32 at medium across two runs of 8 samples x 4 tasks).
 - 262K context costs nothing on Flash-Next: KV pool ~535K tokens at 131K, ~551K at 262K; decode
@@ -305,9 +313,15 @@ bench/               Benchmark scripts + saved baselines
 tests/smoke.sh       Integration smoke test (both backends)
 scripts/configure    GPU-count auto-detector; patches models.yaml
 docs/models.md       Full benchmark data + per-profile architecture notes
-docs/gpu-counts.md   Running with fewer than 4 GPUs (valid TP sizes, per-profile limits)
+docs/gpu-counts.md   Running with fewer than 4 GPUs (valid TP sizes, per-profile limits, auto-fit)
 docs/llmctl.md       Full CLI reference
 docs/workarounds.md  Active bugs + workarounds (vLLM SSE null name)
+docs/flash-next-half-speed.md  Half-speed Flash-Next starts: cause (full page cache) and the llm-prestart guard
+docs/hard-code-tasks.md        Harder code tests: caps vs 4-bit weights, 27B early stops, ceiling check
+docs/upgrade-plan-2026-*.md    Image/ROCm upgrade canaries and their gates
+scripts/llm-prestart  exec wrapper in front of Flash-Next's podman run (drops page cache first)
+scripts/llmhw.py     Hardware/requirements checker used by configure, llmctl and llmpanel
+bench/codetests/     Code-correctness suite (11 tasks, 5 of them the harder set) run by run_codetests.py
 .vllm-cache/         Persistent Inductor compilation cache (gitignored)
 .triton-cache/       Persistent Triton kernel cache (gitignored)
 ```

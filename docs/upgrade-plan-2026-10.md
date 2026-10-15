@@ -75,3 +75,19 @@ All in `bench/baselines/` (`concurrent_bench.py` output, `medium-256`, 32 reques
 - `qwen3.8-27b-code-v0.31.0-concurrency-sweep-nothink-20261009.json` — 0.31.0 wide concurrency sweep (1–64)
 
 Compare any two with `python3 bench/concurrent_bench.py --compare OLD.json NEW.json`.
+
+## Planned after v0.4.5 (decided 2026-10-15)
+
+- **Radiance trial first.** `magiccodingman/vllm-radiance` (vLLM 0.30.0, ROCm 7.14, libr4d, R9700-native FP8 GEMMs,
+  RDNA4 attention, TP2 P2P all-reduce) is qualified by its authors only on TP2 with Qwen3.8-27B. Steps: pull the
+  image under a pinned tag, run one 27B TP2 profile on two cards via a throwaway router, and compare with the
+  27B TP2 baseline in `docs/gpu-counts.md` (serial 46.6, conc=8 219, conc=16 418 tok/s) using the same
+  `concurrent_bench.py` settings and the -5% gate used for the 0.31 canary. Also look at long-context decode (the
+  v0.26 27B falls from 83 to 3 tok/s with depth), tool-call correctness (their MTP failed their own gate) and
+  whether Flash-Next's MXFP4 checkpoint becomes runnable. The production pin stays `v0.26.0` until a canary passes.
+- **ROCm 10.x canary deferred.** ROCm 10.1.0 (2026-10-05) is the latest release; no official vLLM image on ROCm
+  10.x was found. Before any host move, audit `rocm-smi` use (deprecated in favour of `amd-smi`) in `bin/llmctl`,
+  `bin/llmpanel`/`tui/` and `scripts/`.
+- **SGLang-side ideas, untested here:** raising `triton_attention_num_kv_splits` on AMD (default 16 vs 64 CUs) and
+  keeping BF16 P.V with FP32 accumulation in decode attention. Both came from third-party RDNA4 SGLang work and
+  matter mainly at long context; neither applies to the vLLM profiles as shipped.
