@@ -1,0 +1,78 @@
+{
+ "passed": 1,
+ "total": 14,
+ "fatal": null,
+ "timed_out": false,
+ "stderr_tail": "",
+ "tests": [
+  {
+   "test": "test_lexical_syntax_and_display",
+   "ok": false,
+   "err": "AssertionError: '(display (list 42 -7 +5 007 -0))': got '(42 -7 5 7 0 )', want '(42 -7 5 7 0)'"
+  },
+  {
+   "test": "test_integer_arithmetic",
+   "ok": false,
+   "err": "AssertionError: '(display (list (+) (*) (+ 5) (* 5) (- 5) (+ 1 2 3 4) (* 2 3 4) (- 10 1 2 3) (- 0 7)))': got '(0 1 5 5 -5 10 24 4 -7 )', want '(0 1 5 5 -5 10 24 4 -7)'"
+  },
+  {
+   "test": "test_truthiness_equality_and_predicates",
+   "ok": true
+  },
+  {
+   "test": "test_lists_apply_and_shadowing",
+   "ok": false,
+   "err": "AssertionError: '(display (list 1 2 3))': got '(1 2 3 )', want '(1 2 3)'"
+  },
+  {
+   "test": "test_closures_and_mutation",
+   "ok": false,
+   "err": "AssertionError: '\\n    (define (make-counter)\\n      (let ((n 0))\\n        (lambda () (set! n (+ n 1)) n)))\\n    (define c1 (make-counter))\\n    (define c2 (make-counter))\\n    (c1) (c1)\\n    (display (list (c1) (c2) (c1) (c2)))\\n    ': got '(3 1 4 2 )', want '(3 1 4 2)'"
+  },
+  {
+   "test": "test_binding_forms_and_internal_defines",
+   "ok": false,
+   "err": "AssertionError: '(define x 10) (display (let ((x 1) (y x)) (list x y)))': got '(1 10 )', want '(1 10)'"
+  },
+  {
+   "test": "test_evaluation_order",
+   "ok": false,
+   "err": "AssertionError: '(display (list (begin (display \"a\") 1) (begin (display \"b\") 2) (begin (display \"c\") 3)))': got 'abc(1 2 3 )', want 'abc(1 2 3)'"
+  },
+  {
+   "test": "test_error_handling",
+   "ok": false,
+   "err": "AssertionError: '(display \"o\") (lambda (1) 1)': did not raise SchemeError"
+  },
+  {
+   "test": "test_tail_calls_long_loops",
+   "ok": false,
+   "err": "SchemeError: stack overflow"
+  },
+  {
+   "test": "test_tail_calls_in_conditionals",
+   "ok": false,
+   "err": "SchemeError: stack overflow"
+  },
+  {
+   "test": "test_tail_calls_in_binding_forms_and_apply",
+   "ok": false,
+   "err": "SchemeError: stack overflow"
+  },
+  {
+   "test": "test_deep_recursion_and_long_lists",
+   "ok": false,
+   "err": "SchemeError: stack overflow"
+  },
+  {
+   "test": "test_classic_programs",
+   "ok": false,
+   "err": "AssertionError: \"\\n(define (map f l) (if (null? l) '() (cons (f (car l)) (map f (cdr l)))))\\n(define (filter p l) (cond ((null? l) '()) ((p (car l)) (cons (car l) (filter p (cdr l)))) (else (filter p (cdr l)))))\\n(define (foldl f acc l) (if (null? l) acc (foldl f (f acc (car l)) (cdr l))))\\n(define "
+  },
+  {
+   "test": "test_randomized_differential",
+   "ok": false,
+   "err": "AssertionError: display ''\"1.'\\n1a\": got \"(quote 1.'\\n1a )\", want \"(quote 1.'\\n1a)\""
+  }
+ ]
+}

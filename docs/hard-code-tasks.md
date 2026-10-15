@@ -40,7 +40,15 @@ The 27B (with or without MTP) sometimes emits end-of-sequence in the middle of i
 `finish_reason=stop`, `content` empty, no `</think>`. 12/40 samples at the 32K cap with MTP, 6/16 without
 MTP at 81,920. It rises with temperature (10/16 at 1.0, 2-3/16 at 0.6) and was not seen on Flash-Next.
 Not caused by MTP. A client that gets `stop` with empty content and no `</think>` should retry or
-continue. Which token ends the sequence is not yet diagnosed.
+continue.
+
+Diagnostic (27B no-MTP, `skip_special_tokens=false`): the first three `regex_engine` samples that
+finished (19K-26K tokens, cap 32,768, temperature 0.6) each ended with the model emitting `<|im_end|>`
+in the middle of a reasoning sentence (previous tokens `?!`, `|`, `{}`), so it is a premature turn-end
+token, not a stop string or the length limit. The run hit its time limit before the remaining nine
+samples and the per-token probabilities were saved, so how likely `<|im_end|>` was at those positions
+is still unmeasured. A sampling-side mitigation (suppressing `<|im_end|>` while inside `<think>`) is
+untested.
 
 ## 4. Things that did not help
 
@@ -69,5 +77,14 @@ one full-length request in the pool; 131,072 allows two. Flash-Next vLLM needs a
 `docs/gpu-counts.md`), so smaller rigs are covered by the GGUF profile, whose shipped `--ctx-size` was
 measured on 2 and 3 cards.
 
-Ceiling check (Flash-Next, cap 200,000): see the results directory
-`qwen3.8-flash-next-vllm-ceiling200k-medium` if present; it is not part of the findings above.
+## 6. Ceiling check: a 200,000-token cap buys nothing over 81,920
+
+Flash-Next, medium effort, cap 200,000, 3 samples each: all 6 samples stopped on their own, at 37K to
+79K completion tokens, none truncated. Mean tests passed were 35.7% on `mini_scheme` and 15.4% on
+`regex_engine` (3 samples, so within noise of the 81,920 run's 54% and 50%; the large per-sample spread,
+e.g. `mini_scheme` 1/14, 13/14, 1/14, is the real signal). The model does not need more than about 80K
+tokens on these tasks, and extra room does not turn failures into passes. Results:
+`bench/results/codetests-hard-20261014/qwen3.8-flash-next-vllm-ceiling200k-medium/`.
+
+Practical reading: a 64K-96K generation cap is enough for hard code on Flash-Next. The 262,144 context
+is for long inputs, not longer answers.
