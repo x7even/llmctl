@@ -1,0 +1,69 @@
+{
+ "passed": 5,
+ "total": 13,
+ "fatal": null,
+ "timed_out": false,
+ "stderr_tail": "",
+ "tests": [
+  {
+   "test": "test_api_and_examples",
+   "ok": false,
+   "err": "ValueError: invalid class char"
+  },
+  {
+   "test": "test_classes_escapes_anchors",
+   "ok": false,
+   "err": "ValueError: invalid class char"
+  },
+  {
+   "test": "test_priority_and_laziness",
+   "ok": false,
+   "err": "AssertionError: fullmatch('(.*)(\\\\d+)', 'abc123'): expected ((0, 6), ('abc12', '3'), ((0, 6, 'abc123'), (0, 5, 'abc12'), (5, 6, '3')), ((0, 6), (0, 5), (5, 6))), got None"
+  },
+  {
+   "test": "test_capture_semantics",
+   "ok": true
+  },
+  {
+   "test": "test_empty_iteration_loops",
+   "ok": true
+  },
+  {
+   "test": "test_invalid_patterns",
+   "ok": false,
+   "err": "ValueError: invalid class char"
+  },
+  {
+   "test": "test_strict_dialect_rejections",
+   "ok": true
+  },
+  {
+   "test": "test_random_captures_diff",
+   "ok": false,
+   "err": "AssertionError: fullmatch('.+a+a', 'bbaaa'): expected ((0, 5), (), ((0, 5, 'bbaaa'),), ((0, 5),)), got None"
+  },
+  {
+   "test": "test_random_empty_loops_diff",
+   "ok": false,
+   "err": "AssertionError: search('a(?:a?|b){2,3}(?:b|a*){0}$', 'ababaa'): expected ((2, 6), (), ((2, 6, 'abaa'),), ((2, 6),)), got ((4, 6), (), ((4, 6, 'aa'),), ((4, 6),))"
+  },
+  {
+   "test": "test_random_classes_anchors_diff",
+   "ok": false,
+   "err": "ValueError: invalid class char"
+  },
+  {
+   "test": "test_random_syntax_validity",
+   "ok": false,
+   "err": "ValueError: invalid class char"
+  },
+  {
+   "test": "test_scale_memoisation",
+   "ok": true
+  },
+  {
+   "test": "test_long_input_no_recursion",
+   "ok": true
+  }
+ ]
+}

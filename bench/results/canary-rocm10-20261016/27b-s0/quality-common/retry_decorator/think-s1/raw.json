@@ -1,0 +1,40 @@
+{
+ "id": "chatcmpl-9bb95b9f0357425c",
+ "object": "chat.completion",
+ "created": 1792140053,
+ "model": "qwen3.8-27b-code",
+ "choices": [
+  {
+   "index": 0,
+   "message": {
+    "role": "assistant",
+    "content": "\n\n```python\nimport time\nfrom functools import wraps\nfrom typing import Callable\n\n\ndef retry(\n    max_attempts: int = 3,\n    delay: float = 1.0,\n    backoff: float = 2.0,\n    exceptions: tuple[type[BaseException], ...] = (Exception,),\n    sleep: Callable[[float], None] = time.sleep,\n) -> Callable:\n    if max_attempts < 1:\n        raise ValueError(\"max_attempts must be >= 1\")\n    if delay < 0:\n        raise ValueError(\"delay must be >= 0\")\n    if backoff < 1:\n        raise ValueError(\"backoff must be >= 1\")\n\n    def decorator(func: Callable) -> Callable:\n        @wraps(func)\n        def wrapper(*args, **kwargs):\n            wrapper.calls += 1\n            last_exc: BaseException | None = None\n            for attempt in range(1, max_attempts + 1):\n                try:\n                    return func(*args, **kwargs)\n                except exceptions as exc:\n                    last_exc = exc\n                    if attempt < max_attempts:\n                        sleep(delay * backoff ** (attempt - 1))\n            raise last_exc\n\n        wrapper.calls = 0\n        return wrapper\n\n    return decorator\n```",
+    "refusal": null,
+    "annotations": null,
+    "audio": null,
+    "function_call": null,
+    "reasoning": "Let me carefully implement this retry decorator factory based on the specifications.\n\nKey requirements:\n1. Decorator factory (always called with parentheses)\n2. On success, return immediately\n3. On retryable exception, wait `delay * backoff ** (k-1)` where k is the retry number (1-indexed), up to max_attempts total calls\n4. No wait after final failed attempt\n5. Re-raise last exception if all fail\n6. Non-retryable exceptions propagate immediately\n7. Validate parameters: max_attempts < 1, delay < 0, backoff < 1 \u2192 ValueError\n8. Use functools.wraps\n9. Wrapper has `calls` attribute tracking total invocations\n\nLet me think through the logic:\n\n- `max_attempts` total calls to the function\n- First call is attempt 1\n- If attempt 1 fails with retryable exception, wait `delay * backoff ** 0` = `delay`, then attempt 2\n- If attempt 2 fails, wait `delay * backoff ** 1` = `delay * backoff`, then attempt 3\n- ...\n- If attempt k fails (where k < max_attempts), wait `delay * backoff ** (k-1)`, then attempt k+1\n- If attempt max_attempts fails, re-raise (no wait)\n\nSo the loop:\n```\nfor attempt in range(1, max_attempts + 1):\n    try:\n        return func(*args, **kwargs)\n    except exceptions as e:\n        if attempt == max_attempts:\n            raise\n        sleep(delay * backoff ** (attempt - 1))\n```\n\nWait, let me re-read: \"The wait before retry number k (k = 1 for the wait after the first failure) is delay * backoff ** (k - 1)\"\n\nSo after the 1st failure, k=1, wait = delay * backoff ** 0 = delay\nAfter the 2nd failure, k=2, wait = delay * backoff ** 1\nAfter the 3rd failure, k=3, wait = delay * backoff ** 2\n\nThis matches my formula: after attempt `attempt` fails (and attempt < max_attempts), wait = delay * backoff ** (attempt - 1).\n\nFor the `calls` attribute: it should be a mutable counter. Since it's an attribute on the wrapper function, I can use a list or just increment an attribute. Let me use a simple approach - set `wrapper.calls = 0` and increment it.\n\nActually, I need to be careful. The `calls` attribute should be on the wrapper function object itself. I can do:\n\n```python\nwrapper.calls = 0\n```\n\nAnd inside the wrapper, increment it. But since we're inside a closure, I need to modify the attribute on the wrapper. I can reference `wrapper` inside the nested function.\n\nLet me also think about the `exceptions` parameter. It's a tuple of exception types. I check with `except exceptions` which works with a tuple.\n\nFor validation:\n- `max_attempts < 1` \u2192 ValueError\n- `delay < 0` \u2192 ValueError\n- `backoff < 1` \u2192 ValueError\n\nThese are checked when `retry(...)` is called, not when decorating or calling the function.\n\nLet me also consider: the `sleep` parameter defaults to `time.sleep`. I need to import `time`.\n\nLet me also consider the type hints. The signature uses `Callable` - I should import from `typing` or `collections.abc`.\n\nLet me write the complete module:\n\n```python\nimport time\nfrom functools import wraps\nfrom typing import Callable\n\n\ndef retry(max_attempts: int = 3, delay: float = 1.0, backoff: float = 2.0,\n          exceptions: tuple[type[BaseException], ...] = (Exception,),\n          sleep: Callable[[float], None] = time.sleep) -> Callable:\n    if max_attempts < 1:\n        raise ValueError(\"max_attempts must be >= 1\")\n    if delay < 0:\n        raise ValueError(\"delay must be >= 0\")\n    if backoff < 1:\n        raise ValueError(\"backoff must be >= 1\")\n\n    def decorator(func):\n        @wraps(func)\n        def wrapper(*args, **kwargs):\n            wrapper.calls += 1\n            last_exc = None\n            for attempt in range(1, max_attempts + 1):\n                try:\n                    return func(*args, **kwargs)\n                except exceptions as e:\n                    last_exc = e\n                    if attempt < max_attempts:\n                        sleep(delay * backoff ** (attempt - 1))\n            raise last_exc\n        wrapper.calls = 0\n        return wrapper\n    return decorator\n```\n\nWait, there's a subtlety. `wrapper.calls += 1` - since `wrapper` is defined inside `decorator`, and `wrapper.calls` is set after the function definition, this should work because we're accessing the attribute on the function object which is in the enclosing scope.\n\nActually, let me reconsider. `wrapper.calls` is set to 0 after the `def wrapper` block. Inside the wrapper, when we do `wrapper.calls += 1`, Python will look up `wrapper` in the enclosing scope (the `decorator` function's local scope), find the function object, and access its `calls` attribute. This should work fine.\n\nLet me also double-check: \"re-raise the exception from the last attempt\" - my code does `raise last_exc` which re-raises the last caught exception. That's correct.\n\nOne more thing: the `exceptions` tuple check. Using `except exceptions` where `exceptions` is a tuple works in Python. Good.\n\nI think this is correct. Let me finalize it.\n"
+   },
+   "logprobs": null,
+   "finish_reason": "stop",
+   "stop_reason": null,
+   "token_ids": null,
+   "routed_experts": null
+  }
+ ],
+ "service_tier": null,
+ "system_fingerprint": "vllm-0.26.0-tp4-0126c26e",
+ "usage": {
+  "prompt_tokens": 431,
+  "total_tokens": 1975,
+  "completion_tokens": 1544,
+  "prompt_tokens_details": null
+ },
+ "prompt_logprobs": null,
+ "prompt_token_ids": null,
+ "prompt_text": null,
+ "kv_transfer_params": null,
+ "ec_transfer_params": null,
+ "metrics": null,
+ "_wall_s": 26.085147384990705
+}

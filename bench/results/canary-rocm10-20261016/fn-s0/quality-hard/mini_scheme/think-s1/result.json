@@ -1,0 +1,76 @@
+{
+ "passed": 3,
+ "total": 14,
+ "fatal": null,
+ "timed_out": false,
+ "stderr_tail": "",
+ "tests": [
+  {
+   "test": "test_lexical_syntax_and_display",
+   "ok": false,
+   "err": "AssertionError: '(display 1) .': .output '1', want ''"
+  },
+  {
+   "test": "test_integer_arithmetic",
+   "ok": true
+  },
+  {
+   "test": "test_truthiness_equality_and_predicates",
+   "ok": false,
+   "err": "AssertionError: '(display (equal? 1 #t))': got '#t', want '#f'"
+  },
+  {
+   "test": "test_lists_apply_and_shadowing",
+   "ok": false,
+   "err": "AssertionError: \"(display (reverse '(1 (2 3) 4)))\": got '(1 (2 3) 4)', want '(4 (2 3) 1)'"
+  },
+  {
+   "test": "test_closures_and_mutation",
+   "ok": false,
+   "err": "AssertionError: \"\\n    (define thunks\\n      (let loop ((i 0) (acc '()))\\n        (if (= i 4)\\n            (reverse acc)\\n            (loop (+ i 1) (cons (lambda () (* i 10)) acc)))))\\n    (define (call-all l) (if (null? l) '() (cons ((car l)) (call-all (cdr l)))))\\n    (display (call-all thunks))\\n"
+  },
+  {
+   "test": "test_binding_forms_and_internal_defines",
+   "ok": false,
+   "err": "AssertionError: \"(display (let loop ((i 0) (acc '())) (if (= i 5) (reverse acc) (loop (+ i 1) (cons (* i i) acc)))))\": got '(16 9 4 1 0)', want '(0 1 4 9 16)'"
+  },
+  {
+   "test": "test_evaluation_order",
+   "ok": true
+  },
+  {
+   "test": "test_error_handling",
+   "ok": false,
+   "err": "AssertionError: '(display \"o\") (lambda (1) 1)': did not raise SchemeError"
+  },
+  {
+   "test": "test_tail_calls_long_loops",
+   "ok": false,
+   "err": "SchemeError: stack overflow"
+  },
+  {
+   "test": "test_tail_calls_in_conditionals",
+   "ok": false,
+   "err": "SchemeError: stack overflow"
+  },
+  {
+   "test": "test_tail_calls_in_binding_forms_and_apply",
+   "ok": false,
+   "err": "SchemeError: stack overflow"
+  },
+  {
+   "test": "test_deep_recursion_and_long_lists",
+   "ok": false,
+   "err": "AssertionError: \"\\n    (define (iota n) (let loop ((i n) (acc '())) (if (= i 0) acc (loop (- i 1) (cons i acc)))))\\n    (define l (iota 50000))\\n    (define (sum l acc) (if (null? l) acc (sum (cdr l) (+ acc (car l)))))\\n    (display (list (length l) (car (reverse l)) (length (append l l)) (list? l) "
+  },
+  {
+   "test": "test_classic_programs",
+   "ok": true
+  },
+  {
+   "test": "test_randomized_differential",
+   "ok": false,
+   "err": "AssertionError: program '(define a 1) (define b 0) (define c -5)\\n(display (equal? (eq? a b) (and c a b)))': got '#t', want '#f'"
+  }
+ ]
+}

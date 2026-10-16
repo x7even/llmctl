@@ -1,0 +1,69 @@
+{
+ "passed": 10,
+ "total": 14,
+ "fatal": null,
+ "timed_out": false,
+ "stderr_tail": "",
+ "tests": [
+  {
+   "test": "test_lexical_syntax_and_display",
+   "ok": true
+  },
+  {
+   "test": "test_integer_arithmetic",
+   "ok": false,
+   "err": "AssertionError: '(display (list (+) (*) (+ 5) (* 5) (- 5) (+ 1 2 3 4) (* 2 3 4) (- 10 1 2 3) (- 0 7)))': got '(0 1 5 5 5 10 24 4 -7)', want '(0 1 5 5 -5 10 24 4 -7)'"
+  },
+  {
+   "test": "test_truthiness_equality_and_predicates",
+   "ok": true
+  },
+  {
+   "test": "test_lists_apply_and_shadowing",
+   "ok": false,
+   "err": "SchemeError: append: not a proper list"
+  },
+  {
+   "test": "test_closures_and_mutation",
+   "ok": true
+  },
+  {
+   "test": "test_binding_forms_and_internal_defines",
+   "ok": true
+  },
+  {
+   "test": "test_evaluation_order",
+   "ok": true
+  },
+  {
+   "test": "test_error_handling",
+   "ok": false,
+   "err": "AssertionError: '(display \"o\") (if 1 2 3 4)': did not raise SchemeError"
+  },
+  {
+   "test": "test_tail_calls_long_loops",
+   "ok": true
+  },
+  {
+   "test": "test_tail_calls_in_conditionals",
+   "ok": true
+  },
+  {
+   "test": "test_tail_calls_in_binding_forms_and_apply",
+   "ok": true
+  },
+  {
+   "test": "test_deep_recursion_and_long_lists",
+   "ok": true
+  },
+  {
+   "test": "test_classic_programs",
+   "ok": true
+  },
+  {
+   "test": "test_randomized_differential",
+   "ok": false,
+   "err": "AssertionError: program '(define a -4) (define b -6) (define c 5)\\n(display (and (or (if (and (<= -9 b 12) (>= c -8) (eq? b b)) ((lambda (b y) c) (let* ((x -9) (y c)) -10) (let* ((y -7) (x b)) b)) (if (and -5 -2) b (if c c b))) a) a (- (let ((a -11) (c (+ (begin (set! c -2) c) (* b 0)))) (let* ((y ("
+  }
+ ]
+}

@@ -1,0 +1,71 @@
+{
+ "passed": 8,
+ "total": 14,
+ "fatal": null,
+ "timed_out": false,
+ "stderr_tail": "",
+ "tests": [
+  {
+   "test": "test_basic_values",
+   "ok": false,
+   "err": "AssertionError: "
+  },
+  {
+   "test": "test_number_values",
+   "ok": true
+  },
+  {
+   "test": "test_number_errors_pos",
+   "ok": true
+  },
+  {
+   "test": "test_string_values",
+   "ok": false,
+   "err": "AssertionError: "
+  },
+  {
+   "test": "test_string_errors_pos",
+   "ok": false,
+   "err": "AssertionError: '\"\\\\u\"': pos 4, expected 3"
+  },
+  {
+   "test": "test_structure_whitespace_trailing_pos",
+   "ok": true
+  },
+  {
+   "test": "test_duplicate_keys",
+   "ok": true
+  },
+  {
+   "test": "test_depth_limit_ok",
+   "ok": true
+  },
+  {
+   "test": "test_depth_limit_exceeded",
+   "ok": true
+  },
+  {
+   "test": "test_error_api",
+   "ok": true
+  },
+  {
+   "test": "test_no_json_module_no_eval",
+   "ok": true
+  },
+  {
+   "test": "test_differential_valid",
+   "ok": false,
+   "err": "AssertionError: '{ \\r\"\"\\t:60870.0247035580556E+309,\"\"\\r:{\\n\\r\\t\"c\\\\\"\":false,\"\\\\ud83dAZ\":\"b\\\\f-\\\\u0001\\ude00\",\"\\\\udbff\\\\udfff\\xa0-\":[\\t[\\n \" A\u00e9\\\\\\\\\\\\r\\u2028A\"\\n ,\\n\\r[true'\n got  {'': {'c\"c\\\\\"': False, '\\ud83dAZ': 'b\\x0cb\\\\f-\\x01\\ude00', '\\U0010ffff\\xa0-': [[' A\u00e9\\\\ A\u00e9\\\\\\\\\\r A\u00e9\\\\\n want {'': {'c\"': Fal"
+  },
+  {
+   "test": "test_differential_mutations",
+   "ok": false,
+   "err": "AssertionError: '[-75474 \\t,\"\\\\u00e9-\\\\udbff\\\\udfff \",\"\\\\ud800\\\\ude00e00\\\\r\"]\\r'\n got  [-75474, '\u00e9-\\U0010ffff ', '\\U00010200e00\\re00\\\\r']\n want [-75474, '\u00e9-\\U0010ffff ', '\\U00010200e00\\r']"
+  },
+  {
+   "test": "test_performance_scale",
+   "ok": false,
+   "err": "AssertionError: "
+  }
+ ]
+}

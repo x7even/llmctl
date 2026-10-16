@@ -1,0 +1,70 @@
+{
+ "passed": 9,
+ "total": 14,
+ "fatal": null,
+ "timed_out": false,
+ "stderr_tail": "",
+ "tests": [
+  {
+   "test": "test_lexical_syntax_and_display",
+   "ok": false,
+   "err": "AssertionError: '(display 1) .': .output '1', want ''"
+  },
+  {
+   "test": "test_integer_arithmetic",
+   "ok": true
+  },
+  {
+   "test": "test_truthiness_equality_and_predicates",
+   "ok": true
+  },
+  {
+   "test": "test_lists_apply_and_shadowing",
+   "ok": false,
+   "err": "SchemeError: 'list_reverseiterator' object is not reversible"
+  },
+  {
+   "test": "test_closures_and_mutation",
+   "ok": false,
+   "err": "SchemeError: 'list_reverseiterator' object is not reversible"
+  },
+  {
+   "test": "test_binding_forms_and_internal_defines",
+   "ok": false,
+   "err": "SchemeError: 'list_reverseiterator' object is not reversible"
+  },
+  {
+   "test": "test_evaluation_order",
+   "ok": true
+  },
+  {
+   "test": "test_error_handling",
+   "ok": true
+  },
+  {
+   "test": "test_tail_calls_long_loops",
+   "ok": true
+  },
+  {
+   "test": "test_tail_calls_in_conditionals",
+   "ok": true
+  },
+  {
+   "test": "test_tail_calls_in_binding_forms_and_apply",
+   "ok": true
+  },
+  {
+   "test": "test_deep_recursion_and_long_lists",
+   "ok": false,
+   "err": "SchemeError: 'list_reverseiterator' object is not reversible"
+  },
+  {
+   "test": "test_classic_programs",
+   "ok": true
+  },
+  {
+   "test": "test_randomized_differential",
+   "ok": true
+  }
+ ]
+}

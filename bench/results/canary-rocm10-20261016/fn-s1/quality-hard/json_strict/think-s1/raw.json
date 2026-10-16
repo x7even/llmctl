@@ -1,0 +1,43 @@
+{
+ "id": "chatcmpl-b76011d92f5a9ccb",
+ "object": "chat.completion",
+ "created": 1792166178,
+ "model": "qwen3.8-flash-next-vllm",
+ "choices": [
+  {
+   "index": 0,
+   "message": {
+    "role": "assistant",
+    "content": null,
+    "refusal": null,
+    "annotations": null,
+    "audio": null,
+    "function_call": null,
+    "reasoning": "This is a complex task requiring me to write a strict RFC 8259 JSON parser from scratch in Python. Let me carefully analyze all the requirements:\n\n1. **No imports**: No `json`, `simplejson`, `ast`, `eval`/`exec`/`compile`. `re` is allowed.\n2. **Types**: object\u2192dict, array\u2192list, string\u2192str, true/false/null\u2192True/False/None, integer\u2192int, number with fraction/exponent\u2192float\n3. **Strict grammar**: specific whitespace, no BOM, no trailing garbage, no NaN/Infinity, strict number format, strict string escapes\n4. **Surrogate handling**: surrogate pairs combine, lone surrogates kept as-is\n5. **Object keys**: last value wins, first occurrence position kept\n6. **Depth limit**: 500 max, must not RecursionError\n7. **Error positions**: very precise definition based on \"viable prefix\" concept\n8. **Performance**: linear in input size, handle 1MB strings, 100000 element arrays\n\nLet me think about the architecture:\n\n- I'll use an iterative parser (not recursive) to avoid RecursionError for deep nesting. Actually, wait - depth limit is 500, and Python's recursion limit is 1000. So recursive parsing with depth 500 would use ~500 stack frames, which is under 1000. But for the over-limit case (200000 `[`), I need to detect depth > 500 before recursing. So I can use recursion but check depth before recursing.\n\nActually, let me reconsider. The problem says \"Your parser must not raise RecursionError for any input: not for depth <= 500 (the tests run with Python's default recursion limit of 1000 and do not change it; do not call sys.setrecursionlimit) and not for the over-limit case (e.g. 200000 consecutive `[`), which must raise JSONError promptly.\"\n\nWith depth 500, recursive parsing would use ~500 frames. Default recursion limit is 1000. Each `loads` call adds a frame, plus the parser functions. So I need to be careful. Let me use an iterative approach with an explicit stack to be safe.\n\nActually, let me think more carefully. If I have `parse_value` -> `parse_array` -> `parse_value` -> `parse_array` -> ... that's 2 frames per level. At depth 500, that's 1000 frames. Plus the initial `loads` call and any other overhead. This could hit the 1000 limit.\n\nSo I should use an iterative parser with an explicit stack. Let me design this:\n\n**Iterative parser design:**\n\nI'll use a state machine / explicit stack approach:\n- Stack holds (container_type, container, key_or_none, state) entries\n- States: expecting_value, expecting_comma_or_close, expecting_colon, expecting_value_in_object, etc.\n\nActually, let me think about this differently. I'll write a recursive-descent parser but with an explicit depth counter. When depth exceeds 500, I raise JSONError. For the 200000 `[` case, I'll check depth before recursing, so I'll raise JSONError at depth 501 without actually recursing.\n\nWait, but 500 levels of recursion \u00d7 2 frames per level = 1000 frames. Plus `loads` itself, plus any helper functions. This is right at the boundary. Let me be safe and use an iterative approach.\n\nLet me design the iterative parser:\n\n```\ndef loads(s):\n    if not isinstance(s, str): raise TypeError\n    pos = 0\n    # parse value iteratively\n```\n\nFor the iterative approach, I'll use a stack of \"continuations\":\n- When we encounter `[`, push a \"array continuation\" and start parsing the first element\n- When we encounter `{`, push an \"object continuation\" and start parsing the first key\n- When we finish parsing a value, pop the continuation and integrate the value\n\nLet me think about the states more carefully:\n\nStack entries:\n- ('array', list_so_far) - we're inside an array, have parsed elements so far\n- ('object_key', dict_so_far) - we're inside an object, expecting a key\n- ('object_value', dict_so_far, key) - we're inside an object, expecting a value for key\n\nThe main loop:\n1. Parse a value\n2. Check what's next (comma, close bracket, etc.) based on stack context\n\nActually, let me think about this more carefully with the viable prefix error position requirement.\n\nThe error position is defined as: for an invalid input `s`, if `s` is a viable prefix, pos = len(s). Otherwise, pos is the index of the first character that makes the prefix non-viable.\n\nThis means I need to track where I am in the input and report the correct position. The \"viable prefix\" concept means: a string p is a viable prefix if some valid JSON document starts with p.\n\nLet me think about how to compute this. Essentially, as I parse, I advance through the input. When I encounter an error, the position is where I currently am (the character that can't continue). If I reach the end of input and the document is incomplete, the position is len(s).\n\nLet me trace through some examples:\n- `\"\"` -> pos 0 (empty string, not a viable prefix since no valid document starts with empty... wait, actually the empty string IS a viable prefix per the definition \"the empty string is a viable prefix\". But `\"\"` is not a valid document. So since `s` is a viable prefix, pos = len(s) = 0. \u2713\n- `\"   \"` -> pos 3. The string \"   \" is a viable prefix (e.g., \"   1\" is valid). So pos = len(s) = 3. \u2713\n- `\"[1, 2\"` -> pos 5. Is \"[1, 2\" a viable prefix? Yes, \"[1, 2]\" is valid. So pos = len(s) = 5. \u2713\n- `\"[1,]\"` -> pos 3. Is \"[1,\" a viable prefix? Yes (\"[1,2]\" starts with it). Is \"[1,]\" a viable prefix? No (after a comma in an array, we need a value, not `]`). So the first character that can't continue is `]` at index 3. \u2713\n- `\"[,\"` -> pos 1. Is \"[\" a viable prefix? Yes. Is \"[,\" a viable prefix? No (after `[`, we need a value or `]`, not `,`). So pos = 1. \u2713\n\nOK so the approach is: as I parse, I track the current position. When I encounter an error at position i, that's the pos. When I reach end of input with an incomplete parse, pos = len(s).\n\nNow let me think about the number parsing and the `pos` for numbers:\n- `\"01\"` -> pos 1. After parsing `0`, the next char is `1`. Is \"01\" a viable prefix? No, because after a complete number `0`, the next char must be whitespace, `,`, `]`, `}`, or end. `1` doesn't qualify. So pos = 1. \u2713\n- `\"1e5.5\"` -> pos 3. After parsing `1e5`, the next char is `.`. Is \"1e5.\" a viable prefix? No. So pos = 3. \u2713\n- `\"1.\"` -> pos 2. After `1.`, we need digits. Is \"1.\" a viable prefix? Yes (e.g., \"1.5\" starts with it). So pos = len(s) = 2. \u2713\n- `\"1.x\"` -> pos 2. After `1.`, `x` is not a digit. Is \"1.x\" a viable prefix? No. So pos = 2. \u2713\n\nFor the top-level value followed by garbage:\n- `\"1 2\"` -> pos 2. After parsing `1`, we skip whitespace, then find `2`. Is \"1 2\" a viable prefix? No. So pos = 2. \u2713\n- `\"[ 1 ] x\"` -> pos 6. After parsing `[ 1 ]`, we skip whitespace, find `x`. pos = 6. \u2713\n\nFor strings:\n- `'\"abc'` -> pos 4. The string is not terminated. Is `\"abc` a viable prefix? Yes (`\"abc\"` starts with it). pos = len(s) = 4. \u2713\n- `'\"a\\'` (the string is `\"a\\`) -> pos 3. After `\\`, we need a valid escape char. Is `\"a\\` a viable prefix? Yes (`\"a\\\\\"` starts with it). pos = len(s) = 3. \u2713\n- `'\"\\u12'` -> pos 5. After `\\u12`, we need more hex digits. Is `\""
+   },
+   "logprobs": null,
+   "finish_reason": "stop",
+   "stop_reason": null,
+   "token_ids": null,
+   "routed_experts": null
+  }
+ ],
+ "service_tier": null,
+ "system_fingerprint": "vllm-0.31.1rc1.dev173+g8cbd5d030-tp4-ep-9545f2a8",
+ "usage": {
+  "prompt_tokens": 2151,
+  "total_tokens": 4143,
+  "completion_tokens": 1992,
+  "prompt_tokens_details": null,
+  "completion_tokens_details": {
+   "reasoning_tokens": 1991
+  }
+ },
+ "prompt_logprobs": null,
+ "prompt_token_ids": null,
+ "prompt_text": null,
+ "kv_transfer_params": null,
+ "ec_transfer_params": null,
+ "metrics": null,
+ "_wall_s": 96.68132774799597
+}

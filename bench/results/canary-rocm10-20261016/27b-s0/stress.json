@@ -1,0 +1,58 @@
+{
+ "n": 7,
+ "ok": 7,
+ "target_tokens": 100000,
+ "wall_s": 1037.1350615024567,
+ "total_prompt_tokens": 637057,
+ "preemptions": 0.0,
+ "peak_vram_gib_per_gpu": {
+  "0": 31.77,
+  "1": 31.74,
+  "2": 31.3,
+  "3": 31.3
+ },
+ "requests": [
+  {
+   "s": 166.0975043773651,
+   "status": 200,
+   "prompt_tokens": 88626,
+   "error": ""
+  },
+  {
+   "s": 330.97236227989197,
+   "status": 200,
+   "prompt_tokens": 89736,
+   "error": ""
+  },
+  {
+   "s": 512.0034651756287,
+   "status": 200,
+   "prompt_tokens": 91739,
+   "error": ""
+  },
+  {
+   "s": 707.1932461261749,
+   "status": 200,
+   "prompt_tokens": 91739,
+   "error": ""
+  },
+  {
+   "s": 906.6089227199554,
+   "status": 200,
+   "prompt_tokens": 91739,
+   "error": ""
+  },
+  {
+   "s": 1033.9142909049988,
+   "status": 200,
+   "prompt_tokens": 91739,
+   "error": ""
+  },
+  {
+   "s": 1037.1240441799164,
+   "status": 200,
+   "prompt_tokens": 91739,
+   "error": ""
+  }
+ ]
+}

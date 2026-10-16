@@ -1,0 +1,67 @@
+{
+ "passed": 7,
+ "total": 13,
+ "fatal": null,
+ "timed_out": false,
+ "stderr_tail": "",
+ "tests": [
+  {
+   "test": "test_api_and_examples",
+   "ok": true
+  },
+  {
+   "test": "test_classes_escapes_anchors",
+   "ok": true
+  },
+  {
+   "test": "test_priority_and_laziness",
+   "ok": false,
+   "err": "ValueError: invalid literal for int() with base 10: '4}'"
+  },
+  {
+   "test": "test_capture_semantics",
+   "ok": true
+  },
+  {
+   "test": "test_empty_iteration_loops",
+   "ok": false,
+   "err": "ValueError: invalid literal for int() with base 10: '3}'"
+  },
+  {
+   "test": "test_invalid_patterns",
+   "ok": false,
+   "err": "ValueError: invalid literal for int() with base 10: '}'"
+  },
+  {
+   "test": "test_strict_dialect_rejections",
+   "ok": true
+  },
+  {
+   "test": "test_random_captures_diff",
+   "ok": false,
+   "err": "ValueError: invalid literal for int() with base 10: '}'"
+  },
+  {
+   "test": "test_random_empty_loops_diff",
+   "ok": false,
+   "err": "ValueError: invalid literal for int() with base 10: '2}'"
+  },
+  {
+   "test": "test_random_classes_anchors_diff",
+   "ok": false,
+   "err": "ValueError: invalid literal for int() with base 10: '}'"
+  },
+  {
+   "test": "test_random_syntax_validity",
+   "ok": true
+  },
+  {
+   "test": "test_scale_memoisation",
+   "ok": true
+  },
+  {
+   "test": "test_long_input_no_recursion",
+   "ok": true
+  }
+ ]
+}

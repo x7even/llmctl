@@ -1,0 +1,79 @@
+{
+ "passed": 0,
+ "total": 14,
+ "fatal": null,
+ "timed_out": false,
+ "stderr_tail": "",
+ "tests": [
+  {
+   "test": "test_lexical_syntax_and_display",
+   "ok": false,
+   "err": "SchemeError: _builtin_list() takes 1 positional argument but 2 were given"
+  },
+  {
+   "test": "test_integer_arithmetic",
+   "ok": false,
+   "err": "SchemeError: _builtin_add() takes 1 positional argument but 2 were given"
+  },
+  {
+   "test": "test_truthiness_equality_and_predicates",
+   "ok": false,
+   "err": "SchemeError: _builtin_not() takes 1 positional argument but 2 were given"
+  },
+  {
+   "test": "test_lists_apply_and_shadowing",
+   "ok": false,
+   "err": "SchemeError: _builtin_list() takes 1 positional argument but 2 were given"
+  },
+  {
+   "test": "test_closures_and_mutation",
+   "ok": false,
+   "err": "SchemeError: define: procedure needs at least a name"
+  },
+  {
+   "test": "test_binding_forms_and_internal_defines",
+   "ok": false,
+   "err": "SchemeError: _builtin_list() takes 1 positional argument but 2 were given"
+  },
+  {
+   "test": "test_evaluation_order",
+   "ok": false,
+   "err": "SchemeError: _builtin_list() takes 1 positional argument but 2 were given"
+  },
+  {
+   "test": "test_error_handling",
+   "ok": false,
+   "err": "AssertionError: '(display 1 2)': did not raise SchemeError"
+  },
+  {
+   "test": "test_tail_calls_long_loops",
+   "ok": false,
+   "err": "SchemeError: _builtin_add() takes 1 positional argument but 2 were given"
+  },
+  {
+   "test": "test_tail_calls_in_conditionals",
+   "ok": false,
+   "err": "SchemeError: _builtin_sub() takes 1 positional argument but 2 were given"
+  },
+  {
+   "test": "test_tail_calls_in_binding_forms_and_apply",
+   "ok": false,
+   "err": "SchemeError: define: invalid procedure definition"
+  },
+  {
+   "test": "test_deep_recursion_and_long_lists",
+   "ok": false,
+   "err": "SchemeError: _builtin_sub() takes 1 positional argument but 2 were given"
+  },
+  {
+   "test": "test_classic_programs",
+   "ok": false,
+   "err": "SchemeError: _builtin_sub() takes 1 positional argument but 2 were given"
+  },
+  {
+   "test": "test_randomized_differential",
+   "ok": false,
+   "err": "SchemeError: _builtin_sub() takes 1 positional argument but 2 were given"
+  }
+ ]
+}

@@ -1,0 +1,102 @@
+{
+ "passed": 16,
+ "total": 16,
+ "rows": [
+  {
+   "stream": false,
+   "prompt": "What's the weather in Paris? Use celsius.",
+   "ok": true,
+   "detail": "get_weather {\"city\": \"Paris\", \"unit\": \"c\"}"
+  },
+  {
+   "stream": false,
+   "prompt": "What's the weather in Tokyo? Use celsius.",
+   "ok": true,
+   "detail": "get_weather {\"city\": \"Tokyo\", \"unit\": \"c\"}"
+  },
+  {
+   "stream": false,
+   "prompt": "What's the weather in Lima? Use celsius.",
+   "ok": true,
+   "detail": "get_weather {\"city\": \"Lima\", \"unit\": \"c\"}"
+  },
+  {
+   "stream": false,
+   "prompt": "What's the weather in Oslo? Use celsius.",
+   "ok": true,
+   "detail": "get_weather {\"city\": \"Oslo\", \"unit\": \"c\"}"
+  },
+  {
+   "stream": false,
+   "prompt": "What's the weather in Cairo? Use celsius.",
+   "ok": true,
+   "detail": "get_weather {\"city\": \"Cairo\", \"unit\": \"c\"}"
+  },
+  {
+   "stream": false,
+   "prompt": "Use the add tool to add 17 and 25.",
+   "ok": true,
+   "detail": "add {\"a\": 17, \"b\": 25}"
+  },
+  {
+   "stream": false,
+   "prompt": "Use the add tool to add -4 and 1000.",
+   "ok": true,
+   "detail": "add {\"a\": -4, \"b\": 1000}"
+  },
+  {
+   "stream": false,
+   "prompt": "Use the add tool to add 123456 and 654321.",
+   "ok": true,
+   "detail": "add {\"a\": 123456, \"b\": 654321}"
+  },
+  {
+   "stream": true,
+   "prompt": "What's the weather in Paris? Use celsius.",
+   "ok": true,
+   "detail": "get_weather {\"city\": \"Paris\", \"unit\": \"c\"}"
+  },
+  {
+   "stream": true,
+   "prompt": "What's the weather in Tokyo? Use celsius.",
+   "ok": true,
+   "detail": "get_weather {\"city\": \"Tokyo\", \"unit\": \"c\"}"
+  },
+  {
+   "stream": true,
+   "prompt": "What's the weather in Lima? Use celsius.",
+   "ok": true,
+   "detail": "get_weather {\"city\": \"Lima\", \"unit\": \"c\"}"
+  },
+  {
+   "stream": true,
+   "prompt": "What's the weather in Oslo? Use celsius.",
+   "ok": true,
+   "detail": "get_weather {\"city\": \"Oslo\", \"unit\": \"c\"}"
+  },
+  {
+   "stream": true,
+   "prompt": "What's the weather in Cairo? Use celsius.",
+   "ok": true,
+   "detail": "get_weather {\"city\": \"Cairo\", \"unit\": \"c\"}"
+  },
+  {
+   "stream": true,
+   "prompt": "Use the add tool to add 17 and 25.",
+   "ok": true,
+   "detail": "add {\"a\": 17, \"b\": 25}"
+  },
+  {
+   "stream": true,
+   "prompt": "Use the add tool to add -4 and 1000.",
+   "ok": true,
+   "detail": "add {\"a\": -4, \"b\": 1000}"
+  },
+  {
+   "stream": true,
+   "prompt": "Use the add tool to add 123456 and 654321.",
+   "ok": true,
+   "detail": "add {\"a\": 123456, \"b\": 654321}"
+  }
+ ]
+}

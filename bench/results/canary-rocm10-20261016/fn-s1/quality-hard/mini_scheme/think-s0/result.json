@@ -1,0 +1,71 @@
+{
+ "passed": 8,
+ "total": 14,
+ "fatal": null,
+ "timed_out": false,
+ "stderr_tail": "",
+ "tests": [
+  {
+   "test": "test_lexical_syntax_and_display",
+   "ok": true
+  },
+  {
+   "test": "test_integer_arithmetic",
+   "ok": false,
+   "err": "SchemeError: Exceeds the limit (4300 digits) for integer string conversion: value has 4501 digits; use sys.set_int_max_str_digits() to increase the limit"
+  },
+  {
+   "test": "test_truthiness_equality_and_predicates",
+   "ok": true
+  },
+  {
+   "test": "test_lists_apply_and_shadowing",
+   "ok": true
+  },
+  {
+   "test": "test_closures_and_mutation",
+   "ok": true
+  },
+  {
+   "test": "test_binding_forms_and_internal_defines",
+   "ok": true
+  },
+  {
+   "test": "test_evaluation_order",
+   "ok": true
+  },
+  {
+   "test": "test_error_handling",
+   "ok": false,
+   "err": "AssertionError: '(display \"o\") (define x 1 2)': did not raise SchemeError"
+  },
+  {
+   "test": "test_tail_calls_long_loops",
+   "ok": false,
+   "err": "SchemeError: stack overflow"
+  },
+  {
+   "test": "test_tail_calls_in_conditionals",
+   "ok": false,
+   "err": "SchemeError: stack overflow"
+  },
+  {
+   "test": "test_tail_calls_in_binding_forms_and_apply",
+   "ok": false,
+   "err": "SchemeError: stack overflow"
+  },
+  {
+   "test": "test_deep_recursion_and_long_lists",
+   "ok": false,
+   "err": "SchemeError: stack overflow"
+  },
+  {
+   "test": "test_classic_programs",
+   "ok": true
+  },
+  {
+   "test": "test_randomized_differential",
+   "ok": true
+  }
+ ]
+}

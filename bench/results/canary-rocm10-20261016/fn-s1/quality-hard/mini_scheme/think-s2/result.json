@@ -1,0 +1,79 @@
+{
+ "passed": 0,
+ "total": 14,
+ "fatal": null,
+ "timed_out": false,
+ "stderr_tail": "",
+ "tests": [
+  {
+   "test": "test_lexical_syntax_and_display",
+   "ok": false,
+   "err": "AssertionError: '(display 1) .': .output '1', want ''"
+  },
+  {
+   "test": "test_integer_arithmetic",
+   "ok": false,
+   "err": "AssertionError: '(display (list (+) (*) (+ 5) (* 5) (- 5) (+ 1 2 3 4) (* 2 3 4) (- 10 1 2 3) (- 0 7)))': got '(0 1 5 5 5 10 24 4 -7)', want '(0 1 5 5 -5 10 24 4 -7)'"
+  },
+  {
+   "test": "test_truthiness_equality_and_predicates",
+   "ok": false,
+   "err": "AssertionError: '(display (let ((p (list 1))) (eq? p p)))': got '', want '#t'"
+  },
+  {
+   "test": "test_lists_apply_and_shadowing",
+   "ok": false,
+   "err": "AssertionError: \"(display (let ((t (list 3))) (eq? t (cdr (cdr (append '(1 2) t))))))\": got '', want '#t'"
+  },
+  {
+   "test": "test_closures_and_mutation",
+   "ok": false,
+   "err": "SchemeError: not a procedure"
+  },
+  {
+   "test": "test_binding_forms_and_internal_defines",
+   "ok": false,
+   "err": "AssertionError: '(define x 10) (display (let ((x 1) (y x)) (list x y)))': got '', want '(1 10)'"
+  },
+  {
+   "test": "test_evaluation_order",
+   "ok": false,
+   "err": "AssertionError: '(display (let ((a (begin (display \"1\") 1)) (b (begin (display \"2\") 2)) (c (begin (display \"3\") 3))) (list a b c)))': got '123', want '123(1 2 3)'"
+  },
+  {
+   "test": "test_error_handling",
+   "ok": false,
+   "err": "AssertionError: '()': did not raise SchemeError"
+  },
+  {
+   "test": "test_tail_calls_long_loops",
+   "ok": false,
+   "err": "SchemeError: maximum recursion depth exceeded"
+  },
+  {
+   "test": "test_tail_calls_in_conditionals",
+   "ok": false,
+   "err": "SchemeError: maximum recursion depth exceeded"
+  },
+  {
+   "test": "test_tail_calls_in_binding_forms_and_apply",
+   "ok": false,
+   "err": "SchemeError: maximum recursion depth exceeded"
+  },
+  {
+   "test": "test_deep_recursion_and_long_lists",
+   "ok": false,
+   "err": "SchemeError: length: not a proper list"
+  },
+  {
+   "test": "test_classic_programs",
+   "ok": false,
+   "err": "SchemeError: expected integer"
+  },
+  {
+   "test": "test_randomized_differential",
+   "ok": false,
+   "err": "AssertionError: program '(define a 8) (define b -4) (define c -5)\\n(display (or (cond ((or (or #f (or 6 -6 a)) (if b -10 (<= c -10000000000000000000531 a))) (let ((a (apply + (- a) (list (apply + -100000000000000000219 (list c))))) (c (if (let* ((a c) (b a)) c) (if 4 c a) b))) (apply + (apply + 10 ("
+  }
+ ]
+}

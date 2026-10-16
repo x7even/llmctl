@@ -1,0 +1,73 @@
+{
+ "passed": 1,
+ "total": 13,
+ "fatal": null,
+ "timed_out": false,
+ "stderr_tail": "",
+ "tests": [
+  {
+   "test": "test_api_and_examples",
+   "ok": false,
+   "err": "IndexError: list index out of range"
+  },
+  {
+   "test": "test_classes_escapes_anchors",
+   "ok": false,
+   "err": "IndexError: list index out of range"
+  },
+  {
+   "test": "test_priority_and_laziness",
+   "ok": false,
+   "err": "IndexError: list index out of range"
+  },
+  {
+   "test": "test_capture_semantics",
+   "ok": false,
+   "err": "IndexError: list index out of range"
+  },
+  {
+   "test": "test_empty_iteration_loops",
+   "ok": false,
+   "err": "IndexError: list index out of range"
+  },
+  {
+   "test": "test_invalid_patterns",
+   "ok": false,
+   "err": "AssertionError: compile('[a-'): raised IndexError, expected ValueError"
+  },
+  {
+   "test": "test_strict_dialect_rejections",
+   "ok": true
+  },
+  {
+   "test": "test_random_captures_diff",
+   "ok": false,
+   "err": "IndexError: list index out of range"
+  },
+  {
+   "test": "test_random_empty_loops_diff",
+   "ok": false,
+   "err": "IndexError: list index out of range"
+  },
+  {
+   "test": "test_random_classes_anchors_diff",
+   "ok": false,
+   "err": "IndexError: list index out of range"
+  },
+  {
+   "test": "test_random_syntax_validity",
+   "ok": false,
+   "err": "AssertionError: compile('$?'): did not raise ValueError"
+  },
+  {
+   "test": "test_scale_memoisation",
+   "ok": false,
+   "err": "IndexError: list index out of range"
+  },
+  {
+   "test": "test_long_input_no_recursion",
+   "ok": false,
+   "err": "IndexError: list index out of range"
+  }
+ ]
+}

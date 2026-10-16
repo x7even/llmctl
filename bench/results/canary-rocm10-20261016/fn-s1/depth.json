@@ -1,0 +1,52 @@
+{
+ "rows": [
+  {
+   "target": 1000,
+   "prompt_tokens": 916,
+   "completion_tokens": 512,
+   "ttft_s": 0.4177262783050537,
+   "prefill_tps": 2192.8235008741085,
+   "decode_tps": 30.79130091788501
+  },
+  {
+   "target": 8000,
+   "prompt_tokens": 7930,
+   "completion_tokens": 512,
+   "ttft_s": 2.8635215759277344,
+   "prefill_tps": 2769.3173561756066,
+   "decode_tps": 30.53790862145456
+  },
+  {
+   "target": 32000,
+   "prompt_tokens": 32386,
+   "completion_tokens": 512,
+   "ttft_s": 11.738237142562866,
+   "prefill_tps": 2759.0173555591505,
+   "decode_tps": 30.412435772512772
+  },
+  {
+   "target": 64000,
+   "prompt_tokens": 65657,
+   "completion_tokens": 512,
+   "ttft_s": 23.926324129104614,
+   "prefill_tps": 2744.132347523165,
+   "decode_tps": 30.798560862443313
+  },
+  {
+   "target": 128000,
+   "prompt_tokens": 132230,
+   "completion_tokens": 512,
+   "ttft_s": 49.1974995136261,
+   "prefill_tps": 2687.738224650556,
+   "decode_tps": 30.18848046761235
+  },
+  {
+   "target": 200000,
+   "prompt_tokens": 207138,
+   "completion_tokens": 512,
+   "ttft_s": 79.02389287948608,
+   "prefill_tps": 2621.2072381183743,
+   "decode_tps": 30.113403231489258
+  }
+ ]
+}

@@ -77,13 +77,15 @@ Use **separate** vLLM and triton cache directories (under the job tmp dir) so th
 polluted and the true cold-start time is recorded. This answers "does ROCm 10 userspace run on the 7.2 driver"
 and yields the full comparison numbers without touching the host.
 
-**B2. Host driver move (only if B1 shows a gain worth the risk; user at the console).** The host is the only
-machine, so before any change: record `dpkg -l | grep -E 'rocm|amdgpu|hsa'` and the kernel version into this
-document, keep the old package repo pinned and cached, and confirm the previous driver can be reinstalled offline.
-Install the new driver, reboot, run `llmctl hw`, then repeat the full suite on the candidate image (state S2) and
-smoke the production images and the Vulkan path (`gemma4-26b-q8` on llama-server), because the amdgpu kernel driver
-is shared by both. Rollback is reinstalling the recorded versions; if the GPUs do not enumerate, that is a console
-job, so this is never done unattended.
+**B2. Host stack move (user at the console).** Scope changed after B1: see **section 9** for the full runbook.
+B1 showed the ROCm 10 image is unusable on the 7.2 driver, and AMD's 10.1 matrix explains why — the pairing was
+never a supported configuration. So B2 is no longer "only if B1 shows a gain": it is the first measurement of a
+stack AMD actually validates, and B1's numbers are discarded rather than used as a gate.
+
+The host is the only machine. Rollback is an LVM snapshot of the root LV plus images of `/boot` and `/boot/efi`
+(which live outside the LV), not package reinstallation — the cached 30.20 debs are `noble` builds and do not
+apply after a release upgrade. If the GPUs do not enumerate, that is a console job, so this is never done
+unattended.
 
 **B3. Cut over: blocked on the comparison in section 6.** Change the pins in one PR (models.yaml,
 `config/CLAUDE.md`, root `CLAUDE.md`, `scripts/`), keep `localhost/llmstack-vllm-rollback:v0.26.0` until the next
@@ -164,3 +166,184 @@ move. The orchestration is resumable (stages with existing output are skipped).
   on the only machine? If S1 shows no gain or a regression, the plan stops here and S2 is never run.
 - B2 needs the user at the console in case the driver move needs recovery.
 - B3 (the pin change and v0.5.0) happens only after the user has read the comparison.
+
+## 8. B1 result: the ROCm 10 image fails on the 7.2 driver (2026-10-16)
+
+Both candidate states fail, and neither failure is attributable to our flags.
+
+**27B does not boot at all.** Startup memory profiling reaches the Qwen3-VL vision encoder and dies in
+`F.scaled_dot_product_attention`: `torch.AcceleratorError: CUDA error: invalid argument`
+(`hipErrorInvalidValue`). Path: `gpu_worker.determine_available_memory` → `model_runner.profile_run` →
+`encoder_runner.profile_encoder_cache` → `qwen3_vl._process_image_input` → `mm_encoder_attention._forward_sdpa`.
+Reproducible; log in `bench/results/canary-rocm10-20261016/27b-s1/boot-fail.log`.
+
+**Flash-Next boots and runs, but decode collapses.** `canary_compare.py fn-s0 fn-s1`:
+
+| Measure | S0 | S1 | Δ | Gate |
+|---|---|---|---|---|
+| medium-256 serial | 58.0 | 49.4 | **−12.2%** | −5% |
+| medium-256 conc=8 | — | — | **−12.1%** | −5% |
+| medium-256 conc=16 | — | — | **−9.0%** | −5% |
+| streamed decode, 1K–200K | ~57.8 | ~30.5 | **−46% to −47% at all six depths** | −10% |
+| prefill, all depths | ~2.7K tok/s | ~2.7K tok/s | unchanged | — |
+| tools | 16/16 | 16/16 | pass | ≥14/16 |
+| stress | 7/7, 0 preempt | 7/7, 0 preempt | pass | 7/7 |
+| peak VRAM | 29.9 GiB/GPU | 29.8 GiB/GPU | pass | — |
+| quality `regex_engine` | 21% | 8% | −13 pts | 10 pts |
+
+Other quality tasks moved within noise at 8 samples (cron_next 98→89, date_math 69→83, json_strict 89→80,
+mini_scheme 42→61; early stops 3→5).
+
+**Reading of it.** Prefill is unchanged while decode loses a flat ~47% at every depth. That is the signature of a
+fixed per-token cost, not a math-kernel regression: Flash-Next decode is latency-bound small all-reduces across
+TP4+EP over PCIe. The image delta that fits is **RCCL 2.27.7 → 2.30.4** (7.2.3 `/opt/rocm-7.2.3/librccl.so.1.0.70203`
+vs the 10.0.0 `_rocm_sdk_*` wheels). Other deltas: HIP 7.2.53211 → 7.15.26333, torch 2.13.0+git → 2.12.0+rocm10.0.0,
+amdsmi 26.2.2 → 27.0.0, amd_mori 0.0.0 → 1.2.3.post1; aiter and flash_attn identical.
+
+**But the whole comparison is void as a verdict on ROCm 10**, because AMD's 10.1.0 matrix shows this pairing was
+never supported: gfx1201 under ROCm 10.1 requires amdgpu **31.60.0 or 31.50.0**, and we ran ROCm 10.0 userspace on
+amdgpu **30.20**. (30.20 is inside 10.0.0's wider 30.10–31.50 Radeon range, so driver skew alone does not explain
+the slowdown — but it does mean the configuration is untested by AMD and not worth tuning.) The S1 numbers are
+therefore recorded as evidence that the shortcut does not work, not as a measurement of ROCm 10. Tuning was
+explicitly not attempted. The pin stays at `v0.26.0` / `nightly-8cbd5d03…`.
+
+## 9. B2 runbook: Ubuntu 26.04.1 + amdgpu 31.60 + ROCm 10.1
+
+### Why 26.04.1 and not 24.04.5 + HWE 7.0
+
+AMD's ROCm 10.1.0 table for Radeon AI PRO R9000 (RDNA 4, gfx1201) lists three supported rows — Ubuntu 26.04.1
+kernel GA 7.0, 24.04.5 kernel HWE 7.0, 22.04.5 kernel HWE 6.8 — with amdgpu 31.60.0 or 31.50.0. The host is
+already 24.04.5, so both of the first two rows are reachable. 26.04.1 is chosen because:
+
+- **Kernel 7.0 is the distro GA kernel there**, not an HWE bolt-on. `linux-generic-hwe-24.04` tracks forward to
+  newer kernels at each point release, and each roll is another chance for the out-of-tree DKMS driver to break.
+- **It removes the Vulkan skew we otherwise could not test.** There is no `graphics/31.x` repo on repo.radeon.com
+  (only `graphics/7.2`), so on 24.04 the RADV stack for the GGUF llama-server profiles would stay pinned at AMD's
+  `mesa-amdgpu` 26.0.0 overlay while ROCm moved to 10.1. Ubuntu 26.04 ships `mesa-vulkan-drivers` **26.0.8** —
+  newer than AMD's overlay — so the overlay is dropped entirely and the Vulkan path runs on distro RADV.
+- One maintenance window instead of two; podman 5.x; LTS support to 2031.
+
+Both halves publish for 26.04 (`resolute`), verified 2026-10-16: amdgpu `31.60/ubuntu/dists/resolute` serves
+`amdgpu-dkms 1:7.1.9.31600000-2407772.26.04`, and `stable.repo.amd.com/rocm/core/packages/ubuntu2604` serves
+`amdrocm10.1-gfx1201 10.1.0-3`. `do-release-upgrade -c` offers `26.04.1 LTS`.
+
+### Hazards specific to this host
+
+1. **No iGPU.** All four VGA controllers are `1002:7551` (R9700) and `card0` drives the DisplayPort console.
+   Kernel 6.8's in-tree amdgpu predates gfx1201, so between purging `amdgpu-dkms` and booting kernel 7.0 there is
+   no gfx1201 kernel driver. **Do not reboot between the purge and the release upgrade**, and have SSH available
+   in case the local console goes dark.
+2. **`/boot` and `/boot/efi` are outside the root LV** (`nvme2n1p2`, `nvme2n1p1`). A snapshot of root alone would
+   roll back to a 24.04 root booted by 26.04 kernels. Image both partitions as well.
+3. **The cached rollback debs are useless after the upgrade.** `/home/xin/rocm-rollback-20261016/` holds `noble`
+   builds of amdgpu-dkms 30.20. After the move, the snapshot plus the `/boot` images are the only rollback.
+4. **podman 4.9.3 → 5.x migrates the rootless store** (95 GB). Never run `podman system reset` as a fix — it
+   wipes the store. The network backend is already `netavark`, so there is no CNI migration.
+
+### Pre-flight (done, no sudo needed)
+
+- Local-only images saved to `/mnt/models/_host-backup-20261016/local-images.tar` (2.5 GB): `llmstack-llama:latest`,
+  `llmstack-llama:b9542-baseline`, `llama-vulkan-bleeding:mesa26`, `llmstack-llama-qwen4exp:6fcaa16`. All four are
+  also reproducible from `containers/*/Containerfile`.
+- `localhost/llmstack-vllm-rollback:v0.26.0` needs no backup: it shares image ID `3d7fe5e20f0d` with
+  `docker.io/vllm/vllm-openai-rocm:v0.26.0`, so it is a retag — re-create with `podman tag` after a re-pull.
+- The docker.io vLLM images (~137 GB) are re-pullable, slowly.
+
+### Steps
+
+**0. Verify snapshot room, then image what the snapshot cannot cover.**
+
+```bash
+sudo vgs                       # need VFree >= ~200G (lsblk implies ~800G: 1.8T partition, 1000G LV)
+sudo dd if=/dev/nvme2n1p2 of=/mnt/models/_host-backup-20261016/boot.img    bs=4M status=progress
+sudo dd if=/dev/nvme2n1p1 of=/mnt/models/_host-backup-20261016/bootefi.img bs=4M status=progress
+sudo tar -C / -czf /mnt/models/_host-backup-20261016/etc.tar.gz etc
+```
+
+**1. LVM snapshot of root.**
+
+```bash
+sudo lvcreate -s -n root-pre26 -L 200G /dev/ubuntu-vg/ubuntu-lv
+```
+
+Rollback, if needed: `sudo lvconvert --merge /dev/ubuntu-vg/root-pre26 && sudo reboot`, then restore
+`boot.img`/`bootefi.img` to their partitions from a live USB if the kernels no longer match.
+
+**2. Purge the AMD 7.2 stack — and do not reboot afterwards.**
+
+Required by AMD's own 10.1 instructions (uninstall ROCm 7.2.4 or older first), and necessary here because
+noble-built `amdgpu-dkms 6.16.6` cannot build against kernel 7.0 and the `mesa-amdgpu`/`libllvm20.1-amdgpu`
+overlays would fight Ubuntu's mesa during the upgrade.
+
+```bash
+sudo amdgpu-install --uninstall -y
+sudo apt purge -y 'amdgpu*' 'rocm*' 'mesa-amdgpu*' 'libdrm-amdgpu*' 'libllvm*-amdgpu*' '*-amdgpu-mesa*'
+sudo apt autoremove -y
+sudo rm -f /etc/apt/sources.list.d/amdgpu*.list /etc/apt/sources.list.d/rocm*.list
+dkms status                    # must be empty
+```
+
+**3. Release upgrade, in the same sitting.**
+
+```bash
+sudo apt update && sudo apt full-upgrade -y
+sudo do-release-upgrade
+```
+
+Keep local versions of config files we own when prompted. Reboot lands on 26.04.1 + kernel 7.0, whose in-tree
+amdgpu does support gfx1201, so console and cards should both return.
+
+**4. amdgpu 31.60.**
+
+```bash
+cd /tmp && wget https://repo.radeon.com/amdgpu-install/31.60/ubuntu/resolute/amdgpu-install_31.60.316000-1_all.deb
+sudo apt install ./amdgpu-install_31.60.316000-1_all.deb
+sudo apt update && sudo apt install -y amdgpu-dkms
+sudo reboot
+```
+
+**5. Verify the driver before anything else.**
+
+```bash
+uname -r                       # 7.0.x
+dkms status                    # amdgpu/31.60 built for 7.0
+amd-smi version && amd-smi list   # 4 GPUs, gfx1201
+groups                         # render, video
+```
+
+**6. ROCm 10.1 userspace (optional — the containers carry their own).**
+
+```bash
+sudo apt install -y libatomic1 libquadmath0
+sudo mkdir -p /etc/apt/keyrings
+curl -fsSL https://stable.repo.amd.com/rocm/gpg/packages.gpg | sudo tee /etc/apt/keyrings/amdrocm.gpg >/dev/null
+sudo tee /etc/apt/sources.list.d/amdrocm-stable.sources >/dev/null <<'EOF'
+Types: deb
+URIs: https://stable.repo.amd.com/rocm/core/packages/ubuntu2604/
+Suites: stable
+Components: main
+Architectures: amd64
+Signed-By: /etc/apt/keyrings/amdrocm.gpg
+EOF
+sudo apt update && sudo apt install -y amdrocm10.1-gfx1201
+```
+
+### 7. Post-move validation, before any S2 benchmarking
+
+The driver change cuts both ways: production `v0.26.0` carries ROCm **7.2.3** userspace and will now be running on
+an amdgpu **31.60** driver — the inverse skew to the one B1 just failed on. A boot check is not enough.
+
+- `podman images` intact after the 5.x store migration; `podman tag` the rollback alias back if it was lost.
+- `llmctl hw`, `llmctl up`, then boot production 27B `v0.26.0` and Flash-Next `nightly-8cbd5d03…`.
+- Vulkan GGUF path on distro RADV instead of AMD's overlay: `llmctl swap gemma4-26b-q8`.
+- `cd tui && go test ./...`, and re-check the Python tooling (host Python moves 3.12 → newer; `python3-yaml` is a
+  distro package so apt handles it, but confirm `llmctl` and `bench/canary_router.py` still import).
+- **Re-run the full S0 suite on the unchanged production images as state S0′**, then
+  `canary_compare.py bench/results/canary-rocm10-20261016/{fn-s0,fn-s0prime}`. This is the "production still
+  works" gate and the thing that must pass before the pin is allowed to move.
+
+Only then run S2 on `nightly-rocm100-8cbd5d03…`.
+
+**Confound to carry in the write-up:** S2 vs S1 now mixes OS, kernel, driver and mesa. The clean readings are
+**S0′ vs S0** (OS/kernel/driver effect, image held constant) and **S2 vs S0′** (image effect on the supported
+host). Do not quote S2 vs S1 as "the ROCm 10 delta".

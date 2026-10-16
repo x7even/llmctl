@@ -1,0 +1,79 @@
+{
+ "passed": 0,
+ "total": 14,
+ "fatal": null,
+ "timed_out": false,
+ "stderr_tail": "",
+ "tests": [
+  {
+   "test": "test_lexical_syntax_and_display",
+   "ok": false,
+   "err": "AssertionError: '(display 1) .': .output '1', want ''"
+  },
+  {
+   "test": "test_integer_arithmetic",
+   "ok": false,
+   "err": "SchemeError: malformed define"
+  },
+  {
+   "test": "test_truthiness_equality_and_predicates",
+   "ok": false,
+   "err": "AssertionError: '(display (and 1 2 3))': got '#t', want '3'"
+  },
+  {
+   "test": "test_lists_apply_and_shadowing",
+   "ok": false,
+   "err": "AssertionError: \"(display (append '(1) '(2 3) '() '(4)))\": got '(1 3 2 4)', want '(1 2 3 4)'"
+  },
+  {
+   "test": "test_closures_and_mutation",
+   "ok": false,
+   "err": "SchemeError: malformed define"
+  },
+  {
+   "test": "test_binding_forms_and_internal_defines",
+   "ok": false,
+   "err": "SchemeError: 'Pair' object is not reversible"
+  },
+  {
+   "test": "test_evaluation_order",
+   "ok": false,
+   "err": "SchemeError: 'Pair' object is not reversible"
+  },
+  {
+   "test": "test_error_handling",
+   "ok": false,
+   "err": "AssertionError: '()': did not raise SchemeError"
+  },
+  {
+   "test": "test_tail_calls_long_loops",
+   "ok": false,
+   "err": "SchemeError: malformed define"
+  },
+  {
+   "test": "test_tail_calls_in_conditionals",
+   "ok": false,
+   "err": "SchemeError: malformed define"
+  },
+  {
+   "test": "test_tail_calls_in_binding_forms_and_apply",
+   "ok": false,
+   "err": "SchemeError: malformed define"
+  },
+  {
+   "test": "test_deep_recursion_and_long_lists",
+   "ok": false,
+   "err": "SchemeError: malformed define"
+  },
+  {
+   "test": "test_classic_programs",
+   "ok": false,
+   "err": "SchemeError: malformed define"
+  },
+  {
+   "test": "test_randomized_differential",
+   "ok": false,
+   "err": "SchemeError: malformed cond clause"
+  }
+ ]
+}

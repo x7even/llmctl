@@ -1,0 +1,69 @@
+{
+ "passed": 10,
+ "total": 14,
+ "fatal": null,
+ "timed_out": false,
+ "stderr_tail": "",
+ "tests": [
+  {
+   "test": "test_no_forbidden_imports",
+   "ok": true
+  },
+  {
+   "test": "test_leap_and_month_lengths",
+   "ok": true
+  },
+  {
+   "test": "test_ordinal_weekday",
+   "ok": false,
+   "err": "AssertionError: from_ordinal(584388)"
+  },
+  {
+   "test": "test_iso_week_vs_stdlib",
+   "ok": false,
+   "err": "AssertionError: from_iso_week(2000, 52, 7)"
+  },
+  {
+   "test": "test_from_iso_week_rules",
+   "ok": true
+  },
+  {
+   "test": "test_add_days",
+   "ok": true
+  },
+  {
+   "test": "test_add_months_oracle",
+   "ok": true
+  },
+  {
+   "test": "test_parse_accepts",
+   "ok": false,
+   "err": "AssertionError: parse('2000-W52-7') = (2001, 1, 1), want (2000, 12, 31)"
+  },
+  {
+   "test": "test_parse_rejects",
+   "ok": true
+  },
+  {
+   "test": "test_format_date",
+   "ok": false,
+   "err": "AssertionError: parse(format_date((2000, 12, 31), 'week')) round trip"
+  },
+  {
+   "test": "test_diff_rule",
+   "ok": true
+  },
+  {
+   "test": "test_diff_oracle_and_identity",
+   "ok": true
+  },
+  {
+   "test": "test_validation_and_types",
+   "ok": true
+  },
+  {
+   "test": "test_scale",
+   "ok": true
+  }
+ ]
+}

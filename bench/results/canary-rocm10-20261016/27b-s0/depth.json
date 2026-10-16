@@ -1,0 +1,44 @@
+{
+ "rows": [
+  {
+   "target": 1000,
+   "prompt_tokens": 916,
+   "completion_tokens": 512,
+   "ttft_s": 0.25890398025512695,
+   "prefill_tps": 3537.9911853705885,
+   "decode_tps": 84.27081336857158
+  },
+  {
+   "target": 8000,
+   "prompt_tokens": 7930,
+   "completion_tokens": 512,
+   "ttft_s": 1.8279523849487305,
+   "prefill_tps": 4338.187397710809,
+   "decode_tps": 48.337597067533096
+  },
+  {
+   "target": 32000,
+   "prompt_tokens": 32386,
+   "completion_tokens": 512,
+   "ttft_s": 9.262724161148071,
+   "prefill_tps": 3496.379621865573,
+   "decode_tps": 17.372692188723608
+  },
+  {
+   "target": 64000,
+   "prompt_tokens": 65657,
+   "completion_tokens": 512,
+   "ttft_s": 26.673903942108154,
+   "prefill_tps": 2461.469462531582,
+   "decode_tps": 9.920781262839759
+  },
+  {
+   "target": 120000,
+   "prompt_tokens": 123913,
+   "completion_tokens": 512,
+   "ttft_s": 80.0877730846405,
+   "prefill_tps": 1547.2149521381116,
+   "decode_tps": 6.262851028474801
+  }
+ ]
+}

@@ -1,0 +1,69 @@
+{
+ "passed": 10,
+ "total": 14,
+ "fatal": null,
+ "timed_out": false,
+ "stderr_tail": "",
+ "tests": [
+  {
+   "test": "test_lexical_syntax_and_display",
+   "ok": false,
+   "err": "AssertionError: '(display 1) .': .output '1', want ''"
+  },
+  {
+   "test": "test_integer_arithmetic",
+   "ok": false,
+   "err": "AssertionError: '(display (list (list (quotient -9 -5) (remainder -9 -5) (modulo -9 -5)) (list (quotient -9 -4) (remainder -9 -4) (modulo -9 -4)) (list (quotient -9 -3) (remainder -9 -3) (modulo -9 -3)) (list (quotient -9 -2) (remainder -9 -2) (modulo -9 -2)) (list (quotient -9 -1) (remainder -9 -1)"
+  },
+  {
+   "test": "test_truthiness_equality_and_predicates",
+   "ok": true
+  },
+  {
+   "test": "test_lists_apply_and_shadowing",
+   "ok": true
+  },
+  {
+   "test": "test_closures_and_mutation",
+   "ok": true
+  },
+  {
+   "test": "test_binding_forms_and_internal_defines",
+   "ok": true
+  },
+  {
+   "test": "test_evaluation_order",
+   "ok": true
+  },
+  {
+   "test": "test_error_handling",
+   "ok": false,
+   "err": "AssertionError: '(display \"o\") (if 1 2 3 4)': did not raise SchemeError"
+  },
+  {
+   "test": "test_tail_calls_long_loops",
+   "ok": true
+  },
+  {
+   "test": "test_tail_calls_in_conditionals",
+   "ok": true
+  },
+  {
+   "test": "test_tail_calls_in_binding_forms_and_apply",
+   "ok": true
+  },
+  {
+   "test": "test_deep_recursion_and_long_lists",
+   "ok": true
+  },
+  {
+   "test": "test_classic_programs",
+   "ok": true
+  },
+  {
+   "test": "test_randomized_differential",
+   "ok": false,
+   "err": "AssertionError: program '(define a -5) (define b -3) (define c -1)\\n(display (- (let ((n (if (or c 10) a (let ((c 5) (x c)) a))) (d ((lambda (b x) (let ((n -10000000000000000000000431) (d 3)) (if (= d 0) 0 (modulo n d)))) (+ b) (car (cdr (list a a -10)))))) (if (= d 0) 0 (quotient n d))) (car (cdr ("
+  }
+ ]
+}

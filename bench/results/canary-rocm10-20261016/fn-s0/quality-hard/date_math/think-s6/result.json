@@ -1,0 +1,76 @@
+{
+ "passed": 3,
+ "total": 14,
+ "fatal": null,
+ "timed_out": false,
+ "stderr_tail": "",
+ "tests": [
+  {
+   "test": "test_no_forbidden_imports",
+   "ok": true
+  },
+  {
+   "test": "test_leap_and_month_lengths",
+   "ok": true
+  },
+  {
+   "test": "test_ordinal_weekday",
+   "ok": false,
+   "err": "AssertionError: from_ordinal(584023)"
+  },
+  {
+   "test": "test_iso_week_vs_stdlib",
+   "ok": false,
+   "err": "AssertionError: iso_week(1950, 1, 1) = (1948, 105, 7), want (1949, 52, 7)"
+  },
+  {
+   "test": "test_from_iso_week_rules",
+   "ok": false,
+   "err": "AssertionError: "
+  },
+  {
+   "test": "test_add_days",
+   "ok": false,
+   "err": "AssertionError: add_days((5399, 5, 5),345) = (5399, 12, 136), want (5400, 4, 15)"
+  },
+  {
+   "test": "test_add_months_oracle",
+   "ok": true
+  },
+  {
+   "test": "test_parse_accepts",
+   "ok": false,
+   "err": "AssertionError: parse('1996-W01-1') = (1995, 12, 32), want (1996, 1, 1)"
+  },
+  {
+   "test": "test_parse_rejects",
+   "ok": false,
+   "err": "AssertionError: parse('2024-W10-7')"
+  },
+  {
+   "test": "test_format_date",
+   "ok": false,
+   "err": "AssertionError: format_date((1999, 1, 1), 'week') = '1997-W105-5', want '1998-W53-5'"
+  },
+  {
+   "test": "test_diff_rule",
+   "ok": false,
+   "err": "AssertionError: "
+  },
+  {
+   "test": "test_diff_oracle_and_identity",
+   "ok": false,
+   "err": "AssertionError: "
+  },
+  {
+   "test": "test_validation_and_types",
+   "ok": false,
+   "err": "AssertionError: "
+  },
+  {
+   "test": "test_scale",
+   "ok": false,
+   "err": "ValueError: day out of range"
+  }
+ ]
+}
