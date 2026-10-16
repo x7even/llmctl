@@ -97,7 +97,8 @@ divisible by 3` (the 16 linear-attention heads).
 
 Per card at TP4+EP (31.86 GiB): weights 18.79, graphs 0.72, KV 6.91, about 3 spare. The
 checkpoint is 116 GiB; the 47.7 GiB FP8 per-layer-embedding (PLE) table is offloaded to
-pinned host RAM, which also needs the container to run with `--ulimit memlock=-1:-1`.
+pinned host RAM (via the HIP pinned-host allocator; `--ulimit memlock=-1:-1` in the profile is
+inert under rootless podman, see `docs/models.md`).
 
 - **TP2 fails:** `torch.OutOfMemoryError` while loading weights (31.20 GiB allocated, 50 MiB
   free). The 4-card layout at about 19 GiB/GPU is required.

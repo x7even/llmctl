@@ -452,9 +452,11 @@ models:
   #          a tagged release once one ships with the same support.
   # Weights: 121 GB (116 GiB) checkpoint. Per card (31.86 GiB): weights 18.79, graphs 0.72,
   #          KV 6.91, ~3 spare. The FP8 PLE (n-gram embedding) table,
-  #          47.7 GiB, is CPU-offloaded into pinned host RAM (~12 GiB per rank), hence
-  #          --ulimit memlock=-1:-1 (rootless podman default is ~23 GiB). Needs ~96 GB
-  #          host RAM and all four cards: TP2 OOMs loading weights, TP3 fails: vocab 248320 not divisible by 3 (docs/gpu-counts.md).
+  #          47.7 GiB, is CPU-offloaded into pinned host RAM (~48 GiB total; measured 16-21 GiB
+  #          of anonymous host memory per worker). Pinning goes through the HIP pinned-host
+  #          allocator, not mlock, so --ulimit memlock=-1:-1 is inert under rootless podman
+  #          (hard limit stays ~23.5 GiB with or without it; kept as a no-op for rootful/other
+  #          setups, checked 2026-10-16). Needs ~96 GB host RAM and all four cards: TP2 OOMs loading weights, TP3 fails: vocab 248320 not divisible by 3 (docs/gpu-counts.md).
   # Notes:   MTP (runtime/mtp-int4-g32 draft, 2 tokens) accepts ~2.0 tokens/step
   #          but gave no throughput gain and cost 40% of KV capacity: left off.
   #          VLLM_ROCM_USE_AITER=0: AITER has no Qwen4Exp path, Triton kernels used.

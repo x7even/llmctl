@@ -83,7 +83,7 @@ llmpanel
 | `qwen3.8-27b-think` | vLLM TP=4 | ~31 GB + KV | 131K | Same model without MTP — better for parallel agent fleets |
 | `qwen3.8-27b-fast` | vLLM TP=4 + MTP | ~31 GB + KV | 131K | Thinking off by default — quick answers, bulk work |
 | `qwen3.8-flash-next` | llama-server Vulkan | ~81 GB | 262K (2 slots) | Qwen3.8-Flash-Next 125B (6B active), UD-IQ4_XS GGUF; single-user. For concurrent agents use `qwen3.8-flash-next-vllm` |
-| `qwen3.8-flash-next-vllm` | vLLM TP=4 + EP (nightly image) | ~19 GB/GPU + ~12 GB pinned host RAM/rank (~96 GB host RAM) | 262K | Same model, W4A16 INT4; decode scales with concurrency (**~150-185 tok/s conc=8**, 182 in the best run, vs ~34 for GGUF at 4 streams), flat ~55 tok/s out to 258K context; defaults to medium reasoning effort. Needs `memlock` unlimited; exclusive VRAM; needs all 4 GPUs |
+| `qwen3.8-flash-next-vllm` | vLLM TP=4 + EP (nightly image) | ~19 GB/GPU + ~48 GB pinned host RAM (~96 GB host RAM) | 262K | Same model, W4A16 INT4; decode scales with concurrency (**~150-185 tok/s conc=8**, 182 in the best run, vs ~34 for GGUF at 4 streams), flat ~55 tok/s out to 258K context; defaults to medium reasoning effort. Exclusive VRAM; needs all 4 GPUs |
 | `qwen3.6-35b-code` | vLLM TP=4 + MTP | ~35 GB | 131K | Previous generation (MoE, 3B active) — MTP + thinking |
 | `qwen3.6-35b-128k-nomtp` | vLLM TP=4 | ~35 GB | 131K | Previous generation — thinking, no MTP, high concurrency |
 | `qwen3.6-35b-fast` | vLLM TP=4 | ~35 GB | 262K | Previous generation — thinking disabled by default |

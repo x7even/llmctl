@@ -128,6 +128,22 @@ def extract_code(text):
     return m.group(1) if m else text
 
 
+def early_stop(finish, content):
+    """Classify a reply the model ended early (finish_reason=stop) so it is not read as a wrong answer.
+
+    "empty": no content at all. "cut": the reply ends inside an unterminated code fence.
+    Both are premature end-of-turn from the model or its serving stack, not a failed test, and a
+    canary that shows them (a checkpoint, image or kernel change) should be stopped on them.
+    """
+    if finish != "stop":
+        return None
+    if not (content or "").strip():
+        return "empty"
+    if content.count("```") % 2:
+        return "cut"
+    return None
+
+
 def call_model(url, model, prompt, mode, max_tokens, timeout=3600):
     body = {
         "model": model,
@@ -177,6 +193,7 @@ def grade_saved(d, task, mode, k, resp=None):
         "task": task, "mode": mode, "sample": k,
         "passed": g["passed"], "total": g["total"], "full_pass": g["passed"] == g["total"],
         "fatal": g["fatal"], "finish": resp["choices"][0].get("finish_reason"),
+        "early_stop": early_stop(resp["choices"][0].get("finish_reason"), msg.get("content")),
         "completion_tokens": u.get("completion_tokens"), "wall_s": round(resp.get("_wall_s", 0), 1),
         "reasoning_chars": len(msg.get("reasoning") or msg.get("reasoning_content") or ""),
         "failed_tests": [t["test"] for t in g["tests"] if not t["ok"]],
@@ -189,8 +206,8 @@ def summarize(rows, out, model):
              f"(temperature {TEMPERATURE}, top_p {TOP_P}, max_tokens {MAX_TOKENS}, "
              f"reasoning_effort {REASONING_EFFORT or 'template default'}"
              + "".join(f", {k} {v}" for k, v in EXTRA.items() if v is not None) + ")", "",
-             "| task | mode | samples | full passes | mean tests passed | mean completion tok | truncated | import failures |",
-             "|---|---|---|---|---|---|---|---|"]
+             "| task | mode | samples | full passes | mean tests passed | mean completion tok | truncated | early stops (empty/cut) | import failures |",
+             "|---|---|---|---|---|---|---|---|---|"]
     for task in sorted({r["task"] for r in ok}):
         for mode in sorted({r["mode"] for r in ok if r["task"] == task}):
             g = [r for r in ok if r["task"] == task and r["mode"] == mode]
@@ -200,6 +217,7 @@ def summarize(rows, out, model):
             lines.append(
                 f"| {task} | {mode} | {n} | {sum(r['full_pass'] for r in g)}/{n} | {frac * 100:.1f}% | "
                 f"{(sum(toks) / len(toks)) if toks else 0:.0f} | {sum(r['finish'] == 'length' for r in g)} | "
+                f"{sum(r.get('early_stop') == 'empty' for r in g)}/{sum(r.get('early_stop') == 'cut' for r in g)} | "
                 f"{sum(bool(r['fatal']) for r in g)} |")
     errs = [r for r in rows if "error" in r]
     if errs:

@@ -319,7 +319,7 @@ llama.cpp auto-discovers the remaining parts.
 | Flag | What it does | When to change |
 |------|-------------|----------------|
 | `--max-num-seqs` | Max concurrent sequences in flight | Lower if OOM; raise if throughput limited and VRAM free |
-| `--gpu-memory-utilization` | Fraction of VRAM reserved for KV cache | Lower if OOM; keep at 0.95–0.97 normally |
+| `--gpu-memory-utilization` | Fraction of VRAM reserved for KV cache | Lower if OOM; keep at 0.95–0.97 normally. Exception: `qwen3.8-flash-next-vllm` stays at 0.90 (0.97 stalls under concurrent 100K prompts; see docs/models.md) |
 | `--kv-cache-dtype fp8` | Store KV tensors in FP8 | Leave on for all vLLM profiles; saves ~40% KV VRAM |
 | `concurrencyLimit` | Queue depth before 429 | Set to `--max-num-seqs` or slightly above |
 | `ttl` | Seconds before auto-unload | 0 = never; useful for infrequently used profiles |
