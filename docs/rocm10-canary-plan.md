@@ -266,6 +266,38 @@ image. Caveats to carry: it is vLLM 0.29.0 against our 0.26.0 production pin (no
 had), and AMD's matrix lists PyTorch **2.14.0** as the validated version for Radeon while simultaneously saying
 vLLM 0.29.0 "requires PyTorch 2.13.0" — a tension AMD does not reconcile.
 
+**Image pulled and probed on CPU, 2026-10-16** (75.4 GB on disk). Contents differ from the tag in ways that
+matter:
+
+| | production `v0.26.0` | B1 `nightly-rocm100` | official 10.1 (S2 candidate) |
+|---|---|---|---|
+| ROCm | 7.2.3 | 10.0.0 | **10.1.0** (pip `rocm-sdk-*`, no `/opt/rocm/.info/version`) |
+| torch | 2.13.0+git733fca1 | 2.12.0+rocm10.0.0 | 2.13.0+rocm10.1.0 |
+| HIP | 7.2.53211 | 7.15.26333 | 7.16.26385 |
+| **RCCL** | **2.27.7** | **2.30.4** | **2.30.7** |
+| vLLM | 0.26.0 | 0.26.0 (`8cbd5d03`) | **0.29.1.dev0+g98dff2a81** (not 0.29.0) |
+| transformers | — | — | **5.18.0** |
+| aiter / amd_mori | present | present | **absent** |
+| `rocm-sdk-device-gfx1201` | n/a | present | present |
+
+Three things to carry into S2 planning:
+
+1. **The RCCL hypothesis is testable but not escaped.** B1's flat −47% decode loss with unchanged prefill points
+   at per-token collective cost, and the leading suspect was RCCL 2.27.7 → 2.30.4. The official 10.1 image is
+   **2.30.7** — the same 2.30.x family. So if RCCL is the cause, S2 may well reproduce the loss even on the
+   supported driver, and the supported-stack retest will not by itself exonerate or convict ROCm 10. Run the
+   `depth` stage early in S2 and, if the loss reappears, try `NCCL_PROTO=LL128,Simple` and
+   `NCCL_DEBUG=INFO` before concluding anything.
+2. **`aiter` and `amd_mori` are gone**, and production carries both. Flash-Next is a 125B MoE whose kernels may
+   route through aiter, so a throughput difference here has at least two candidate causes beyond ROCm itself.
+3. **transformers 5.18.0.** Root `CLAUDE.md` records that a transformers-5.x image (5.7.0.dev0) raised
+   `AttributeError: all_special_tokens_extended` on Qwen3 at startup and was abandoned. 5.18 is far later and
+   vLLM 0.29 presumably tracks it, but the 27B is a Qwen3.8 model and this is exactly the failure class B1 hit
+   on the other image — so boot the 27B before investing in any benchmark run.
+
+The tag claims `vllm-0.29.0`; the installed version is a dev build `0.29.1.dev0+g98dff2a81.d20261002`. Quote the
+installed version in results, not the tag.
+
 Also relevant to B1's finding: the only RCCL known issue in 10.1.0 is scoped to Instinct MI350
 (LL-protocol allreduce producing incorrect results), with workaround `export NCCL_PROTO=LL128,Simple`. It is not
 a gfx1201 issue and must not be quoted as one, but given that B1's decode loss points at RCCL, it is a cheap
