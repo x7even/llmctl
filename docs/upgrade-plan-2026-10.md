@@ -88,7 +88,8 @@ Compare any two with `python3 bench/concurrent_bench.py --compare OLD.json NEW.j
 - **Flash-Next `--gpu-memory-utilization` and PLE pinning checked** (docs/models.md): the shipped 0.90 stays; the
   `memlock` flag is inert under rootless podman.
 - **Next: ROCm 10.x canary as v0.5.0.** It must pass the new quality gate and the long-context stress step
-  before any pin changes, and the `rocm-smi` audit below comes first.
+  before any pin changes, and the `rocm-smi` audit below comes first. The full plan (tooling track, container-only
+  trial, host driver step, gates, rollback) is in `docs/rocm10-canary-plan.md`.
 
 ### Original plan (decided 2026-10-15)
 
