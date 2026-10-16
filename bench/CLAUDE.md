@@ -11,6 +11,7 @@
 | `codetests/run_codetests.py` | Code-correctness suite: model writes code, hidden tests grade it (`validate` / `run` / `regrade`) |
 | `canary_suite.py` | Whole canary in one resumable run: env, speed, depth, tools, ~100K stress, quality (hours) |
 | `canary_compare.py` | Diffs `canary_suite.py` result directories (first = baseline) and prints the per-gate verdict |
+| `canary_router.py` | Throwaway llama-swap router on :8099 for one shipped vLLM profile with a different image, suffixed container name and separate cache dirs (`up` / `down` / `config`) |
 
 ---
 
@@ -71,7 +72,9 @@ streamed decode and prefill tok/s at 1K-200K with unique prompts; `tools` runs 8
 not; `stress` is 7 concurrent ~100K prompts with preemption count and peak VRAM; `quality` is the hard code tasks
 at 8 samples plus the common tasks. Use a frozen copy of the harness for every state of one comparison, and run
 the baseline from the same session as the candidate. Gate thresholds live at the top of `canary_compare.py`.
-GPU stats come from `scripts/gpustat.py` (amd-smi first, rocm-smi fallback).
+GPU stats come from `scripts/gpustat.py` (amd-smi first, rocm-smi fallback). `canary_router.py up --profile <p>
+--image <img> --suffix <s> --cache-dir <dir>` builds the throwaway router for the candidate state from `config/models.yaml`
+so every flag stays identical to the shipped profile; unload production first, the GPUs are shared.
 
 ### Canary checklist
 
