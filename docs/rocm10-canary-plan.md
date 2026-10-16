@@ -328,7 +328,7 @@ EOF
 sudo apt update && sudo apt install -y amdrocm10.1-gfx1201
 ```
 
-### 7. Post-move validation, before any S2 benchmarking
+### Post-move validation, before any S2 benchmarking
 
 The driver change cuts both ways: production `v0.26.0` carries ROCm **7.2.3** userspace and will now be running on
 an amdgpu **31.60** driver — the inverse skew to the one B1 just failed on. A boot check is not enough.
