@@ -470,7 +470,9 @@ cleanly (no `IndexError`), but its throughput comparison is against a six-versio
 
 **Rollback:** revert `docker.io/vllm/vllm-openai-rocm:v0.26.0` → `:v0.24.0` in
 `config/models.yaml` (all 14 occurrences), `llmctl down && llmctl up`, `llmctl swap`
-each profile back. The v0.24.0 image stays on disk — do not prune it this cycle.
+each profile back. The v0.24.0 image stayed on disk for that cycle; **it and the v0.22.1 baseline image were
+pruned in the 2026-10 podman cleanup** (357 GB to 65 GB). The rollback anchor is now
+`localhost/llmstack-vllm-rollback:v0.26.0`; the commands above would need a fresh `podman pull` of the older tag.
 
 **Deferred:** host ROCm 7.2.0 → 7.2.4 bump (Phase 5 above) remains PENDING — requires a
 reboot, independent of this image bump, scheduled for its own maintenance window.
