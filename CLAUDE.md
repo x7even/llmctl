@@ -131,7 +131,10 @@ If you add a new vLLM profile and omit any of these, the first startup will take
 or fail with `unrecognized arguments`.
 
 **Important**: llama-swap v223+ executes `cmd` without a shell — `$LLMSTACK_DIR` and other
-shell variables are NOT expanded. Use hardcoded absolute paths in all volume mounts.
+shell variables are NOT expanded, so a volume mount needs a real absolute path at runtime.
+**Commit the `__LLMSTACK_DIR__` placeholder, never a real path**, and let `scripts/configure`
+write the path in at setup time. A checkout where configure has run shows the real paths as a
+local modification to `config/models.yaml` — that is expected; don't commit it.
 
 ### AWQ + expert-parallel = hard crash
 
