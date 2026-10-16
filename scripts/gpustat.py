@@ -33,6 +33,11 @@ def _num(field) -> float | None:
     return None
 
 
+def _dict(x) -> dict:
+    """amd-smi writes "N/A" in place of a whole section it cannot read."""
+    return x if isinstance(x, dict) else {}
+
+
 def parse_amd_smi(text: str) -> list[dict]:
     """Parse `amd-smi metric --mem-usage --usage --temperature --json`."""
     try:
@@ -42,16 +47,17 @@ def parse_amd_smi(text: str) -> list[dict]:
     rows = data.get("gpu_data", []) if isinstance(data, dict) else data
     gpus = []
     for row in rows if isinstance(rows, list) else []:
-        mem = row.get("mem_usage") or {}
+        row = _dict(row)
+        mem = _dict(row.get("mem_usage"))
         total, used = _num(mem.get("total_vram")), _num(mem.get("used_vram"))
         if total is None:
             continue
-        temp = row.get("temperature") or {}
+        temp = _dict(row.get("temperature"))
         gpus.append({
             "index": int(row.get("gpu", len(gpus))),
             "vram_total_b": int(total * _MIB),
             "vram_used_b": int((used or 0) * _MIB),
-            "util_pct": _num((row.get("usage") or {}).get("gfx_activity")),
+            "util_pct": _num(_dict(row.get("usage")).get("gfx_activity")),
             "temp_c": _num(temp.get("hotspot", temp.get("edge"))),
         })
     return sorted(gpus, key=lambda g: g["index"])

@@ -141,7 +141,7 @@ Only one GPU is active at a time, so throughput does not scale with concurrency.
 Its behaviour for fewer than four cards:
 
 - **Detection:** it reads each GPU's VRAM size from sysfs (`mem_info_vram_total`) and counts
-  devices with at least 8 GiB, so an integrated GPU does not inflate the count. `rocm-smi` is
+  devices with at least 8 GiB, so an integrated GPU does not inflate the count. `amd-smi` (then `rocm-smi`) is
   only a fallback when sysfs exposes no VRAM information. Override with `--gpu-count N`.
 - **Valid-TP rounding:** vLLM `--tensor-parallel-size` is set to the largest valid size (1, 2 or
   4) that does not exceed the GPU count. Three cards give TP2, not TP3. It warns when it

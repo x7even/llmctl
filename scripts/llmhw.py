@@ -23,8 +23,8 @@ and this module is the single reader of that block. Unknown (no block) means
 permissive: the profile is assumed to fit.
 
 GPU detection counts only discrete GPUs with >= 8 GiB of VRAM (sysfs
-mem_info_vram_total), so an integrated GPU is ignored. Falls back to rocm-smi
-only when sysfs exposes no VRAM information at all.
+mem_info_vram_total), so an integrated GPU is ignored. Falls back to amd-smi (then
+rocm-smi) only when sysfs exposes no VRAM information at all.
 
 CLI:
     python3 scripts/llmhw.py [--json] [--gpu-count N]
@@ -77,28 +77,37 @@ def _run_cmd(argv: list[str]) -> str:
     return subprocess.check_output(argv, stderr=subprocess.DEVNULL, text=True)
 
 
-def rocm_smi_vram_sizes(run=None) -> list[int | None] | None:
-    """VRAM bytes per GPU via rocm-smi; `run(argv) -> str` is injectable.
+def smi_vram_sizes(run=None) -> tuple[list[int | None] | None, str]:
+    """(VRAM bytes per GPU, tool) via amd-smi, else rocm-smi; `run(argv) -> str` is injectable.
 
-    Prefers --showmeminfo vram (sizes let us drop iGPUs); falls back to
-    --listdevices (unique GPU[n] indices, sizes unknown -> None entries).
+    scripts/gpustat.py does the amd-smi-first parsing. When neither tool reports sizes this falls back to
+    `rocm-smi --listdevices` (unique GPU[n] indices, sizes unknown -> None entries). (None, "none") when
+    nothing answers.
     """
     run = run or _run_cmd
-    try:
-        out = run(["rocm-smi", "--showmeminfo", "vram"])
-    except Exception:
-        out = ""
-    sizes: dict[int, int] = {}
-    for m in re.finditer(r"GPU\[(\d+)\][^\n]*?VRAM Total Memory \(B\):\s*(\d+)", out):
-        sizes[int(m.group(1))] = int(m.group(2))
-    if sizes:
-        return [sizes[k] for k in sorted(sizes)]
+    gpustat = _load_gpustat()
+    if gpustat is not None:
+        gpus, tool = gpustat.read_gpus(run)
+        if gpus:
+            return [g["vram_total_b"] for g in gpus], tool
     try:
         out = run(["rocm-smi", "--listdevices"])
     except Exception:
-        return None
+        return None, "none"
     idx = {int(m.group(1)) for m in re.finditer(r"^GPU\[(\d+)\]", out, re.M)}
-    return [None] * len(idx) if idx else None
+    return ([None] * len(idx), "rocm-smi") if idx else (None, "none")
+
+
+def _load_gpustat():
+    """The sibling gpustat module, or None when it cannot be imported (detection then degrades, not crashes)."""
+    try:
+        here = str(Path(__file__).resolve().parent)
+        if here not in sys.path:
+            sys.path.insert(0, here)
+        import gpustat
+        return gpustat
+    except Exception:
+        return None
 
 
 def parse_memtotal_gib(meminfo: str) -> float | None:
@@ -121,7 +130,7 @@ def detect(gpu_count: int | None = None, drm_root: Path = DEFAULT_DRM_ROOT,
       gpu_count         int, or None when nothing could be detected
       vram_gib_per_gpu  [float, ...] for the counted GPUs ([] when unknown)
       host_ram_gib      float MemTotal, or None when unreadable
-      source            'override' | 'sysfs' | 'rocm-smi' | 'none'
+      source            'override' | 'sysfs' | 'amd-smi' | 'rocm-smi' | 'none'
       ignored_devices   devices under 8 GiB VRAM that were not counted (iGPU)
     `gpu_count` overrides GPU detection (host RAM is still read). `meminfo`
     injects /proc/meminfo text for tests ("" = unreadable).
@@ -135,8 +144,7 @@ def detect(gpu_count: int | None = None, drm_root: Path = DEFAULT_DRM_ROOT,
     sizes = sysfs_vram_sizes(drm_root)
     source = "sysfs"
     if sizes is None:
-        sizes = rocm_smi_vram_sizes(run)
-        source = "rocm-smi"
+        sizes, source = smi_vram_sizes(run)
     if sizes is None:
         return hw
     big = [s for s in sizes if s is None or s >= MIN_GPU_VRAM_BYTES]

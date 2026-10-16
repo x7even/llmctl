@@ -130,7 +130,7 @@ gemma4-26b-q8            OK  split 2  (estimate)
 - `USES` is what `scripts/configure` would pick: `TP<n>` (vLLM tensor-parallel size, the
   largest listed `gpus` entry that fits) or `split <n>` (llama-server `min_gpus` profiles).
 - `(estimate)` means the profile's requirements were derived, not measured on this rig.
-- GPU/RAM detection and the checks are `scripts/llmhw.py`; sources are `sysfs`, `rocm-smi`
+- GPU/RAM detection and the checks are `scripts/llmhw.py`; sources are `sysfs`, `amd-smi`, `rocm-smi`
   or `override`. `VRAM/GPU` is unknown for an override.
 - Exit code 1 if the GPU count could not be detected (a warning explains why), else 0.
   If `scripts/llmhw.py` loads but finds no GPU count, `--json` still prints the full
@@ -377,7 +377,7 @@ it.
 
 | Symptom | Action |
 |---------|--------|
-| `up` hangs past 10 s | Check `llama-swap.log`; confirm GPUs are free (`rocm-smi`) |
+| `up` hangs past 10 s | Check `llama-swap.log`; confirm GPUs are free (`amd-smi list`) |
 | `swap` times out | First vLLM boot takes 18–20 min; run `llmctl logs <profile>` and wait manually. Subsequent starts are ~2–3 min. |
 | `swap` exits 2 "does not meet its hardware requirements" | The profile's `metadata.requires` is not met (`llmctl hw` shows why). Unset `LLMSTACK_GPU_COUNT` if you set it for a simulation; use `--force` only to knowingly override |
 | A profile is missing from `list` | Hidden for this hardware; `llmctl list --all` shows it with the reason |

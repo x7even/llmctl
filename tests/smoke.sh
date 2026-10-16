@@ -115,11 +115,16 @@ fi
 
 # ── 5. GPU VRAM ──────────────────────────────────────────────────────────────
 echo ""
-echo "5/5  GPU VRAM snapshot (rocm-smi)"
-rocm-smi --showmeminfo vram 2>&1 | grep -E "GPU\[|VRAM" | head -16 | while read -r line; do
+echo "5/5  GPU VRAM snapshot (amd-smi, rocm-smi fallback)"
+GPU_OUT="$(python3 "$(dirname "$0")/../scripts/gpustat.py" 2>&1 || true)"
+echo "${GPU_OUT}" | head -16 | while read -r line; do
     echo "     ${line}"
 done
-pass "rocm-smi completed"
+if echo "${GPU_OUT}" | grep -qE "^# via (amd-smi|rocm-smi)"; then
+    pass "GPU stats answered"
+else
+    fail "neither amd-smi nor rocm-smi returned GPU stats"
+fi
 
 # ── Summary ──────────────────────────────────────────────────────────────────
 echo ""

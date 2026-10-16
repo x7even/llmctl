@@ -23,7 +23,6 @@ import csv
 import json
 import os
 import statistics
-import subprocess
 import sys
 import threading
 import time
@@ -32,10 +31,13 @@ from pathlib import Path
 
 import requests
 
+sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "scripts"))
+import gpustat  # noqa: E402
+
 # ── VRAM polling (background thread during bench runs) ────────────────────────
 
 class VRAMPoller:
-    """Polls rocm-smi in a background thread; exposes peak VRAM used (GB)."""
+    """Polls amd-smi (rocm-smi fallback) in a background thread; exposes peak VRAM used (GB)."""
     def __init__(self):
         self._peak = None
         self._stop = threading.Event()
@@ -55,18 +57,11 @@ class VRAMPoller:
     def _run(self):
         while not self._stop.is_set():
             try:
-                out = subprocess.check_output(
-                    ["rocm-smi", "--showmeminfo", "vram"],
-                    stderr=subprocess.DEVNULL, text=True,
-                )
-                total = sum(
-                    int(line.split(":")[-1].strip())
-                    for line in out.splitlines()
-                    if "VRAM Total Used Memory (B):" in line
-                )
-                gb = total / 1e9
-                if self._peak is None or gb > self._peak:
-                    self._peak = gb
+                total = gpustat.vram_used_total_b()
+                if total is not None:
+                    gb = total / 1e9
+                    if self._peak is None or gb > self._peak:
+                        self._peak = gb
             except Exception:
                 pass
             self._stop.wait(1.0)

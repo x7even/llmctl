@@ -65,6 +65,18 @@ def _load_llmhw():
 
 
 llmhw, LLMHW_ERROR = _load_llmhw()
+
+
+def _load_gpustat():
+    """scripts/gpustat.py (amd-smi first, rocm-smi fallback) or None; status just skips the GPU block without it."""
+    try:
+        import importlib.util
+        spec = importlib.util.spec_from_file_location("gpustat", STACK_DIR / "scripts" / "gpustat.py")
+        mod = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(mod)
+        return mod
+    except Exception:
+        return None
 BENCH_SCRIPT = STACK_DIR / "bench" / "concurrent_bench.py"
 
 LLAMA_SWAP_PORT = 8080
@@ -497,18 +509,13 @@ def cmd_status(_args):
     else:
         print("No models currently loaded")
     # Quick GPU snapshot
-    try:
-        r = subprocess.run(
-            ["rocm-smi", "--showmeminfo", "vram"],
-            capture_output=True, text=True, timeout=5
-        )
-        lines = [l for l in r.stdout.splitlines() if "GPU" in l or "VRAM" in l]
-        if lines:
+    gpustat = _load_gpustat()
+    if gpustat is not None:
+        gpus, _tool = gpustat.read_gpus()
+        if gpus:
             print("\nGPU VRAM:")
-            for l in lines[:12]:
-                print(f"  {l.strip()}")
-    except Exception:
-        pass
+            for line in gpustat.format_gpus(gpus):
+                print(f"  {line}")
 
 
 def cmd_list(args):

@@ -298,7 +298,7 @@ The containers and config in this repo are built for the **AMD Radeon AI PRO R97
 | **vLLM** | ROCm-compatible AMD GPU | Container image is `vllm/vllm-openai-rocm` (ROCm 7.2). Other AMD cards need `HSA_OVERRIDE_GFX_VERSION` set appropriately. NVIDIA requires a CUDA build of vLLM instead. |
 | **llama-server (Vulkan)** | Any Vulkan-capable GPU | Works on AMD, NVIDIA, and Intel out of the box. No code changes needed — just point the `-m` path at your GGUF. |
 | **llama-swap** | None | CPU-only router; hardware-agnostic. |
-| **GPU monitoring** | AMD with `rocm-smi` | `llmpanel` displays `rocm-smi unavailable` gracefully on other platforms. |
+| **GPU monitoring** | AMD with `amd-smi` (or the older `rocm-smi`) | `llmpanel` displays `amd-smi/rocm-smi unavailable` gracefully on other platforms. ROCm 10 ships only `amd-smi`. |
 
 ### Configuration (required after cloning)
 
@@ -306,14 +306,14 @@ The containers and config in this repo are built for the **AMD Radeon AI PRO R97
 
 1. **Replaces `__LLMSTACK_DIR__`** — `config/models.yaml` ships with this literal placeholder in all volume mount paths. llama-swap executes container commands without a shell, so environment variables like `$HOME` aren't expanded at runtime. `configure` substitutes the placeholder with the absolute path to your repo clone.
 
-2. **Patches GPU count** — auto-detected from sysfs VRAM size (with `rocm-smi` as fallback), or set with `--gpu-count`. What each profile needs is declared in its own `metadata: requires:` block in `config/models.yaml` (`gpus: [2, 4]` for vLLM, `min_gpus: 3` for llama-server, optional `host_ram_gib`; schema in `config/CLAUDE.md`), and `configure` reads it from there.
+2. **Patches GPU count** — auto-detected from sysfs VRAM size (with `amd-smi`, then `rocm-smi`, as fallback), or set with `--gpu-count`. What each profile needs is declared in its own `metadata: requires:` block in `config/models.yaml` (`gpus: [2, 4]` for vLLM, `min_gpus: 3` for llama-server, optional `host_ram_gib`; schema in `config/CLAUDE.md`), and `configure` reads it from there.
 
 3. **Hides profiles this machine cannot run** — see [VRAM limits](#configuration-required-after-cloning) below.
 
 ```bash
 scripts/configure                  # auto-detect GPU count, apply all fixes
 scripts/configure --dry-run        # preview the result without writing
-scripts/configure --gpu-count 2    # override GPU count (if rocm-smi isn't available)
+scripts/configure --gpu-count 2    # override GPU count (if neither amd-smi nor rocm-smi is available)
 ```
 
 What it adjusts in `config/models.yaml`:

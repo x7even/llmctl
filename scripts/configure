@@ -28,7 +28,7 @@ Does four things:
      treated as permissive (assumed to fit) and flagged.
 
 GPU detection counts only discrete GPUs with >= 8 GiB of VRAM (sysfs
-mem_info_vram_total), so an integrated GPU is ignored. Falls back to rocm-smi
+mem_info_vram_total), so an integrated GPU is ignored. Falls back to amd-smi (then rocm-smi)
 only when sysfs exposes no VRAM information at all. Use --gpu-count to override.
 A .bak is written before modifying; --dry-run shows a diff and writes nothing.
 
@@ -321,7 +321,7 @@ def main(argv: list[str] | None = None) -> int:
     hw = llmhw.detect(args.gpu_count)
     if hw["gpu_count"] is None:
         print(
-            "Could not detect GPUs via sysfs or rocm-smi.\n"
+            "Could not detect GPUs via sysfs, amd-smi or rocm-smi.\n"
             "Use --gpu-count N to set it explicitly.",
             file=sys.stderr,
         )

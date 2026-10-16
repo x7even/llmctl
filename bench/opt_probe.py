@@ -24,7 +24,6 @@ import argparse
 import json
 import re
 import statistics
-import subprocess
 import sys
 import threading
 import time
@@ -33,25 +32,17 @@ from pathlib import Path
 
 import requests
 
+sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "scripts"))
+import gpustat  # noqa: E402
+
 DEFAULT_URL = "http://127.0.0.1:8080"
 
 # ── System helpers ────────────────────────────────────────────────────────────
 
 def vram_total_gb():
-    """Total VRAM used across all GPUs (GB), or None if rocm-smi unavailable."""
-    try:
-        out = subprocess.check_output(
-            ["rocm-smi", "--showmeminfo", "vram"],
-            stderr=subprocess.DEVNULL, text=True,
-        )
-        total = sum(
-            int(line.split(":")[-1].strip())
-            for line in out.splitlines()
-            if "VRAM Total Used Memory (B):" in line
-        )
-        return total / 1e9
-    except Exception:
-        return None
+    """Total VRAM used across all GPUs (GB), or None if neither amd-smi nor rocm-smi answers."""
+    total = gpustat.vram_used_total_b()
+    return None if total is None else total / 1e9
 
 
 def get_active(base_url):
@@ -205,7 +196,7 @@ def probe_kv_efficiency(base_url, model, no_thinking, concurrency=8):
         return None
 
     vram_idle = vram_total_gb()
-    print(f"  Idle VRAM: {vram_idle:.2f} GB" if vram_idle else "  VRAM: rocm-smi unavailable")
+    print(f"  Idle VRAM: {vram_idle:.2f} GB" if vram_idle else "  VRAM: amd-smi/rocm-smi unavailable")
 
     prompt = (
         "Write a detailed design document for a distributed rate-limiter "

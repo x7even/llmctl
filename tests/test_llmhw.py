@@ -103,6 +103,20 @@ def test_fallback_to_rocm_smi_when_no_sysfs_vram_info():
         assert hw["gpu_count"] == 2 and hw["vram_gib_per_gpu"] == []   # unique indices, not lines
 
 
+def test_amd_smi_used_when_sysfs_has_no_vram_info():
+    amd = (REPO / "tests/fixtures/amd_smi_metric.json").read_text()
+
+    def run(argv):
+        if argv[0] != "amd-smi":
+            raise AssertionError(f"rocm-smi must not be needed when amd-smi answers: {argv}")
+        return amd
+    with tempfile.TemporaryDirectory() as td:
+        drm = _fake_drm(Path(td), {"card0": None})
+        hw = llmhw.detect(drm_root=drm, run=run, meminfo="")
+        assert hw["gpu_count"] == 4 and hw["source"] == "amd-smi"
+        assert hw["vram_gib_per_gpu"] == [31.86] * 4
+
+
 def test_nothing_detectable_gives_none():
     def boom(argv):
         raise OSError("no rocm-smi")

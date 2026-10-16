@@ -165,6 +165,9 @@ func TestDetect_rocmSMIFallbackOnlyWithoutSysfsVRAMInfo(t *testing.T) {
 	var calls [][]string
 	run := func(argv []string) (string, error) {
 		calls = append(calls, argv)
+		if argv[0] == "amd-smi" {
+			return "", errors.New("amd-smi: not found")
+		}
 		return strings.Join([]string{
 			"GPU[0]\t\t: VRAM Total Memory (B): 34342961152",
 			"GPU[0]\t\t: VRAM Total Used Memory (B): 123",
@@ -176,8 +179,26 @@ func TestDetect_rocmSMIFallbackOnlyWithoutSysfsVRAMInfo(t *testing.T) {
 	if hw.GPUCount != 2 || hw.Source != "rocm-smi" || hw.IgnoredDevices != 1 {
 		t.Fatalf("hw = %+v", hw)
 	}
-	if len(calls) != 1 || calls[0][1] != "--showmeminfo" {
+	if len(calls) != 2 || calls[0][0] != "amd-smi" || calls[1][1] != "--showmeminfo" {
 		t.Errorf("calls = %v", calls)
+	}
+}
+
+func TestDetect_amdSMIPreferredOverRocmSMI(t *testing.T) {
+	drm := fakeDRM(t, t.TempDir(), map[string]int64{"card0": -1}, false)
+	fixture, err := os.ReadFile("../tests/fixtures/amd_smi_metric.json")
+	if err != nil {
+		t.Fatal(err)
+	}
+	run := func(argv []string) (string, error) {
+		if argv[0] != "amd-smi" {
+			t.Errorf("rocm-smi must not be called when amd-smi answers: %v", argv)
+		}
+		return string(fixture), nil
+	}
+	hw := HWProbe{DRMRoot: drm, MeminfoPath: missingMeminfo(t), Run: run}.Detect(-1)
+	if hw.GPUCount != 4 || hw.Source != "amd-smi" || hw.IgnoredDevices != 0 {
+		t.Fatalf("hw = %+v", hw)
 	}
 }
 
