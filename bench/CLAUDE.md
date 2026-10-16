@@ -8,6 +8,32 @@
 |--------|---------|
 | `concurrent_bench.py` | Main benchmark: sweep concurrency levels, collect tok/s, TTFT, VRAM |
 | `opt_probe.py` | Targeted probe for optimization impact (before/after comparison) |
+| `codetests/run_codetests.py` | Code-correctness suite: model writes code, hidden tests grade it (`validate` / `run` / `regrade`) |
+
+---
+
+## Code-correctness tests (`codetests/`)
+
+Throughput numbers say nothing about whether a model still writes correct code under a new quantisation, image
+or sampling setting. `codetests/` has 11 tasks, each with a prompt, a hidden test file and a reference solution.
+Six are the original set (saturated: current models pass nearly all); five are harder (`regex_engine`,
+`json_strict`, `cron_next`, `mini_scheme`, `date_math`).
+
+```bash
+python3 bench/codetests/run_codetests.py validate     # reference solutions must score 100%, controls 0%
+python3 bench/codetests/run_codetests.py run --url http://127.0.0.1:8080/v1/chat/completions \
+  --model qwen3.8-flash-next-vllm --modes think --reasoning-effort medium --samples 4 \
+  --max-tokens 81920 --timeout 7200 --tasks regex_engine,mini_scheme,date_math,json_strict \
+  --out bench/results/codetests-<topic>-$(date +%Y%m%d)/<profile>
+```
+
+Rules learned the hard way (details in `docs/hard-code-tasks.md`):
+- Use a generation cap of 64K-96K for the hard tasks; at 32K Flash-Next truncates and the zeros measure the cap.
+- 4 samples per cell is small: read differences under ~15 points as noise.
+- A `finish_reason=stop` with empty content is a premature end-of-turn from the model, not a test failure; count
+  it separately (the 27B does this at a rate that rises with temperature).
+- `--thinking-budget` only helps if cap minus budget still covers the answer.
+- Save per-sample results (the runner does) so every score can be audited or re-graded with `regrade`.
 
 ---
 

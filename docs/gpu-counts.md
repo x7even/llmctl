@@ -107,6 +107,22 @@ pinned host RAM, which also needs the container to run with `--ulimit memlock=-1
   the working requirement, not a hard-measured minimum.
 - Exclusive VRAM: unload every other model first.
 
+### Context length: what vLLM auto-fit picks (measured 2026-10-15)
+
+`--max-model-len -1` makes vLLM choose the largest context that fits the KV memory it actually has. With the
+shipped profiles on this rig (auto-fit message in the container log):
+
+| profile | cards | auto-fit max_model_len | KV pool (tokens) | load / serial tok/s |
+|---|---|---|---|---|
+| qwen3.8-flash-next-vllm | 4 (TP4+EP) | 262,144 (native) | 550,959 | 125 s / 56.6 |
+| qwen3.8-27b-code | 4 (TP4) | 262,144 (native) | 1,057,057 | 165 s / 68.7 |
+| qwen3.8-27b-code | 2 (TP2) | 262,144 (native) | 264,457 | 220 s / 33.4 |
+
+The native context fits on every valid TP size, so the 27B's shipped 131,072 is a decode-speed policy, not a
+memory limit. At TP2, 262,144 leaves room for one full-length request in the pool; 131,072 allows two. Where a
+profile should follow the hardware rather than a fixed number, `-1` is the right setting; see
+`docs/hard-code-tasks.md` section 5.
+
 ### Flash-Next on llama-server (GGUF)
 
 `qwen3.8-flash-next` totals about 81 GB across the cards (the GGUF is 90 GB on disk).
@@ -166,3 +182,6 @@ After changing the config restart the router: `llmctl down && llmctl up`.
   mmproj and KV, 91.7 tok/s) both run with the shipped settings.
 - Always check `llmctl logs <profile>` the first time; a wrong TP size shows up as the server
   exiting during startup.
+- Multi-GPU host check: the kernel needs `CONFIG_HSA_AMD_P2P=y` (`zcat /proc/config.gz | grep HSA_AMD_P2P`).
+  Without it RCCL falls back to host-staged transfers and collective latency is far higher. Most distro
+  kernels except Arch's omit it; this build host has it enabled.

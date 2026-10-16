@@ -234,6 +234,11 @@ The dense 27B loses most of its decode speed by 32K tokens, so for very long con
 Flash-Next is the better fit. (In the 262K code-test runs the 27B converged within about 40K
 tokens at xhigh, while Flash-Next at xhigh ran away.)
 
+**Hard code tasks (2026-10):** at an 81,920-token cap Flash-Next scores 91% / 66% / 54% / 50% mean tests on
+date_math / json_strict / mini_scheme / regex_engine, with no truncation; at a 32K cap three of those are 0%
+(truncation, not quantisation). A 200K cap gives no further gain. Full write-up, including the 27B's
+empty-reply early stops: `docs/hard-code-tasks.md`.
+
 **Not used from the checkpoint:** its `runtime/` directory is a CUDA/RTX 3090 overlay
 (UVA expert offload, `humming` MoE backend); it does not apply to ROCm.
 
