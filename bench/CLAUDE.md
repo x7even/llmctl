@@ -9,6 +9,8 @@
 | `concurrent_bench.py` | Main benchmark: sweep concurrency levels, collect tok/s, TTFT, VRAM |
 | `opt_probe.py` | Targeted probe for optimization impact (before/after comparison) |
 | `codetests/run_codetests.py` | Code-correctness suite: model writes code, hidden tests grade it (`validate` / `run` / `regrade`) |
+| `canary_suite.py` | Whole canary in one resumable run: env, speed, depth, tools, ~100K stress, quality (hours) |
+| `canary_compare.py` | Diffs `canary_suite.py` result directories (first = baseline) and prints the per-gate verdict |
 
 ---
 
@@ -51,6 +53,25 @@ Before blaming the model, also run the checkpoint's own published recipe verbati
 env). If that fails the same way, the cause is the checkpoint or the image, not our config. Precedent:
 the 2026-10-15 MXFP4 Flash-Next canary was ~2x faster but scored 5-14% vs 50-54% on the two hardest tasks,
 with the model's own recipe failing the same way, so it was not adopted.
+
+### Full canary suite (`canary_suite.py` / `canary_compare.py`)
+
+For a change that could move both speed and quality (new image, ROCm, driver, kernel), run the whole suite
+against the current state and the new state under identical conditions, then diff:
+
+```bash
+python3 bench/canary_suite.py --base http://127.0.0.1:8099 --model qwen3.8-27b-code \
+  --label "S1 nightly-rocm100 (ROCm 10.0)" --container <container-name> --out bench/results/<topic>/27b-s1
+python3 bench/canary_compare.py bench/results/<topic>/27b-s0 bench/results/<topic>/27b-s1 --md compare.md
+```
+
+Stages (`--stages env,speed,...`; finished stages are skipped on rerun, `--force` redoes them): `env` records
+kernel, driver, image and in-container ROCm/vLLM/torch; `speed` is the standard all-prompts sweep; `depth` is
+streamed decode and prefill tok/s at 1K-200K with unique prompts; `tools` runs 8 tool-call cases streaming and
+not; `stress` is 7 concurrent ~100K prompts with preemption count and peak VRAM; `quality` is the hard code tasks
+at 8 samples plus the common tasks. Use a frozen copy of the harness for every state of one comparison, and run
+the baseline from the same session as the candidate. Gate thresholds live at the top of `canary_compare.py`.
+GPU stats come from `scripts/gpustat.py` (amd-smi first, rocm-smi fallback).
 
 ### Canary checklist
 
