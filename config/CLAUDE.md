@@ -113,8 +113,7 @@ All vLLM profiles must use the same **pinned** tag: `docker.io/vllm/vllm-openai-
 Never reference the moving `:latest` tag — it silently changes what vLLM version
 production runs. Version bumps happen deliberately: canary first, then update the
 pin everywhere at once (models.yaml, this file, root CLAUDE.md, scripts/) — see
-docs/upgrade-plan-2026-07.md (v0.26.0) and docs/upgrade-plan-2026-10.md (v0.31.0 canary,
-held). Rollback anchor: `localhost/llmstack-vllm-rollback:v0.26.0` (older anchors pruned 2026-10).
+docs/upgrade-plan-2026-10.md (v0.31.0 canary, held). Rollback anchor: `localhost/llmstack-vllm-rollback:v0.26.0` (older anchors pruned 2026-10).
 
 ### MTP requires the draft head file
 

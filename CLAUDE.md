@@ -131,7 +131,10 @@ If you add a new vLLM profile and omit any of these, the first startup will take
 or fail with `unrecognized arguments`.
 
 **Important**: llama-swap v223+ executes `cmd` without a shell — `$LLMSTACK_DIR` and other
-shell variables are NOT expanded. Use hardcoded absolute paths in all volume mounts.
+shell variables are NOT expanded, so a volume mount needs a real absolute path at runtime.
+**Commit the `__LLMSTACK_DIR__` placeholder, never a real path**, and let `scripts/configure`
+write the path in at setup time. A checkout where configure has run shows the real paths as a
+local modification to `config/models.yaml` — that is expected; don't commit it.
 
 ### AWQ + expert-parallel = hard crash
 
@@ -160,7 +163,7 @@ cleanup; the rollback image is `localhost/llmstack-vllm-rollback:v0.26.0`) used 
 transformers 5.7.0.dev0. Transformers 5.x removed `all_special_tokens_extended`, which
 causes `AttributeError` on Qwen3 models at startup. **Do not use this image.**
 
-All vLLM profiles must use: `docker.io/vllm/vllm-openai-rocm:v0.26.0` (vLLM 0.26.0, ROCm 7.2.3). Pinned tag policy: never reference the moving `:latest` tag — bump the pin here, in config/models.yaml, config/CLAUDE.md, and scripts/ together after canary validation (see docs/upgrade-plan-2026-07.md; the 2026-10 v0.31.0 canary was held back for a conc=8/16 throughput regression — docs/upgrade-plan-2026-10.md)
+All vLLM profiles must use: `docker.io/vllm/vllm-openai-rocm:v0.26.0` (vLLM 0.26.0, ROCm 7.2.3). Pinned tag policy: never reference the moving `:latest` tag — bump the pin here, in config/models.yaml, config/CLAUDE.md, and scripts/ together after canary validation (the 2026-10 v0.31.0 canary was held back for a conc=8/16 throughput regression — docs/upgrade-plan-2026-10.md)
 
 ### FP8 kernel config — MoE experts are tuned, dense layers are not
 
@@ -318,7 +321,7 @@ docs/llmctl.md       Full CLI reference
 docs/workarounds.md  Active bugs + workarounds (vLLM SSE null name)
 docs/flash-next-half-speed.md  Half-speed Flash-Next starts: cause (full page cache) and the llm-prestart guard
 docs/hard-code-tasks.md        Harder code tests: caps vs 4-bit weights, 27B early stops, ceiling check
-docs/upgrade-plan-2026-*.md    Image/ROCm upgrade canaries and their gates
+docs/upgrade-plan-2026-10.md   vLLM image canary (v0.31.0, held) and its gates
 scripts/llm-prestart  exec wrapper in front of Flash-Next's podman run (drops page cache first)
 scripts/llmhw.py     Hardware/requirements checker used by configure, llmctl and llmpanel
 bench/codetests/     Code-correctness suite (11 tasks, 5 of them the harder set) run by run_codetests.py

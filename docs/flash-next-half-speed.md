@@ -42,7 +42,7 @@ Then the page cache was deliberately filled with unrelated model files before th
 The profile's `cmd` starts with the wrapper, which `exec`s podman:
 
 ```
-/home/xin/ai/llmstack/scripts/llm-prestart --need-free-gib 80 --keep <model dir> -- podman run ...
+<llmstack dir>/scripts/llm-prestart --need-free-gib 80 --keep <model dir> -- podman run ...
 ```
 
 If `MemFree` is below `--need-free-gib` it drops the page cache of the model files under

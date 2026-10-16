@@ -9,7 +9,7 @@
 # The runtime base is kept separate so Mesa driver upgrades stay decoupled
 # from llama.cpp version bumps. Each rebuild of THIS file picks up current
 # llama.cpp master — record the resulting `--version` when you cut over.
-# Upgrade/cutover history and bench results: docs/upgrade-plan-2026-07.md.
+# Bench results for each cutover: docs/models.md.
 # Rollback anchors: localhost/llmstack-llama:b9542-baseline,
 #                   localhost/llama-vulkan-bleeding:mesa25.0.7-baseline.
 #

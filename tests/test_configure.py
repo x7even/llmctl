@@ -479,7 +479,10 @@ def _sandbox():
     (Path(td) / "config").mkdir()
     dst = Path(td) / "config" / "models.yaml"
     src = (REPO / "config" / "models.yaml").read_text()
-    dst.write_text(src.replace("/home/xin/ai/llmstack", "__LLMSTACK_DIR__"))
+    # The repo ships __LLMSTACK_DIR__ placeholders, but a checkout where `configure`
+    # has already been run has real paths instead; normalise either back to the
+    # placeholder so the CLI tests always start from an unconfigured file.
+    dst.write_text(src.replace(str(REPO), "__LLMSTACK_DIR__"))
     return Path(td), dst
 
 
