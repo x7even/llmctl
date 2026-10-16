@@ -19,9 +19,9 @@
 # Image pinning: every vLLM profile uses the same pinned tag
 #   docker.io/vllm/vllm-openai-rocm:v0.26.0
 # Never reference the moving :latest tag. Version bumps happen deliberately —
-# canary first, then update all refs at once (validation record and bench
-# results: docs/upgrade-plan-2026-07.md). v0.31.0 was canaried in 2026-10 and held
-# back — conc=8/16 decode is 6-9% below v0.26.0 (docs/upgrade-plan-2026-10.md).
+# canary first, then update all refs at once (bench results: docs/models.md).
+# v0.31.0 was canaried in 2026-10 and held back — conc=8/16 decode is 6-9% below
+# v0.26.0 (docs/upgrade-plan-2026-10.md).
 # Rollback anchor: localhost/llmstack-vllm-rollback:v0.26.0 (same image as the v0.26.0
 # pin, kept under a local tag so it survives a registry pull) — revert a profile by
 # swapping its ref back. Older anchors (v0.22.1-baseline, v0.24.0) were pruned in 2026-10.
@@ -80,8 +80,8 @@ models:
         --shm-size=32g
         --network=host
         -v /mnt/models/llm:/models:ro
-        -v /home/xin/ai/llmstack/.vllm-cache:/root/.cache/vllm
-        -v /home/xin/ai/llmstack/.triton-cache:/root/.triton/cache
+        -v __LLMSTACK_DIR__/.vllm-cache:/root/.cache/vllm
+        -v __LLMSTACK_DIR__/.triton-cache:/root/.triton/cache
         -e HSA_ENABLE_SDMA=0
         -e TORCH_BLAS_PREFER_HIPBLASLT=1
         --entrypoint=""
@@ -134,8 +134,8 @@ models:
         --shm-size=32g
         --network=host
         -v /mnt/models/llm:/models:ro
-        -v /home/xin/ai/llmstack/.vllm-cache:/root/.cache/vllm
-        -v /home/xin/ai/llmstack/.triton-cache:/root/.triton/cache
+        -v __LLMSTACK_DIR__/.vllm-cache:/root/.cache/vllm
+        -v __LLMSTACK_DIR__/.triton-cache:/root/.triton/cache
         -e HSA_ENABLE_SDMA=0
         -e TORCH_BLAS_PREFER_HIPBLASLT=1
         --entrypoint=""
@@ -185,8 +185,8 @@ models:
         --shm-size=32g
         --network=host
         -v /mnt/models/llm:/models:ro
-        -v /home/xin/ai/llmstack/.vllm-cache:/root/.cache/vllm
-        -v /home/xin/ai/llmstack/.triton-cache:/root/.triton/cache
+        -v __LLMSTACK_DIR__/.vllm-cache:/root/.cache/vllm
+        -v __LLMSTACK_DIR__/.triton-cache:/root/.triton/cache
         -e HSA_ENABLE_SDMA=0
         -e TORCH_BLAS_PREFER_HIPBLASLT=1
         --entrypoint=""
@@ -247,8 +247,8 @@ models:
         --shm-size=32g
         --network=host
         -v /mnt/models/llm:/models:ro
-        -v /home/xin/ai/llmstack/.vllm-cache:/root/.cache/vllm
-        -v /home/xin/ai/llmstack/.triton-cache:/root/.triton/cache
+        -v __LLMSTACK_DIR__/.vllm-cache:/root/.cache/vllm
+        -v __LLMSTACK_DIR__/.triton-cache:/root/.triton/cache
         -e HSA_ENABLE_SDMA=0
         -e TORCH_BLAS_PREFER_HIPBLASLT=1
         --entrypoint=""
@@ -280,7 +280,7 @@ models:
   # than MTP (329.7 vs 312.4 output tok/s) with far better inter-token latency
   # (ITL p50 19.0 vs 49.5 ms). MTP wins single-stream (69.0 vs ~59 tok/s
   # baseline). Use this profile for parallel agent fleets; use the MTP profile
-  # for single-user interactive sessions. Bench: docs/upgrade-plan-2026-07.md.
+  # for single-user interactive sessions. Bench: docs/models.md.
   # Note: switching between MTP and no-MTP invalidates the vLLM compile-cache
   # match — expect a ~16 min warm start on the first swap between them.
   qwen3.6-35b-128k-nomtp:
@@ -306,8 +306,8 @@ models:
         --shm-size=32g
         --network=host
         -v /mnt/models/llm:/models:ro
-        -v /home/xin/ai/llmstack/.vllm-cache:/root/.cache/vllm
-        -v /home/xin/ai/llmstack/.triton-cache:/root/.triton/cache
+        -v __LLMSTACK_DIR__/.vllm-cache:/root/.cache/vllm
+        -v __LLMSTACK_DIR__/.triton-cache:/root/.triton/cache
         -e HSA_ENABLE_SDMA=0
         -e TORCH_BLAS_PREFER_HIPBLASLT=1
         --entrypoint=""
@@ -364,9 +364,9 @@ models:
         --shm-size=32g
         --network=host
         -v /mnt/models/llm:/models:ro
-        -v /home/xin/ai/llmstack/config/templates:/templates:ro
-        -v /home/xin/ai/llmstack/.vllm-cache:/root/.cache/vllm
-        -v /home/xin/ai/llmstack/.triton-cache:/root/.triton/cache
+        -v __LLMSTACK_DIR__/config/templates:/templates:ro
+        -v __LLMSTACK_DIR__/.vllm-cache:/root/.cache/vllm
+        -v __LLMSTACK_DIR__/.triton-cache:/root/.triton/cache
         -e HSA_ENABLE_SDMA=0
         -e TORCH_BLAS_PREFER_HIPBLASLT=1
         --entrypoint=""
@@ -492,7 +492,7 @@ models:
     aliases:
       - flash-next-vllm
     cmd: |
-      /home/xin/ai/llmstack/scripts/llm-prestart
+      __LLMSTACK_DIR__/scripts/llm-prestart
         --need-free-gib 80
         --keep /mnt/models/llm/albucino/Qwen3.8-Flash-Next-W4A16-FP8PLE
         --
@@ -508,8 +508,8 @@ models:
         --ulimit memlock=-1:-1
         --network=host
         -v /mnt/models/llm:/models:ro
-        -v /home/xin/ai/llmstack/.vllm-cache:/root/.cache/vllm
-        -v /home/xin/ai/llmstack/.triton-cache:/root/.triton/cache
+        -v __LLMSTACK_DIR__/.vllm-cache:/root/.cache/vllm
+        -v __LLMSTACK_DIR__/.triton-cache:/root/.triton/cache
         -e HSA_ENABLE_SDMA=0
         -e TORCH_BLAS_PREFER_HIPBLASLT=1
         -e VLLM_ROCM_USE_AITER=0
@@ -660,8 +660,8 @@ models:
         --shm-size=32g
         --network=host
         -v /mnt/models/llm:/models:ro
-        -v /home/xin/ai/llmstack/.vllm-cache:/root/.cache/vllm
-        -v /home/xin/ai/llmstack/.triton-cache:/root/.triton/cache
+        -v __LLMSTACK_DIR__/.vllm-cache:/root/.cache/vllm
+        -v __LLMSTACK_DIR__/.triton-cache:/root/.triton/cache
         -e HSA_ENABLE_SDMA=0
         -e TORCH_BLAS_PREFER_HIPBLASLT=1
         --entrypoint=""
@@ -719,8 +719,8 @@ models:
         --shm-size=32g
         --network=host
         -v /mnt/models/llm:/models:ro
-        -v /home/xin/ai/llmstack/.vllm-cache:/root/.cache/vllm
-        -v /home/xin/ai/llmstack/.triton-cache:/root/.triton/cache
+        -v __LLMSTACK_DIR__/.vllm-cache:/root/.cache/vllm
+        -v __LLMSTACK_DIR__/.triton-cache:/root/.triton/cache
         -e HSA_ENABLE_SDMA=0
         -e TORCH_BLAS_PREFER_HIPBLASLT=1
         --entrypoint=""

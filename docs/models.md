@@ -318,7 +318,7 @@ on vLLM 0.24.0 (2026-07-07, 4× R9700, 1024-in/256-out, seed 42):
 
 Rule of thumb: **MTP for single-user interactive sessions; no-MTP for parallel agent
 fleets** (conc ≥ 8). Switching between the two invalidates the vLLM compile-cache match —
-budget ~16 min for the first swap in each direction. Full data: docs/upgrade-plan-2026-07.md.
+budget ~16 min for the first swap in each direction.
 
 ---
 
