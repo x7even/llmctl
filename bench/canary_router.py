@@ -30,7 +30,7 @@ ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 IMAGE_RE = re.compile(r"docker\.io/vllm/vllm-openai-rocm:\S+")
 
 
-def build_config(profile, image, suffix, cache_dir, start_port):
+def build_config(profile, image, suffix, cache_dir, start_port, keep_logs=False):
     cfg = yaml.safe_load(open(os.path.join(ROOT, "config", "models.yaml")))
     m = dict(cfg["models"][profile])
     cmd, stop = m["cmd"], m.get("cmdStop", "")
@@ -46,6 +46,8 @@ def build_config(profile, image, suffix, cache_dir, start_port):
     cmd, n2 = re.subn(r"-v \S+/\.triton-cache:/root/\.triton/cache", f"-v {triton_c}:/root/.triton/cache", cmd)
     if n1 != 1 or n2 != 1:
         sys.exit(f"{profile}: expected one vllm and one triton cache mount, found {n1}/{n2}")
+    if keep_logs:  # an exited container keeps its log for `podman logs` (down removes it)
+        cmd = cmd.replace("podman run --replace --rm", "podman run --replace", 1)
     m.update(cmd=cmd, cmdStop=stop, aliases=[], ttl=0)
     m.pop("metadata", None)
     return {"healthCheckTimeout": cfg["healthCheckTimeout"], "startPort": start_port, "globalTTL": 0,
@@ -65,6 +67,7 @@ def main():
     ap.add_argument("--cache-dir")
     ap.add_argument("--port", type=int, default=8099)
     ap.add_argument("--start-port", type=int, default=9300)
+    ap.add_argument("--keep-logs", action="store_true", help="drop --rm so a crashed container's log survives")
     ap.add_argument("--config-out", help="where to write the config (default: <cache-dir>/router.yaml)")
     a = ap.parse_args()
 
@@ -75,12 +78,12 @@ def main():
             print(f"stopped router pid {pid}")
         except (OSError, ValueError):
             print("no router pid file")
-        subprocess.run(["bash", "-c", f"podman ps -q --filter name=-{a.suffix}$ | xargs -r podman stop"], check=False)
+        subprocess.run(["bash", "-c", f"podman ps -q --filter name=-{a.suffix}$ | xargs -r podman stop; podman ps -aq --filter name=-{a.suffix}$ | xargs -r podman rm -f"], check=False)
         return
 
     if not (a.profile and a.image and a.cache_dir):
         sys.exit("--profile, --image and --cache-dir are required")
-    cfg = build_config(a.profile, a.image, a.suffix, os.path.expanduser(a.cache_dir), a.start_port)
+    cfg = build_config(a.profile, a.image, a.suffix, os.path.expanduser(a.cache_dir), a.start_port, a.keep_logs)
     text = yaml.safe_dump(cfg, sort_keys=False, width=10_000)
     if a.action == "config":
         print(text)
