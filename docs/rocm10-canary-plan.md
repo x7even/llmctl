@@ -213,20 +213,23 @@ explicitly not attempted. The pin stays at `v0.26.0` / `nightly-8cbd5d03…`.
 
 ### Corrected: no release upgrade. Why 24.04.5 + HWE 7.0, not 26.04.1
 
-An earlier draft of this section recommended upgrading to Ubuntu 26.04.1. **That recommendation was based on a
-false premise and is withdrawn.** The premise was "there is no `graphics/31.x` repo, so on 24.04 the Vulkan stack
-would be stranded at AMD's 7.2 mesa overlay while ROCm moved to 10.1". AMD's graphics repo for the 31.60 era is
-not numbered `31.x` — it is numbered on the ROCm release train as **`graphics/26.16`**, which is why a search for
-`graphics/31.x` found nothing. Verified live 2026-10-16:
+An earlier draft of this section recommended upgrading to Ubuntu 26.04.1. **That recommendation is withdrawn.**
+It rested on one argument — "there is no `graphics/31.x` repo, so on 24.04 the GGUF/Vulkan path would be stranded
+at AMD's 7.2 mesa overlay while ROCm moved to 10.1" — and that argument fails twice over:
 
-| Repo | Serves | mesa version |
-|---|---|---|
-| `repo.radeon.com/graphics/26.16/ubuntu` (noble **and** resolute) | AMD graphics/RADV overlay for 31.60 | `mesa-amdgpu-vulkan-drivers` **1:26.2.0.26160000** |
-| Ubuntu 26.04 distro | distro RADV | `mesa-vulkan-drivers` **26.0.8** |
+1. **Host mesa is not on the serving path at all.** `containers/llama-vulkan-base/Containerfile` builds the
+   llama-server runtime base `FROM ubuntu:26.04` precisely so it carries its own Mesa 26.0.x RADV, and both
+   `containers/llama-server` and `containers/llama-server-qwen4exp` build `FROM
+   localhost/llama-vulkan-bleeding:mesa26`. The GGUF backends therefore use the container's RADV, never the
+   host's. Host mesa matters only for the desktop session. **Mesa is irrelevant to this decision in either
+   direction** — including the counter-argument below, which is recorded only so the repo facts aren't lost.
+2. **The repo exists anyway.** AMD numbers its graphics overlay on the ROCm release train, not the driver train,
+   so it is **`graphics/26.16`**, which is why a search for `graphics/31.x` found nothing. Verified live
+   2026-10-16: `repo.radeon.com/graphics/26.16/ubuntu` serves **noble and resolute** with
+   `mesa-amdgpu-vulkan-drivers` **1:26.2.0.26160000** (mesa 26.2.0) — newer than the `mesa-vulkan-drivers`
+   **26.0.8** Ubuntu 26.04 ships. Had host mesa mattered, staying on noble would have been the better side.
 
-So the argument inverts: staying on 24.04 with `graphics/26.16` gives the GGUF/llama-server Vulkan path mesa
-**26.2.0** — *newer* than what Ubuntu 26.04 ships, and matched by AMD to this driver. There is no Vulkan skew to
-escape, and the release upgrade buys nothing for this task.
+The real reasons to stay on 24.04.5 are rollback, blast radius and image match — see "Decisive advantages" below.
 
 ROCm 10.1 itself is equally available on noble: `amdgpu-install` 31.60 configures
 `repo.radeon.com/rocmradeon/apt/26.16 noble` (481 packages, all `amdrocm*` at **10.1.0-3**, including
@@ -240,9 +243,10 @@ is in `noble-updates`, already confirmed available on this host.
 
 Decisive advantages of staying:
 
-- **Rollback becomes trivial.** The HWE metapackage does not remove the installed 6.8 images (6.8.0-137 and
-  6.8.0-146 are both present), so recovery is selecting kernel 6.8 in GRUB. No LVM snapshot, no `/boot` imaging,
-  no restore-from-backup, and no `do-release-downgrade` (which does not exist).
+- **Rollback becomes far cheaper.** The HWE metapackage does not remove the installed 6.8 images, so recovery
+  starts from a GRUB entry rather than a disk image. No LVM snapshot, no `/boot` imaging, no
+  restore-from-backup, and no `do-release-downgrade` (which does not exist). **But see "Rollback, precisely"
+  below — picking 6.8 in GRUB is a complete rollback only before step 1, not after it.**
 - **The cached rollback debs become valid again.** `/home/xin/rocm-rollback-20261016/` holds *noble* builds of
   amdgpu-dkms 30.20 — useless after a release upgrade, but exactly right if we stay on noble.
 - **No podman 4.9.3 → 5.x migration** of the 95 GB rootless store, and no release-upgrade blast radius across
@@ -282,10 +286,22 @@ debugging lever if the slowdown reappears on the supported stack. No gfx1201-spe
 3. **Third-party mesa sources are present** and will fight AMD's `graphics/26.16` overlay: an
    `oibaf-ubuntu-graphics-drivers-noble` PPA (bleeding-edge mesa) and `amdgpu-proprietary.list`. Disable the oibaf
    PPA before installing the graphics usecase, or RADV may resolve to PPA builds instead of AMD's.
-4. **Rollback target must stay installed.** Recovery is GRUB → kernel 6.8 with amdgpu-dkms 30.20 rebuilt from
-   `/home/xin/rocm-rollback-20261016/` (noble debs, valid because we are not changing release). Do not
-   `apt autoremove` the 6.8 images.
-5. **Unchanged from the superseded plan:** the local-only container images are backed up (see pre-flight), and
+4. **Rollback target must stay installed.** Do not `apt autoremove` the 6.8 images. See "Rollback, precisely".
+5. **gfx1201 firmware comes only from `amdgpu-dkms-firmware`.** Checked on this host 2026-10-16: the 11
+   `gc_12_0_1_*` blobs in `/lib/firmware/amdgpu/` are all owned by `amdgpu-dkms-firmware` 30.20, and noble's
+   `linux-firmware` (20240318.git3b128b60.0ubuntu3.1, the only candidate) contains **zero** of them
+   (`dpkg -L linux-firmware | grep -c gc_12_0_1` → 0). Firmware is kernel-independent: without those files even
+   kernel 7.0's in-tree amdgpu cannot bring up an R9700. Step 1 purges that package, so **there must be no reboot
+   between steps 1 and 2** — the firmware is only restored when `amdgpu-install` lands the 31.60
+   `amdgpu-dkms-firmware`. If the sequence has to be abandoned between those steps, reinstall the cached
+   `amdgpu-dkms-firmware` deb from `/home/xin/rocm-rollback-20261016/` *before* rebooting.
+6. **Kernel 6.8.0-147 is a pre-existing landmine, unrelated to this plan.** `linux-image-generic` is at
+   6.8.0-147.147 and `/boot/vmlinuz-6.8.0-147-generic` exists, but it has **no initrd** and **no DKMS amdgpu**
+   (`dkms status` lists only -137 and -146; `/lib/modules/6.8.0-147-generic` has only the in-tree module, which
+   predates gfx1201). The current `grub.cfg` predates it, so today's default is -146 — but any kernel package
+   operation re-runs `update-grub`. Always pick **6.8.0-146** (or -137) by name when rolling back, never "the
+   newest 6.8", and treat finishing or removing -147 as separate cleanup.
+7. **Unchanged from the superseded plan:** the local-only container images are backed up (see pre-flight), and
    `podman system reset` must never be used — though with no release upgrade there is now no podman 5.x store
    migration at all.
 
@@ -297,6 +313,12 @@ debugging lever if the slowdown reappears on the supported stack. No gfx1201-spe
 - `localhost/llmstack-vllm-rollback:v0.26.0` needs no backup: it shares image ID `3d7fe5e20f0d` with
   `docker.io/vllm/vllm-openai-rocm:v0.26.0`, so it is a retag — re-create with `podman tag` after a re-pull.
 - The docker.io vLLM images (~137 GB) are re-pullable, slowly.
+- **Host state verified 2026-10-16, nothing yet changed:** Ubuntu 24.04.5, running 6.8.0-146, `amdgpu-dkms`
+  1:6.16.6.30200000 + `amdgpu-dkms-firmware` 30.20 installed, `rocm-core` 7.2.0, `dpkg --audit` clean, no
+  release upgrade started. The superseded 26.04 steps were never run.
+- Still to do before step 0 (no sudo for the copy target, but the reads need it):
+  `sudo cp -a /etc/apt/sources.list.d/{rocm.list,amdgpu.list,amdgpu-proprietary.list} /etc/apt/preferences.d/repo-radeon-pin-600 /mnt/models/_host-backup-20261016/apt/`
+  — these are what a post-step-2 rollback restores.
 
 ### Steps
 
@@ -306,19 +328,36 @@ No release upgrade, no LVM snapshot. Kernel first, so the console never depends 
 
 ```bash
 sudo apt update
-sudo apt install --install-recommends -y linux-generic-hwe-24.04
-sudo reboot                    # choose 7.0 (default); 6.8 stays in GRUB as the rollback
+sudo apt install --install-recommends linux-generic-hwe-24.04     # no -y: read what it proposes to remove
 ```
 
-After the reboot: `uname -r` shows 7.0.x. The old amdgpu-dkms 30.20 will **not** have built for 7.0 — expected and
-harmless, because kernel 7.0's in-tree amdgpu supports gfx1201 and drives both the console and the cards.
-Confirm the GPUs still enumerate (`ls /sys/class/drm/card*`) before continuing. If anything is wrong here, reboot
-into 6.8 and nothing has been lost.
+**Gate before rebooting.** The old amdgpu-dkms 30.20 will probably fail to build against kernel 7.0, and on noble
+`/etc/kernel/postinst.d/dkms` can make the kernel package's own install fail when a module won't build, leaving
+the initramfs or GRUB entry half-written. Do not reboot until all four pass:
 
-**1. Remove the ROCm 7.2 / amdgpu 30.20 userspace and its apt sources.**
+```bash
+echo "apt exit: $?"                     # must be 0
+dpkg --audit                            # must print nothing
+ls /boot/initrd.img-7.0*                # must exist
+grep -c 'vmlinuz-7\.0' /boot/grub/grub.cfg   # must be > 0 (needs sudo to read)
+```
+
+If the initrd or GRUB entry is missing, repair before rebooting (`sudo update-initramfs -c -k <7.0 version>` then
+`sudo update-grub`) — rebooting without them lands on a 6.8 kernel at best, or an unbootable entry at worst.
+
+Then `sudo reboot`, choosing the 7.0 entry. After it: `uname -r` shows 7.0.x, and a missing DKMS build for 7.0 is
+expected and harmless at this point — kernel 7.0's in-tree amdgpu supports gfx1201, and the 30.20 firmware is
+still installed, so console and cards both work. Confirm with `ls /sys/class/drm/card*` (expect card0–card3) and
+`ls /sys/module/amdgpu`. **This is the last point where rollback is a single GRUB pick**: boot 6.8.0-146 and
+nothing has changed.
+
+**1. Remove the ROCm 7.2 / amdgpu 30.20 userspace and its apt sources — then go straight to step 2.**
 
 Required by AMD's own 10.1 instructions ("If you have ROCm 7.2.4 or older installed, please uninstall it before
 proceeding"), and necessary to avoid the conffile/pin collision in hazard 2.
+
+**No reboot between this step and step 2.** This removes both the 6.8 DKMS modules and the gfx1201 firmware
+(hazard 5), so between here and a successful step 2 there is no kernel on the box that can drive these cards.
 
 ```bash
 sudo apt autoremove -y rocm rocm-core amdgpu-dkms
@@ -353,16 +392,29 @@ distinct target, so the explicit form is preferred.
 **3. Verify the driver and userspace before anything else.**
 
 ```bash
-uname -r                          # 7.0.x
-dkms status                       # amdgpu/31.60 (1:7.1.9.31600000) built for 7.0
-amd-smi version && amd-smi list   # 4 GPUs, gfx1201
-rocminfo | grep -c gfx1201        # expect 4
-groups                            # render, video
-glxinfo -B 2>/dev/null | grep -i mesa   # mesa 26.2.0 from graphics/26.16
+uname -r                                       # 7.0.x
+dkms status                                    # amdgpu/31.60 (1:7.1.9.31600000) built for 7.0
+ls /sys/class/drm/card*                        # card0..card3
+ls /lib/firmware/amdgpu/ | grep -c gc_12_0_1   # non-zero: 31.60 firmware landed
+amd-smi version && amd-smi list                # 4 GPUs, gfx1201
+rocminfo | grep -cE '^\s*Name:\s+gfx1201$'     # expect 4 (plain `grep -c gfx1201` counts ~2 lines per GPU)
+groups                                         # render, video
+dpkg -l mesa-amdgpu-vulkan-drivers             # desktop RADV only; the GGUF containers carry their own
 ```
 
-Rollback from here: GRUB → kernel 6.8, then reinstall the cached 30.20 debs from
-`/home/xin/rocm-rollback-20261016/` and restore the three old apt sources.
+`rocminfo` may not be on `PATH` in the 10.1 layout — try `/opt/rocm/bin/rocminfo`, or skip it, since
+`amd-smi list` already proves enumeration.
+
+### Rollback, precisely
+
+- **Between step 0 and step 1:** pick **6.8.0-146** in GRUB (never "newest 6.8" — see hazard 6). Nothing else
+  to undo.
+- **After step 1, before step 2 succeeds:** do *not* reboot. Reinstall the cached debs from
+  `/home/xin/rocm-rollback-20261016/` (`amdgpu-dkms`, `amdgpu-dkms-firmware`) *while still on 7.0*, confirm
+  `dkms status` shows amdgpu 6.16.6 built for 6.8.0-146 and that `gc_12_0_1` firmware is back, and only then
+  boot 6.8.0-146. `linux-headers-6.8.0-146` is installed, so the DKMS rebuild has what it needs.
+- **After step 2:** same as above, plus restoring `rocm.list`, `amdgpu.list`, `amdgpu-proprietary.list` and
+  `repo-radeon-pin-600`. Back them up in pre-flight so this is a copy, not a rewrite.
 
 ### Post-move validation, before any S2 benchmarking
 
@@ -372,8 +424,10 @@ an amdgpu **31.60** driver — the inverse skew to the one B1 just failed on. A 
 - `podman images` intact (podman stays at 4.9.3, so no store migration — but check anyway); `podman tag` the
   rollback alias back if it was lost.
 - `llmctl hw`, `llmctl up`, then boot production 27B `v0.26.0` and Flash-Next `nightly-8cbd5d03…`.
-- Vulkan GGUF path on the new `graphics/26.16` mesa 26.2.0 overlay rather than 7.2's 26.0.0:
-  `llmctl swap gemma4-26b-q8`, and confirm `llmctl swap qwen3.8-flash-next` (llama.cpp fork) still loads.
+- GGUF/Vulkan backends: `llmctl swap gemma4-26b-q8`, then `llmctl swap qwen3.8-flash-next` (llama.cpp fork).
+  These carry their own RADV in the container, so what is actually being tested is whether the **31.60 kernel
+  driver + `/dev/dri` + render-group plumbing** still satisfies a container RADV built for gfx1201 — not host
+  mesa. Expect `vulkaninfo --summary` inside the container to list 4 gfx1201 devices as before.
 - `cd tui && go test ./...`. Python stays at 3.12.3 (no release upgrade), so the tooling should be untouched;
   still confirm `llmctl` and `bench/canary_router.py` import, since `amd-smi` moves 26.2.x → 27.x and
   `scripts/gpustat.py` parses its JSON.
