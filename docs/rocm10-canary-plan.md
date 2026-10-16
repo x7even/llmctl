@@ -82,10 +82,10 @@ B1 showed the ROCm 10 image is unusable on the 7.2 driver, and AMD's 10.1 matrix
 never a supported configuration. So B2 is no longer "only if B1 shows a gain": it is the first measurement of a
 stack AMD actually validates, and B1's numbers are discarded rather than used as a gate.
 
-The host is the only machine. Rollback is an LVM snapshot of the root LV plus images of `/boot` and `/boot/efi`
-(which live outside the LV), not package reinstallation — the cached 30.20 debs are `noble` builds and do not
-apply after a release upgrade. If the GPUs do not enumerate, that is a console job, so this is never done
-unattended.
+The host is the only machine. Because the move stays on 24.04.5 and only adds the HWE 7.0 kernel, rollback is
+selecting kernel 6.8 in GRUB plus reinstalling the cached `noble` 30.20 debs in
+`/home/xin/rocm-rollback-20261016/` — no disk imaging and no filesystem snapshot. If the GPUs do not enumerate,
+that is a console job, so this is never done unattended.
 
 **B3. Cut over: blocked on the comparison in section 6.** Change the pins in one PR (models.yaml,
 `config/CLAUDE.md`, root `CLAUDE.md`, `scripts/`), keep `localhost/llmstack-vllm-rollback:v0.26.0` until the next
@@ -163,7 +163,9 @@ move. The orchestration is resumable (stages with existing output are skipped).
 
 - After B0: continue only if an image exists. **Passed**, running S0/S0c/S1.
 - After S0 vs S1: does the comparison pass every gate, and is the gain big enough to justify a host driver change
-  on the only machine? If S1 shows no gain or a regression, the plan stops here and S2 is never run.
+  on the only machine? **Superseded by section 8**: S1 failed, but on an unsupported driver pairing, so the
+  result is void rather than a stop signal. The user's call (2026-10-16) was to move the host to the stack AMD
+  validates for 10.1 and measure there.
 - B2 needs the user at the console in case the driver move needs recovery.
 - B3 (the pin change and v0.5.0) happens only after the user has read the comparison.
 
@@ -207,38 +209,85 @@ the slowdown — but it does mean the configuration is untested by AMD and not w
 therefore recorded as evidence that the shortcut does not work, not as a measurement of ROCm 10. Tuning was
 explicitly not attempted. The pin stays at `v0.26.0` / `nightly-8cbd5d03…`.
 
-## 9. B2 runbook: Ubuntu 26.04.1 + amdgpu 31.60 + ROCm 10.1
+## 9. B2 runbook: stay on 24.04.5, add HWE 7.0 + amdgpu 31.60 + ROCm 10.1
 
-### Why 26.04.1 and not 24.04.5 + HWE 7.0
+### Corrected: no release upgrade. Why 24.04.5 + HWE 7.0, not 26.04.1
 
-AMD's ROCm 10.1.0 table for Radeon AI PRO R9000 (RDNA 4, gfx1201) lists three supported rows — Ubuntu 26.04.1
-kernel GA 7.0, 24.04.5 kernel HWE 7.0, 22.04.5 kernel HWE 6.8 — with amdgpu 31.60.0 or 31.50.0. The host is
-already 24.04.5, so both of the first two rows are reachable. 26.04.1 is chosen because:
+An earlier draft of this section recommended upgrading to Ubuntu 26.04.1. **That recommendation was based on a
+false premise and is withdrawn.** The premise was "there is no `graphics/31.x` repo, so on 24.04 the Vulkan stack
+would be stranded at AMD's 7.2 mesa overlay while ROCm moved to 10.1". AMD's graphics repo for the 31.60 era is
+not numbered `31.x` — it is numbered on the ROCm release train as **`graphics/26.16`**, which is why a search for
+`graphics/31.x` found nothing. Verified live 2026-10-16:
 
-- **Kernel 7.0 is the distro GA kernel there**, not an HWE bolt-on. `linux-generic-hwe-24.04` tracks forward to
-  newer kernels at each point release, and each roll is another chance for the out-of-tree DKMS driver to break.
-- **It removes the Vulkan skew we otherwise could not test.** There is no `graphics/31.x` repo on repo.radeon.com
-  (only `graphics/7.2`), so on 24.04 the RADV stack for the GGUF llama-server profiles would stay pinned at AMD's
-  `mesa-amdgpu` 26.0.0 overlay while ROCm moved to 10.1. Ubuntu 26.04 ships `mesa-vulkan-drivers` **26.0.8** —
-  newer than AMD's overlay — so the overlay is dropped entirely and the Vulkan path runs on distro RADV.
-- One maintenance window instead of two; podman 5.x; LTS support to 2031.
+| Repo | Serves | mesa version |
+|---|---|---|
+| `repo.radeon.com/graphics/26.16/ubuntu` (noble **and** resolute) | AMD graphics/RADV overlay for 31.60 | `mesa-amdgpu-vulkan-drivers` **1:26.2.0.26160000** |
+| Ubuntu 26.04 distro | distro RADV | `mesa-vulkan-drivers` **26.0.8** |
 
-Both halves publish for 26.04 (`resolute`), verified 2026-10-16: amdgpu `31.60/ubuntu/dists/resolute` serves
-`amdgpu-dkms 1:7.1.9.31600000-2407772.26.04`, and `stable.repo.amd.com/rocm/core/packages/ubuntu2604` serves
-`amdrocm10.1-gfx1201 10.1.0-3`. `do-release-upgrade -c` offers `26.04.1 LTS`.
+So the argument inverts: staying on 24.04 with `graphics/26.16` gives the GGUF/llama-server Vulkan path mesa
+**26.2.0** — *newer* than what Ubuntu 26.04 ships, and matched by AMD to this driver. There is no Vulkan skew to
+escape, and the release upgrade buys nothing for this task.
+
+ROCm 10.1 itself is equally available on noble: `amdgpu-install` 31.60 configures
+`repo.radeon.com/rocmradeon/apt/26.16 noble` (481 packages, all `amdrocm*` at **10.1.0-3**, including
+`amdrocm10.1-gfx1201` and `amdrocm-rccl10.1-gfx1201`). That repo is never named in AMD's install prose — it was
+established by extracting the `amdgpu-install` deb and reading the live index, so treat the mapping
+"release 26.16 ⇒ ROCm 10.1.0-3" as an observed repository fact rather than an AMD statement.
+
+24.04.5 + HWE 7.0 is a documented-supported row: AMD's 10.1.0 matrix for Radeon lists *only* HWE 7.0 for 24.04.5
+(no GA 6.8 row for Radeon — the GA 6.8 row is Instinct-only), and `linux-generic-hwe-24.04` **7.0.0-38.38~24.04.4**
+is in `noble-updates`, already confirmed available on this host.
+
+Decisive advantages of staying:
+
+- **Rollback becomes trivial.** The HWE metapackage does not remove the installed 6.8 images (6.8.0-137 and
+  6.8.0-146 are both present), so recovery is selecting kernel 6.8 in GRUB. No LVM snapshot, no `/boot` imaging,
+  no restore-from-backup, and no `do-release-downgrade` (which does not exist).
+- **The cached rollback debs become valid again.** `/home/xin/rocm-rollback-20261016/` holds *noble* builds of
+  amdgpu-dkms 30.20 — useless after a release upgrade, but exactly right if we stay on noble.
+- **No podman 4.9.3 → 5.x migration** of the 95 GB rootless store, and no release-upgrade blast radius across
+  podman, glibc, Python and the Go toolchain.
+- **The official ROCm 10.1 vLLM image is built on 24.04**: `rocm/vllm:rocm10.1.0_ubuntu24.04_py3.14-pytorch_2.13.0_vllm-0.29.0`
+  (31.3 GB, pushed 2026-10-05), matching the host.
+
+26.04.1 keeps only its generic merits — support to 2031, newer podman/Python. Neither is needed here, so it is
+deferred to a separate, deliberate move rather than bundled into a GPU-stack change.
+
+### Use the official ROCm 10.1 image for S2, not the 10.0 nightly
+
+B1 tested `nightly-rocm100-8cbd5d03…`, which is ROCm **10.0.0** with torch 2.12. AMD publishes an official ROCm
+**10.1.0** vLLM image — `rocm/vllm:rocm10.1.0_ubuntu24.04_py3.14-pytorch_2.13.0_vllm-0.29.0` — carrying vLLM
+0.29.0 and PyTorch 2.13.0, which is the vLLM version AMD's 10.1 matrix validates for gfx1201. S2 should run this
+image. Caveats to carry: it is vLLM 0.29.0 against our 0.26.0 production pin (not the same-commit A/B that B1
+had), and AMD's matrix lists PyTorch **2.14.0** as the validated version for Radeon while simultaneously saying
+vLLM 0.29.0 "requires PyTorch 2.13.0" — a tension AMD does not reconcile.
+
+Also relevant to B1's finding: the only RCCL known issue in 10.1.0 is scoped to Instinct MI350
+(LL-protocol allreduce producing incorrect results), with workaround `export NCCL_PROTO=LL128,Simple`. It is not
+a gfx1201 issue and must not be quoted as one, but given that B1's decode loss points at RCCL, it is a cheap
+debugging lever if the slowdown reappears on the supported stack. No gfx1201-specific known issues are listed in
+10.1.0 at all.
 
 ### Hazards specific to this host
 
-1. **No iGPU.** All four VGA controllers are `1002:7551` (R9700) and `card0` drives the DisplayPort console.
-   Kernel 6.8's in-tree amdgpu predates gfx1201, so between purging `amdgpu-dkms` and booting kernel 7.0 there is
-   no gfx1201 kernel driver. **Do not reboot between the purge and the release upgrade**, and have SSH available
-   in case the local console goes dark.
-2. **`/boot` and `/boot/efi` are outside the root LV** (`nvme2n1p2`, `nvme2n1p1`). A snapshot of root alone would
-   roll back to a 24.04 root booted by 26.04 kernels. Image both partitions as well.
-3. **The cached rollback debs are useless after the upgrade.** `/home/xin/rocm-rollback-20261016/` holds `noble`
-   builds of amdgpu-dkms 30.20. After the move, the snapshot plus the `/boot` images are the only rollback.
-4. **podman 4.9.3 → 5.x migrates the rootless store** (95 GB). Never run `podman system reset` as a fix — it
-   wipes the store. The network backend is already `netavark`, so there is no CNI migration.
+1. **No iGPU.** All four VGA controllers are `1002:7551` (R9700) and `card0` drives the DisplayPort console, so
+   the display depends on the same driver as compute. This is why the kernel goes in **before** the old driver
+   comes out: on kernel 7.0 the in-tree amdgpu supports gfx1201 and keeps the console alive even with no DKMS
+   module built. Never purge `amdgpu-dkms` while 6.8 is the only installed kernel — 6.8's in-tree amdgpu predates
+   gfx1201. Have SSH available regardless.
+2. **apt conffile collision on `/etc/apt/sources.list.d/rocm.list`.** The host has a hand-written `rocm.list`
+   (`rocm/apt/7.2`) plus a `repo-radeon-pin-600` pin at exactly the paths `amdgpu-install` ships as its own
+   conffiles. Installing the 31.60 deb over them triggers a conffile prompt and can leave duplicate/conflicting
+   pins. Remove the old `rocm.list`, `amdgpu.list`, the `graphics/7.2` line and the old pin **before** installing.
+3. **Third-party mesa sources are present** and will fight AMD's `graphics/26.16` overlay: an
+   `oibaf-ubuntu-graphics-drivers-noble` PPA (bleeding-edge mesa) and `amdgpu-proprietary.list`. Disable the oibaf
+   PPA before installing the graphics usecase, or RADV may resolve to PPA builds instead of AMD's.
+4. **Rollback target must stay installed.** Recovery is GRUB → kernel 6.8 with amdgpu-dkms 30.20 rebuilt from
+   `/home/xin/rocm-rollback-20261016/` (noble debs, valid because we are not changing release). Do not
+   `apt autoremove` the 6.8 images.
+5. **Unchanged from the superseded plan:** the local-only container images are backed up (see pre-flight), and
+   `podman system reset` must never be used — though with no release upgrade there is now no podman 5.x store
+   migration at all.
 
 ### Pre-flight (done, no sudo needed)
 
@@ -251,99 +300,93 @@ Both halves publish for 26.04 (`resolute`), verified 2026-10-16: amdgpu `31.60/u
 
 ### Steps
 
-**0. Verify snapshot room, then image what the snapshot cannot cover.**
+No release upgrade, no LVM snapshot. Kernel first, so the console never depends on a driver that is being removed.
+
+**0. HWE 7.0 kernel, while the current 30.20 driver is still intact on 6.8.**
 
 ```bash
-sudo vgs                       # need VFree >= ~200G (lsblk implies ~800G: 1.8T partition, 1000G LV)
-sudo dd if=/dev/nvme2n1p2 of=/mnt/models/_host-backup-20261016/boot.img    bs=4M status=progress
-sudo dd if=/dev/nvme2n1p1 of=/mnt/models/_host-backup-20261016/bootefi.img bs=4M status=progress
-sudo tar -C / -czf /mnt/models/_host-backup-20261016/etc.tar.gz etc
+sudo apt update
+sudo apt install --install-recommends -y linux-generic-hwe-24.04
+sudo reboot                    # choose 7.0 (default); 6.8 stays in GRUB as the rollback
 ```
 
-**1. LVM snapshot of root.**
+After the reboot: `uname -r` shows 7.0.x. The old amdgpu-dkms 30.20 will **not** have built for 7.0 — expected and
+harmless, because kernel 7.0's in-tree amdgpu supports gfx1201 and drives both the console and the cards.
+Confirm the GPUs still enumerate (`ls /sys/class/drm/card*`) before continuing. If anything is wrong here, reboot
+into 6.8 and nothing has been lost.
+
+**1. Remove the ROCm 7.2 / amdgpu 30.20 userspace and its apt sources.**
+
+Required by AMD's own 10.1 instructions ("If you have ROCm 7.2.4 or older installed, please uninstall it before
+proceeding"), and necessary to avoid the conffile/pin collision in hazard 2.
 
 ```bash
-sudo lvcreate -s -n root-pre26 -L 200G /dev/ubuntu-vg/ubuntu-lv
+sudo apt autoremove -y rocm rocm-core amdgpu-dkms
+sudo apt purge -y 'mesa-amdgpu*' 'libdrm-amdgpu*' 'libllvm*-amdgpu*' '*-amdgpu-mesa*' amdgpu-install
+sudo rm -f /etc/apt/sources.list.d/rocm.list /etc/apt/sources.list.d/amdgpu.list \
+           /etc/apt/sources.list.d/amdgpu-proprietary.list \
+           /etc/apt/preferences.d/repo-radeon-pin-600
+sudo mv /etc/apt/sources.list.d/oibaf-ubuntu-graphics-drivers-noble.sources ~/oibaf.sources.disabled
+sudo apt update
+dkms status                    # expect empty
 ```
 
-Rollback, if needed: `sudo lvconvert --merge /dev/ubuntu-vg/root-pre26 && sudo reboot`, then restore
-`boot.img`/`bootefi.img` to their partitions from a live USB if the kernels no longer match.
+**2. Install driver + ROCm 10.1 + graphics in one coherent step.**
 
-**2. Purge the AMD 7.2 stack — and do not reboot afterwards.**
-
-Required by AMD's own 10.1 instructions (uninstall ROCm 7.2.4 or older first), and necessary here because
-noble-built `amdgpu-dkms 6.16.6` cannot build against kernel 7.0 and the `mesa-amdgpu`/`libllvm20.1-amdgpu`
-overlays would fight Ubuntu's mesa during the upgrade.
+This is AMD's documented path for Radeon (the `amdgpu-install` method row is marked "Radeon and Ryzen only").
+The deb configures `amdgpu/31.60`, `rocmradeon/apt/26.16` and `graphics/26.16` together, which is what keeps the
+driver, ROCm and RADV matched.
 
 ```bash
-sudo amdgpu-install --uninstall -y
-sudo apt purge -y 'amdgpu*' 'rocm*' 'mesa-amdgpu*' 'libdrm-amdgpu*' 'libllvm*-amdgpu*' '*-amdgpu-mesa*'
-sudo apt autoremove -y
-sudo rm -f /etc/apt/sources.list.d/amdgpu*.list /etc/apt/sources.list.d/rocm*.list
-dkms status                    # must be empty
-```
-
-**3. Release upgrade, in the same sitting.**
-
-```bash
-sudo apt update && sudo apt full-upgrade -y
-sudo do-release-upgrade
-```
-
-Keep local versions of config files we own when prompted. Reboot lands on 26.04.1 + kernel 7.0, whose in-tree
-amdgpu does support gfx1201, so console and cards should both return.
-
-**4. amdgpu 31.60.**
-
-```bash
-cd /tmp && wget https://repo.radeon.com/amdgpu-install/31.60/ubuntu/resolute/amdgpu-install_31.60.316000-1_all.deb
+sudo apt install -y "linux-headers-$(uname -r)" "linux-modules-extra-$(uname -r)"
+cd /tmp
+wget https://repo.radeon.com/amdgpu-install/31.60/ubuntu/noble/amdgpu-install_31.60.316000-1_all.deb
 sudo apt install ./amdgpu-install_31.60.316000-1_all.deb
-sudo apt update && sudo apt install -y amdgpu-dkms
+sudo amdgpu-install --usecase=rocm,graphics --gfxversion=gfx1201
 sudo reboot
 ```
 
-**5. Verify the driver before anything else.**
+`--gfxversion=gfx1201` is the deterministic form. `auto` also resolves correctly here (it dedupes by gfx target,
+so four identical R9700s collapse to one `gfx1201`), but it hard-exits if discovery ever returns more than one
+distinct target, so the explicit form is preferred.
+
+**3. Verify the driver and userspace before anything else.**
 
 ```bash
-uname -r                       # 7.0.x
-dkms status                    # amdgpu/31.60 built for 7.0
+uname -r                          # 7.0.x
+dkms status                       # amdgpu/31.60 (1:7.1.9.31600000) built for 7.0
 amd-smi version && amd-smi list   # 4 GPUs, gfx1201
-groups                         # render, video
+rocminfo | grep -c gfx1201        # expect 4
+groups                            # render, video
+glxinfo -B 2>/dev/null | grep -i mesa   # mesa 26.2.0 from graphics/26.16
 ```
 
-**6. ROCm 10.1 userspace (optional — the containers carry their own).**
-
-```bash
-sudo apt install -y libatomic1 libquadmath0
-sudo mkdir -p /etc/apt/keyrings
-curl -fsSL https://stable.repo.amd.com/rocm/gpg/packages.gpg | sudo tee /etc/apt/keyrings/amdrocm.gpg >/dev/null
-sudo tee /etc/apt/sources.list.d/amdrocm-stable.sources >/dev/null <<'EOF'
-Types: deb
-URIs: https://stable.repo.amd.com/rocm/core/packages/ubuntu2604/
-Suites: stable
-Components: main
-Architectures: amd64
-Signed-By: /etc/apt/keyrings/amdrocm.gpg
-EOF
-sudo apt update && sudo apt install -y amdrocm10.1-gfx1201
-```
+Rollback from here: GRUB → kernel 6.8, then reinstall the cached 30.20 debs from
+`/home/xin/rocm-rollback-20261016/` and restore the three old apt sources.
 
 ### Post-move validation, before any S2 benchmarking
 
 The driver change cuts both ways: production `v0.26.0` carries ROCm **7.2.3** userspace and will now be running on
 an amdgpu **31.60** driver — the inverse skew to the one B1 just failed on. A boot check is not enough.
 
-- `podman images` intact after the 5.x store migration; `podman tag` the rollback alias back if it was lost.
+- `podman images` intact (podman stays at 4.9.3, so no store migration — but check anyway); `podman tag` the
+  rollback alias back if it was lost.
 - `llmctl hw`, `llmctl up`, then boot production 27B `v0.26.0` and Flash-Next `nightly-8cbd5d03…`.
-- Vulkan GGUF path on distro RADV instead of AMD's overlay: `llmctl swap gemma4-26b-q8`.
-- `cd tui && go test ./...`, and re-check the Python tooling (host Python moves 3.12 → newer; `python3-yaml` is a
-  distro package so apt handles it, but confirm `llmctl` and `bench/canary_router.py` still import).
+- Vulkan GGUF path on the new `graphics/26.16` mesa 26.2.0 overlay rather than 7.2's 26.0.0:
+  `llmctl swap gemma4-26b-q8`, and confirm `llmctl swap qwen3.8-flash-next` (llama.cpp fork) still loads.
+- `cd tui && go test ./...`. Python stays at 3.12.3 (no release upgrade), so the tooling should be untouched;
+  still confirm `llmctl` and `bench/canary_router.py` import, since `amd-smi` moves 26.2.x → 27.x and
+  `scripts/gpustat.py` parses its JSON.
 - **Re-run the full S0 suite on the unchanged production images as state S0′**, then
   `canary_compare.py bench/results/canary-rocm10-20261016/{fn-s0,fn-s0prime}`. This is the "production still
   works" gate and the thing that must pass before the pin is allowed to move.
 
-Only then run S2 on `nightly-rocm100-8cbd5d03…`.
+Only then run S2 — on `rocm/vllm:rocm10.1.0_ubuntu24.04_py3.14-pytorch_2.13.0_vllm-0.29.0` (see above), with
+`nightly-rocm100-8cbd5d03…` as a secondary datapoint if the official image misbehaves.
 
-**Confound to carry in the write-up:** S2 vs S1 now mixes OS, kernel, driver and mesa. The clean readings are
-**S0′ vs S0** (OS/kernel/driver effect, image held constant) and **S2 vs S0′** (image effect on the supported
-host). Do not quote S2 vs S1 as "the ROCm 10 delta".
+**Confound to carry in the write-up:** S2 vs S1 mixes kernel, driver, mesa *and* (if S2 is the official image)
+the vLLM version. The clean readings are **S0′ vs S0** — kernel/driver/mesa effect with the image held constant —
+and **S2 vs S0′** — image effect on a supported host. Do not quote S2 vs S1 as "the ROCm 10 delta". If S2 uses
+the official 10.1 image, its vLLM is 0.29.0 against our 0.26.0 pin, so a loss there is not attributable to ROCm
+alone; the `nightly-rocm100` run (same vLLM commit as production Flash-Next) is the only same-vLLM comparison
+available and is the one to use for attribution.
