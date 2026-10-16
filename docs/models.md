@@ -170,9 +170,14 @@ time and 4 streams drop to ~8.5 tok/s each; TP4 + expert-parallel keeps all four
   Move to a tagged release when one carries the same support.
 - TP4 + `--enable-expert-parallel`, `VLLM_ROCM_USE_AITER=0` (Triton MoE path; no AITER
   path for `Qwen4Exp`). No EP crash with INT4 MoE, unlike the AWQ case in `config/CLAUDE.md`.
-- The FP8 PLE table (47.7 GiB) is CPU-offloaded into pinned host RAM (~12 GiB per rank, so
-  ~96 GB of host RAM is needed in total). Rootless podman's default memlock limit is ~23 GiB,
-  so the profile passes `--ulimit memlock=-1:-1`.
+- The FP8 PLE table (47.7 GiB) is CPU-offloaded into pinned host RAM (~96 GB of host RAM is
+  needed in total; workers measure 16-21 GiB of anonymous host memory each). It is pinned by
+  the HIP pinned-host allocator (engine log `pinned=True`), not `mlock`, so the profile's
+  `--ulimit memlock=-1:-1` is inert under rootless podman: the hard limit stays ~23.5 GiB
+  (`ulimit -Hl` inside the container) with or without it, and speed and behaviour are identical
+  without the flag (checked 2026-10-16). Kernel `VmLck` / `Mlocked` read 0 even though the table
+  is pinned, so they cannot be used to judge pinning, and the cap is not what causes
+  half-speed starts (`docs/flash-next-half-speed.md`).
 - Checkpoint breakdown (116 GiB, 121 GB on disk): experts INT4 58.4 GiB, PLE FP8 47.7 GiB,
   attention BF16 5.6, embed 1.2, lm_head 1.2, vision 0.8.
 - Per card (31.86 GiB): weights 18.79 GiB, CUDA graphs 0.72, KV 6.91, ~3 spare, ~124 GB peak
@@ -196,6 +201,21 @@ needle prompt prefills in ~27 s (~3.2K tok/s) and retrieves correctly. Tool call
 (`qwen3_coder` parser) and default thinking (terminates, ~100 tokens on a simple question) work.
 Baselines: `bench/baselines/qwen3.8-flash-next-vllm-nightly-8cbd5d0-*.json`. For comparison
 the GGUF profile does ~50 tok/s single-stream (with MTP) but only ~34 aggregate at 4 streams.
+
+**`--gpu-memory-utilization` sweep** (2026-10-16, single run each, 262K context, serial decode
+~57 tok/s at every value). Stress = 7 concurrent unique ~100K-token prompts (~690K tokens total):
+
+| Utilization | KV pool (tokens) | Concurrency at 262K | Peak VRAM under stress | Stress result |
+|-------------|------------------|---------------------|------------------------|---------------|
+| **0.90 (shipped)** | 550,959 | 2.10x | ~32.0 / 34.2 GB | all 7 OK, 255 s |
+| 0.93 | 627,926 (+14%) | 2.40x | 33.1 GB | all 7 OK, 255 s |
+| 0.95 | 678,221 (+23%) | 2.59x | 33.76 GB (~0.45 GB headroom) | all 7 OK, 254 s |
+| 0.97 | 729,278 (+32%) | 2.78x | ~34.0 GB (~0.2 GB headroom) | **stalled**: 3 of 7 timed out at 3600 s |
+
+0.97 stalled with ~20% of the KV pool in use, no preemptions and no logged errors (probably
+allocator thrash with almost no free VRAM; not proven). The extra pool only matters with several
+100K+ contexts live at once, so 0.90 stays shipped; 0.93 is the safer step up and 0.95 works with
+thin headroom. Do not go to 0.97 on this profile.
 
 **Tuning findings (do not "fix" these back):**
 - `--cudagraph-capture-sizes 1 2 4 8`, not the usual `1 2 4 8 16 32`. Larger captured sizes

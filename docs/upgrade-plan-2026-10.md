@@ -76,7 +76,21 @@ All in `bench/baselines/` (`concurrent_bench.py` output, `medium-256`, 32 reques
 
 Compare any two with `python3 bench/concurrent_bench.py --compare OLD.json NEW.json`.
 
-## Planned after v0.4.5 (decided 2026-10-15)
+## Outcomes after v0.4.5 (2026-10-15/16) and what is next
+
+- **Radiance trial: done, not adopted.** 27B FP8 TP2 without speculation was +19-38% on short-context decode
+  versus v0.26.0 but 35-46% slower at 8K+ context with about 2x TTFT (FP8 KV falls back to Triton paged
+  attention). MTP and DFlash were not tested. Production pin stays `v0.26.0`.
+- **Flash-Next MXFP4 (tcclaviger checkpoint + image): done, not adopted.** About 2x serial speed (111 vs 55.7
+  tok/s) but it failed the quality gate in four configurations, including the model card's own recipe: mini_scheme
+  and regex_engine scored 5-14% against 54% / 50% for the shipped W4A16, with samples ending early or empty. See the
+  quality gate and canary checklist in `bench/CLAUDE.md`.
+- **Flash-Next `--gpu-memory-utilization` and PLE pinning checked** (docs/models.md): the shipped 0.90 stays; the
+  `memlock` flag is inert under rootless podman.
+- **Next: ROCm 10.x canary as v0.5.0.** It must pass the new quality gate and the long-context stress step
+  before any pin changes, and the `rocm-smi` audit below comes first.
+
+### Original plan (decided 2026-10-15)
 
 - **Radiance trial first.** `magiccodingman/vllm-radiance` (vLLM 0.30.0, ROCm 7.14, libr4d, R9700-native FP8 GEMMs,
   RDNA4 attention, TP2 P2P all-reduce) is qualified by its authors only on TP2 with Qwen3.8-27B. Steps: pull the

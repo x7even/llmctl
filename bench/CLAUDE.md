@@ -31,9 +31,36 @@ Rules learned the hard way (details in `docs/hard-code-tasks.md`):
 - Use a generation cap of 64K-96K for the hard tasks; at 32K Flash-Next truncates and the zeros measure the cap.
 - 4 samples per cell is small: read differences under ~15 points as noise.
 - A `finish_reason=stop` with empty content is a premature end-of-turn from the model, not a test failure; count
-  it separately (the 27B does this at a rate that rises with temperature).
+  it separately (the 27B does this at a rate that rises with temperature). The runner now does: the summary's
+  "early stops (empty/cut)" column counts replies that were empty or ended inside an unterminated code fence,
+  and each row carries `early_stop`. `regrade` fills it in for older saved runs.
 - `--thinking-budget` only helps if cap minus budget still covers the answer.
 - Save per-sample results (the runner does) so every score can be audited or re-graded with `regrade`.
+
+### Quality gate for canaries (new checkpoint, image, kernel or quantisation)
+
+Speed is not a result if output quality drops. Before a canary gets throughput numbers, a tool-call check or
+a profile, run the hard code tasks (`mini_scheme`, `regex_engine`, plus `json_strict` and `date_math`) against
+the current profile as a baseline and against the candidate under identical settings (same reasoning effort,
+cap of at least 64K, same samples per cell, exact all-reduce where an image offers a lossy one). Stop the canary
+when either holds:
+- a task's mean tests passed falls by more than the noise (15 points at 4 samples, ~10 at 8), or
+- more than a handful of samples end early (the "early stops" column), or run to the cap with empty content.
+
+Before blaming the model, also run the checkpoint's own published recipe verbatim (its flags, sampling and
+env). If that fails the same way, the cause is the checkpoint or the image, not our config. Precedent:
+the 2026-10-15 MXFP4 Flash-Next canary was ~2x faster but scored 5-14% vs 50-54% on the two hardest tasks,
+with the model's own recipe failing the same way, so it was not adopted.
+
+### Canary checklist
+
+1. Baseline the shipped profile on the same prompts and settings first.
+2. Run the quality gate above before any throughput work.
+3. Run the model card's own recipe verbatim, as a config-vs-model check.
+4. Long-context stress: ~7 concurrent unique ~100K-token prompts (~690K tokens total) must all finish, with
+   no timeouts, under the profile's real `--gpu-memory-utilization`. This is what separates 0.95 from 0.97.
+5. Keep throwaway routers and containers on a separate port and name, and leave the shipped profile untouched
+   until every step passes.
 
 ---
 
