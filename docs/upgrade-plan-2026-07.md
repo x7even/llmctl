@@ -567,7 +567,7 @@ alias is not a HF repo, so `--tokenizer /models/Qwen3.6-35B-A3B-FP8` (local weig
 was added while keeping the served name for API requests. All requests succeeded in
 every run (16/64/128). Baseline ran against the LIVE production 0.22.1 container on
 :9111; canary rows ran against the 0.24.0 canary on :9555 with the exact production
-profile. Raw logs under `/home/xin/.claude/jobs/73c9942f/tmp/` (`bench_c*.log`,
+profile. Raw logs were kept local-only (`bench_c*.log`,
 `canary_bench_c*.log`, `canary_nomtp_bench_c8.log`).
 
 ³ Phase 6 rows use this repo's own `bench/concurrent_bench.py` harness (`--no-thinking`,

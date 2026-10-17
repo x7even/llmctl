@@ -148,8 +148,10 @@ Use llama-server (Vulkan) for all GGUF files. Use vLLM for safetensors only.
 ### Pinned host RAM: keep `scripts/llm-prestart` in front of podman
 
 `qwen3.8-flash-next-vllm` pins ~48 GiB of host RAM; started with the page cache full it runs at half
-speed for its whole life. Its `cmd` begins `scripts/llm-prestart --need-free-gib 80 --keep <model dir> --
-podman run ...` (absolute main-checkout path, no shell expansion). Do not remove it, and give any new
+speed for its whole life. Its `cmd` begins `__LLMSTACK_DIR__/scripts/llm-prestart --need-free-gib 80
+--keep <model dir> -- podman run ...`. The path must be absolute because llama-swap runs `cmd` without
+a shell, so it takes the `__LLMSTACK_DIR__` placeholder that `scripts/configure` substitutes — the same
+rule as the cache mounts, not an exception to it. Do not remove it, and give any new
 profile that pins a large host buffer the same wrapper. See `docs/flash-next-half-speed.md`.
 
 ### Per-profile chat-template defaults
