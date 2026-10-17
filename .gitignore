@@ -7,9 +7,13 @@ config/models.yaml.bak
 *.log
 logs/
 
-# vLLM/Triton compilation caches — large, machine-specific, regenerated on first boot
-.vllm-cache/
-.triton-cache/
+# vLLM/Triton compilation caches — large, machine-specific, regenerated on first boot.
+# No trailing slash: in a git worktree these are usually symlinks to the main checkout's
+# caches (scripts/llmkv resolves __LLMSTACK_DIR__ to its own repo root, so a worktree would
+# otherwise mount empty cache dirs and cold-compile), and a "dir/" pattern does not match a
+# symlink — which would leave an absolute path to someone's home directory committable.
+.vllm-cache
+.triton-cache
 
 # Built/downloaded binaries
 bin/llama-swap

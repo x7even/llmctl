@@ -81,12 +81,19 @@ sequences — and it is slower. Seven interleaved arms on the 27B MTP profile, `
 | `3 6 9 12 15 18 21 24 30 36 42 48` (×2) | 192.4 | 331.8 | 225,280 | 1.78 GiB |
 
 Both aligned lists lose ~6–7% at exactly the concurrencies they were supposed to help, and pay
-6–14% of the KV budget for it. The dense list exists to test whether the sparse one was losing to
-graph padding (a 9-sequence batch pads to 48); it caps padding at one sequence and performs the
-same, so padding is not the mechanism. What the two losing lists share is that they capture graphs
-*above* 6 sequences, so conc=8/16 run as graph replays where the shipped list has already fallen
-through to eager — and here eager is the faster path. The `qwen3.8-flash-next-vllm` exception below
-is a more extreme case of the same effect, not an unrelated quirk.
+6–14% of the KV budget for it.
+
+Graph padding is not the explanation, and could not have been: a captured graph runs at its
+captured size, but with MTP the steady-state step is 8 × 3 = 24 query-tokens at conc=8 and 48 at
+conc=16, and both 24 and 48 are exact members of *both* aligned lists. Neither list padded at the
+points measured — the loss shows up with no padding at all. (The dense list was run to vary
+padding granularity and is therefore uninformative about it; what it does show is that the loss
+reproduces across two quite different lists.)
+
+What the two losing lists share is that they capture graphs *above* 6 sequences, so conc=8/16 run
+as full-graph replays where the shipped list has already fallen through to eager — and here eager
+is the faster path. The `qwen3.8-flash-next-vllm` exception below is a more extreme case of the
+same effect, not an unrelated quirk.
 
 Measured at TP2 on this hardware; a TP4 re-check is still owed, and `conc=1` was flat across all
 seven arms (34.2–34.8) as the internal control, since batch 1 rounds to captured size 3 either way.

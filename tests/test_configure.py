@@ -479,7 +479,11 @@ def _sandbox():
     (Path(td) / "config").mkdir()
     dst = Path(td) / "config" / "models.yaml"
     src = (REPO / "config" / "models.yaml").read_text()
-    dst.write_text(src)
+    # The working copy is normally *configured* (scripts/configure has written the real
+    # repo root into it), so put the placeholder back to get a realistic fresh-clone input.
+    # On an unconfigured checkout this replace simply finds nothing. Deriving the root from
+    # REPO rather than hardcoding one machine's path is what makes it work anywhere.
+    dst.write_text(src.replace(str(REPO), "__LLMSTACK_DIR__"))
     return Path(td), dst
 
 
@@ -582,19 +586,29 @@ def test_bad_gpu_count_rejected():
 # ── Shipped-config hygiene ─────────────────────────────────────────────────
 
 def test_shipped_config_ships_placeholders_not_a_configured_path():
-    """The committed models.yaml must carry __LLMSTACK_DIR__, never a real path.
+    """The *committed* models.yaml must carry __LLMSTACK_DIR__, never a real path.
 
     `configure.patch` substitutes with a plain `str.replace` and never checks that
     anything matched, so a models.yaml committed *after* running configure silently
     ships one machine's absolute paths to everyone who clones: the bind mounts point
     at directories that do not exist, the compile cache misses, and boots go from
     ~3 minutes to ~18. This has happened once already, so it gets a guard.
+
+    Reads HEAD rather than the working tree on purpose. A working copy is *supposed*
+    to be configured — that is what `scripts/configure` is for — so asserting on the
+    file on disk would fail on every correctly set-up machine. The invariant belongs
+    to what gets committed. Skips rather than fails where git is unavailable (export
+    tarball, vendored copy), since there is nothing to check in that case.
     """
-    src = (REPO / "config" / "models.yaml").read_text()
-    assert "__LLMSTACK_DIR__" in src, "models.yaml has no __LLMSTACK_DIR__ placeholder"
+    try:
+        src = subprocess.run(["git", "-C", str(REPO), "show", "HEAD:config/models.yaml"],
+                             capture_output=True, text=True, check=True).stdout
+    except (OSError, subprocess.CalledProcessError):
+        return  # not a git checkout; nothing committed to inspect
+    assert "__LLMSTACK_DIR__" in src, "committed models.yaml has no __LLMSTACK_DIR__ placeholder"
     leaked = [(i + 1, ln) for i, ln in enumerate(src.splitlines())
               if re.search(r"/(home|Users)/", ln)]
-    assert not leaked, f"absolute user paths in shipped models.yaml: {leaked}"
+    assert not leaked, f"absolute user paths in committed models.yaml: {leaked}"
 
 
 if __name__ == "__main__":

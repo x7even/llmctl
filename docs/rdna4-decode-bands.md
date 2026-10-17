@@ -196,10 +196,12 @@ Two secondary findings from the same investigation, neither of which explains th
   the internal control: batch 1 rounds to captured size 3 under every list, so it *must* be
   unchanged, and it is.
 
-  The dense list was run specifically to test graph padding as the mechanism — a captured graph
-  runs at its captured size, and the sparse list pads a 9-sequence batch (27 query tokens) all the
-  way to 48. The dense list caps padding at one sequence up to 24, an 8× difference in granularity,
-  and lands within 1% of the sparse list on both points. **Padding is not the mechanism.**
+  **Graph padding is not the mechanism, and could not have been.** A captured graph does run at
+  its captured size, so the dense list was run to vary padding granularity. But with MTP the
+  steady-state step is 8 × 3 = 24 query-tokens at conc=8 and 48 at conc=16, and both 24 and 48 are
+  exact members of *both* aligned lists — so neither list padded at the two points measured. The
+  dense arm is therefore uninformative about padding; what it establishes instead is that the loss
+  reproduces across two very different lists, and that it appears with no padding at all.
 
   What the two losing lists share is that they capture graphs above 6 sequences, so conc=8/16
   execute as full-graph replays where the production list has already fallen through to eager. The
@@ -207,10 +209,10 @@ Two secondary findings from the same investigation, neither of which explains th
   this hardware full-graph replay at decode batch >6 is slower than eager. The KV reduction is a
   real cost but not the cause: even 224K tokens is far more than this benchmark consumes.
 
-  An unverified candidate mechanism: the full-cudagraph path needs a uniform decode query length,
-  so a step mixing newly-arrived prefill with ongoing decode may be split into separate passes to
-  stay graph-eligible where the eager path fuses them. That is independent of padding granularity,
-  which fits. Not tested.
+  Why replay should lose to eager here is not established. Note only that the gap is ~6–7% of
+  throughput, which is the same order as the graph-replay saving measured directly on this part
+  (1.34 ms eager vs 1.10 ms replay on a decode-shaped 500-dispatch step, in the dispatch-latency
+  row above) — so whatever the cause, it is comparable in size to the benefit being sought.
 
   This also reframes the `qwen3.8-flash-next-vllm` exception (`1 2 4 8`, larger captured sizes cost
   it 30–50% of single-stream decode) as a more extreme instance of the same effect rather than a
