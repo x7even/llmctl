@@ -1,0 +1,329 @@
+#!/usr/bin/env python3
+"""
+Unit tests for scripts/llmkv (KV-budget reader for vLLM profiles): pulling a profile's cmd
+out of models.yaml, applying flag overrides to the vllm portion without touching podman's,
+forcing a throwaway container name, parsing the KV numbers out of a startup log, and turning
+a KV token total into a context x concurrency table.
+
+No GPU, no podman and no server are needed: models.yaml fragments and startup logs are
+supplied as strings.
+
+Run:  python3 tests/test_llmkv.py        (also pytest-compatible)
+"""
+import importlib.machinery
+import importlib.util
+import subprocess
+import sys
+from pathlib import Path
+
+REPO = Path(__file__).resolve().parent.parent
+SCRIPT = REPO / "scripts" / "llmkv"
+
+_loader = importlib.machinery.SourceFileLoader("llmkv", str(SCRIPT))
+_spec = importlib.util.spec_from_loader("llmkv", _loader)
+kv = importlib.util.module_from_spec(_spec)
+_loader.exec_module(kv)
+
+# A models.yaml fragment shaped like the real one: two profiles, line-continuation cmd blocks,
+# podman options before the image name and vllm flags after it.
+YAML = """version: 2
+models:
+  other-profile:
+    ttl: 0
+    cmd: |
+      podman run --rm --entrypoint="" --name llmstack-vllm-other \\
+        docker.io/vllm/vllm-openai-rocm:v0.26.0 \\
+        vllm serve /models/other --port 8000
+  qwen-test:
+    ttl: 0
+    concurrencyLimit: 64
+    cmd: |
+      podman run --rm --entrypoint="" \\
+        --name llmstack-vllm-qwen-test \\
+        --ipc=private --shm-size=32g --network=host \\
+        -e HSA_ENABLE_SDMA=0 \\
+        -v /mnt/models/llm:/models:ro \\
+        docker.io/vllm/vllm-openai-rocm:v0.26.0 \\
+        vllm serve /models/qwen \\
+          --served-model-name ${MODEL_ID} \\
+          --tensor-parallel-size 4 \\
+          --max-model-len 131072 \\
+          --max-num-seqs 32 \\
+          --gpu-memory-utilization 0.95 \\
+          --enable-prefix-caching \\
+          --port ${PORT}
+  trailing-profile:
+    ttl: 0
+"""
+
+
+def _argv(port=9711):
+    cmd = kv.extract_cmd(YAML, "qwen-test")
+    return kv.split_argv(cmd, "qwen-test", port)
+
+
+# --- extract_cmd ---------------------------------------------------------------------
+
+def test_extract_cmd_picks_the_named_profile_only():
+    cmd = kv.extract_cmd(YAML, "qwen-test")
+    assert "/models/qwen" in cmd
+    assert "/models/other" not in cmd, "bled into the neighbouring profile"
+
+
+def test_extract_cmd_stops_at_the_next_profile():
+    cmd = kv.extract_cmd(YAML, "other-profile")
+    assert "/models/other" in cmd
+    assert "qwen" not in cmd
+
+
+def test_extract_cmd_rejects_an_unknown_profile():
+    try:
+        kv.extract_cmd(YAML, "no-such-profile")
+    except SystemExit as e:
+        assert "no-such-profile" in str(e)
+    else:
+        raise AssertionError("an unknown profile must not be silently accepted")
+
+
+def test_extract_cmd_rejects_a_profile_with_no_cmd():
+    try:
+        kv.extract_cmd(YAML, "trailing-profile")
+    except SystemExit as e:
+        assert "cmd" in str(e)
+    else:
+        raise AssertionError("a profile with no cmd block must not be silently accepted")
+
+
+def test_extract_cmd_matches_the_whole_profile_name():
+    """"qwen-test" must not be found by asking for "qwen"."""
+    try:
+        kv.extract_cmd(YAML, "qwen")
+    except SystemExit:
+        pass
+    else:
+        raise AssertionError("a prefix of a profile name must not match it")
+
+
+# --- split_argv / find_serve_split ---------------------------------------------------
+
+def test_split_argv_substitutes_what_llama_swap_substitutes():
+    argv = _argv(port=9999)
+    assert "qwen-test" in argv, "${MODEL_ID} was not substituted"
+    assert "9999" in argv, "${PORT} was not substituted"
+    assert not any("${" in a for a in argv)
+
+
+def test_split_argv_keeps_an_empty_entrypoint_as_one_argument():
+    assert "--entrypoint=" in _argv()
+
+
+def test_find_serve_split_lands_on_the_first_vllm_flag():
+    argv = _argv()
+    at = kv.find_serve_split(argv)
+    assert argv[at - 2] == "serve"
+    assert argv[at - 1] == "/models/qwen"
+    assert argv[at].startswith("--")
+
+
+def test_find_serve_split_refuses_a_cmd_with_no_serve():
+    try:
+        kv.find_serve_split(["podman", "run", "--rm", "image"])
+    except SystemExit:
+        pass
+    else:
+        raise AssertionError("a cmd without 'vllm serve <model>' must be an error")
+
+
+# --- apply_overrides -----------------------------------------------------------------
+
+def test_override_replaces_an_existing_flag_in_place():
+    argv = _argv()
+    at = kv.find_serve_split(argv)
+    before = argv.index("--gpu-memory-utilization")
+    out, applied = kv.apply_overrides(argv, at, {"gpu-memory-utilization": "0.92"})
+    assert out.index("--gpu-memory-utilization") == before, "flag moved"
+    assert out[before + 1] == "0.92"
+    assert applied["--gpu-memory-utilization"] == ("0.95", "0.92")
+    assert len(out) == len(argv), "replacing a value must not change the argv length"
+
+
+def test_override_appends_a_flag_that_is_absent():
+    argv = _argv()
+    at = kv.find_serve_split(argv)
+    out, applied = kv.apply_overrides(argv, at, {"kv-cache-dtype": "fp8"})
+    assert out[-2:] == ["--kv-cache-dtype", "fp8"]
+    assert applied["--kv-cache-dtype"] == (None, "fp8")
+
+
+def test_override_accepts_a_flag_written_with_dashes():
+    argv = _argv()
+    at = kv.find_serve_split(argv)
+    out, _ = kv.apply_overrides(argv, at, {"--max-num-seqs": "16"})
+    assert out[out.index("--max-num-seqs") + 1] == "16"
+    assert "----max-num-seqs" not in out
+
+
+def test_override_gives_a_value_to_a_bare_boolean_flag():
+    """--enable-prefix-caching has no value; an override must insert one, not eat a neighbour."""
+    argv = _argv()
+    at = kv.find_serve_split(argv)
+    i = argv.index("--enable-prefix-caching")
+    neighbour = argv[i + 1]
+    out, _ = kv.apply_overrides(argv, at, {"enable-prefix-caching": "False"})
+    assert out[i + 1] == "False"
+    assert out[i + 2] == neighbour, "the next flag was overwritten"
+
+
+def test_override_never_touches_the_podman_half():
+    """--name exists before the split too; the podman one must be left alone."""
+    argv = _argv()
+    at = kv.find_serve_split(argv)
+    out, applied = kv.apply_overrides(argv, at, {"name": "hijacked"})
+    assert out[out.index("--name") + 1] == "llmstack-vllm-qwen-test", "podman --name was edited"
+    assert out[-2:] == ["--name", "hijacked"], "the override should have appended past the split"
+    assert applied["--name"] == (None, "hijacked")
+
+
+def test_no_overrides_is_a_no_op():
+    argv = _argv()
+    out, applied = kv.apply_overrides(argv, kv.find_serve_split(argv), {})
+    assert out == argv and applied == {}
+
+
+def test_apply_overrides_does_not_mutate_its_input():
+    argv = _argv()
+    snapshot = list(argv)
+    kv.apply_overrides(argv, kv.find_serve_split(argv), {"gpu-memory-utilization": "0.5"})
+    assert argv == snapshot
+
+
+# --- rename_and_isolate --------------------------------------------------------------
+
+def test_rename_replaces_the_production_container_name():
+    out = kv.rename_and_isolate(_argv(), "llmkv-probe")
+    assert out[out.index("--name") + 1] == "llmkv-probe"
+    assert "llmstack-vllm-qwen-test" not in out, "production container name survived"
+
+
+def test_rename_adds_a_name_when_the_profile_has_none():
+    out = kv.rename_and_isolate(["podman", "run", "--rm", "image"], "llmkv-probe")
+    assert out[out.index("--name") + 1] == "llmkv-probe"
+
+
+def test_rename_forces_detached_mode():
+    out = kv.rename_and_isolate(_argv(), "llmkv-probe")
+    assert "-d" in out
+    assert out.index("-d") == out.index("run") + 1
+
+
+def test_rename_does_not_add_a_second_detach_flag():
+    out = kv.rename_and_isolate(["podman", "run", "--detach", "image"], "n")
+    assert "-d" not in out
+
+
+# --- concurrency_table ---------------------------------------------------------------
+
+def test_concurrency_table_divides_the_kv_budget_by_context():
+    rows = kv.concurrency_table(1_009_850, 131072)
+    at = {r["context"]: r["streams"] for r in rows}
+    assert at[131072] == 7.7
+    assert at[65536] == 15.41
+    assert at[8192] == 123.27
+
+
+def test_concurrency_table_stops_at_max_model_len():
+    rows = kv.concurrency_table(1_009_850, 32768)
+    assert [r["context"] for r in rows] == [8192, 16384, 32768]
+
+
+def test_concurrency_table_without_a_known_max_model_len_shows_every_point():
+    rows = kv.concurrency_table(1_009_850, None)
+    assert [r["context"] for r in rows] == kv.CONTEXT_POINTS
+
+
+def test_concurrency_table_reports_a_budget_too_small_for_one_stream():
+    """The number that matters: a profile can advertise a context it cannot serve once."""
+    rows = kv.concurrency_table(100_000, 131072)
+    assert {r["context"]: r["streams"] for r in rows}[131072] < 1.0
+
+
+# --- parse_startup -------------------------------------------------------------------
+
+LOG = """INFO 10-17 19:08:02 [gpu_worker.py:298] Available KV cache memory: 17.60 GiB
+INFO 10-17 19:08:03 [kv_cache_utils.py:1229] GPU KV cache size: 1,009,850 tokens
+INFO 10-17 19:08:03 [kv_cache_utils.py:1233] Maximum concurrency for 131,072 tokens per request: 7.70x
+INFO 10-17 19:09:41 [api_server.py:1813] Application startup complete.
+"""
+
+
+def test_parse_startup_reads_all_three_numbers():
+    got = kv.parse_startup(LOG)
+    assert got["kv_cache_tokens"] == 1_009_850, "thousands separators must be stripped"
+    assert got["available_kv_gib_per_gpu"] == 17.60
+    assert got["vllm_reported_concurrency"] == {"at_tokens": 131072, "streams": 7.70}
+
+
+def test_parse_startup_returns_nones_rather_than_raising_on_a_failed_boot():
+    got = kv.parse_startup(
+        "torch.OutOfMemoryError: HIP out of memory\nTraceback (most recent call last)")
+    assert got == {"kv_cache_tokens": None, "available_kv_gib_per_gpu": None,
+                   "vllm_reported_concurrency": None}
+
+
+def test_parse_startup_on_an_empty_log():
+    assert kv.parse_startup("")["kv_cache_tokens"] is None
+
+
+def test_failure_regex_catches_the_mtp_drafter_oom():
+    assert kv.FAIL_RE.search(
+        "torch.OutOfMemoryError: HIP out of memory. Tried to allocate 640.00 MiB")
+    assert kv.READY_RE.search(LOG)
+
+
+# --- CLI ------------------------------------------------------------------------------
+
+def _run(args):
+    return subprocess.run([sys.executable, str(SCRIPT), *args],
+                          capture_output=True, text=True, timeout=120)
+
+
+def test_cli_dry_run_builds_a_renamed_detached_command_and_boots_nothing():
+    """--dry-run is the only CLI path safe to test: everything else needs the GPUs."""
+    r = _run(["qwen3.8-27b-code", "--dry-run", "--set", "gpu-memory-utilization=0.92",
+              "--env", "PYTORCH_HIP_ALLOC_CONF=expandable_segments:True",
+              "--name", "llmkv-probe", "--port", "9711"])
+    assert r.returncode == 0, r.stderr
+    out = r.stdout
+    assert "--name llmkv-probe" in out
+    assert "llmstack-vllm-qwen3.8-27b-code" not in out, "production container name survived"
+    assert "run -d" in out, "not detached"
+    assert "--gpu-memory-utilization 0.92" in out
+    assert "PYTORCH_HIP_ALLOC_CONF=expandable_segments:True" in out
+    assert out.index("-e PYTORCH_HIP_ALLOC_CONF") < out.index("docker.io/vllm"), \
+        "podman -e must precede the image name or podman rejects it"
+
+
+def test_cli_rejects_a_malformed_set():
+    r = _run(["qwen3.8-27b-code", "--dry-run", "--set", "no-equals-sign"])
+    assert r.returncode != 0
+    assert "FLAG=VALUE" in r.stderr
+
+
+def test_cli_help_works():
+    r = _run(["--help"])
+    assert r.returncode == 0
+    assert "context x concurrency" in r.stdout
+
+
+if __name__ == "__main__":
+    fns = [v for k, v in sorted(globals().items()) if k.startswith("test_") and callable(v)]
+    failed = 0
+    for fn in fns:
+        try:
+            fn()
+            print(f"ok   {fn.__name__}")
+        except Exception as e:
+            failed += 1
+            print(f"FAIL {fn.__name__}: {type(e).__name__}: {e}")
+    print(f"\n{len(fns) - failed}/{len(fns)} passed")
+    sys.exit(1 if failed else 0)

@@ -73,7 +73,14 @@ def extract_cmd(yaml_text, profile):
     for ln in lines[cmd_at + 1:]:
         if ln.strip() and not ln.startswith("      "):   # block ended
             break
-        body.append(ln.strip())
+        part = ln.strip()
+        # llama-swap runs cmd without a shell, so a trailing backslash would be a literal
+        # argument and the live profiles have none. config/CLAUDE.md's templates do show
+        # them, though, and left in place shlex reads "\ --flag" as one token with a
+        # leading space, which silently defeats every flag lookup below. Drop them.
+        if part.endswith("\\"):
+            part = part[:-1].rstrip()
+        body.append(part)
     return " ".join(p for p in body if p)
 
 
