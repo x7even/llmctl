@@ -1,0 +1,202 @@
+#!/usr/bin/env python3
+"""llmband - decide whether a just-started vLLM server landed in the slow decode band.
+
+    llmband --model qwen3.8-27b-code [--expect-tps 66] [--json]
+
+Why: on gfx1201 (RDNA4) vLLM decode throughput is bimodal and the band is fixed when the
+server process spawns. Two stable bands roughly 1.2x (dense) to 2.4x (hybrid/MoE) apart, with
+almost no variance inside a band, and a process stays in its band for most of its life. A
+server that spawns into the slow band serves at a fraction of its speed until it is restarted,
+and nothing in the startup log says so: clocks, temperatures, power and VRAM all look normal.
+See docs/rdna4-decode-bands.md and ROCm/legacy-rocm-build#6347.
+
+The giveaway is that the GPUs are busy but moving less data. During single-stream decode
+`gpu_busy_percent` reads ~100 in both bands, while `mem_busy_percent` sits far lower in the slow
+band than in the fast one. That makes `mem_busy_percent` an absolute signal needing no baseline,
+which is why it is the primary one here; measured tok/s is used as a cross-check when a
+baseline is supplied with --expect-tps.
+
+Exit status: 0 fast band, 1 slow band, 2 undecided (including any error). Undecided is never
+reported as slow: a false "restart the server" is worse than no answer.
+"""
+import argparse
+import json
+import statistics
+import sys
+import threading
+import time
+from pathlib import Path
+
+DRM = Path("/sys/class/drm")
+
+# Published band centres for gfx1201 single-stream decode: slow 24-27%, fast 62-67% mem_busy.
+# 45 is the midpoint of the gap, and the gap is wide, so the exact value is not delicate.
+MEM_BUSY_THRESHOLD = 45.0
+# Below this gpu_busy the GPUs are not actually decoding and mem_busy means nothing.
+GPU_BUSY_FLOOR = 80.0
+
+PROMPT = ("Explain, in detail and without bullet points, how a write-ahead log gives a "
+          "database engine crash consistency, and why the log must be flushed before the "
+          "data pages it describes.")
+
+
+def cards(root=DRM):
+    """Every card<N> that exposes the two busy counters, in numeric order."""
+    out = []
+    for p in sorted(root.glob("card[0-9]*"), key=lambda q: int(str(q.name)[4:])):
+        if (p / "device" / "gpu_busy_percent").exists() and (p / "device" / "mem_busy_percent").exists():
+            out.append(p)
+    return out
+
+
+def read_percent(card, which):
+    try:
+        return float((card / "device" / f"{which}_busy_percent").read_text().strip())
+    except (OSError, ValueError):
+        return None
+
+
+def sample_busy(card_list, stop, interval=0.25, reader=read_percent):
+    """Sample both counters on every card until `stop` is set. Returns a list of (gpu, mem) means."""
+    rows = []
+    while not stop.is_set():
+        g = [reader(c, "gpu") for c in card_list]
+        m = [reader(c, "mem") for c in card_list]
+        g = [v for v in g if v is not None]
+        m = [v for v in m if v is not None]
+        if g and m:
+            rows.append((statistics.fmean(g), statistics.fmean(m)))
+        time.sleep(interval)
+    return rows
+
+
+def busy_under_load(rows, gpu_busy_floor=GPU_BUSY_FLOOR):
+    """Mean gpu/mem busy over only the samples where the GPUs were actually working.
+
+    Startup and teardown samples would drag the mean toward idle, so they are dropped.
+    Returns (gpu_mean, mem_mean, n_used) or (None, None, 0).
+    """
+    loaded = [(g, m) for g, m in rows if g >= gpu_busy_floor]
+    if not loaded:
+        return None, None, 0
+    return (statistics.fmean(g for g, _ in loaded),
+            statistics.fmean(m for _, m in loaded),
+            len(loaded))
+
+
+def classify(mem_busy, gpu_busy, tps=None, expect_tps=None,
+             mem_threshold=MEM_BUSY_THRESHOLD, tolerance=0.25,
+             gpu_busy_floor=GPU_BUSY_FLOOR):
+    """Return (verdict, reasons) where verdict is "fast", "slow" or "undecided".
+
+    mem_busy is the primary signal. tok/s is only a cross-check, and when the two disagree the
+    answer is "undecided" rather than a guess: both signals have been seen to be individually
+    misleading (mem_busy if the sampling window missed the decode, tok/s if the baseline was
+    measured on a different prompt or a different acceptance rate).
+    """
+    reasons = []
+    if mem_busy is None or gpu_busy is None:
+        return "undecided", ["no usable samples from the busy counters"]
+    if gpu_busy < gpu_busy_floor:
+        return "undecided", [f"gpu_busy {gpu_busy:.0f}% < {gpu_busy_floor:.0f}%: "
+                             "the GPUs were not decoding while sampled"]
+
+    by_mem = "fast" if mem_busy >= mem_threshold else "slow"
+    reasons.append(f"mem_busy {mem_busy:.0f}% vs threshold {mem_threshold:.0f}% -> {by_mem}")
+
+    by_tps = None
+    if tps is not None and expect_tps:
+        floor = expect_tps * (1.0 - tolerance)
+        by_tps = "fast" if tps >= floor else "slow"
+        reasons.append(f"{tps:.1f} tok/s vs floor {floor:.1f} "
+                       f"({expect_tps:.0f} -{tolerance:.0%}) -> {by_tps}")
+
+    if by_tps and by_tps != by_mem:
+        reasons.append("signals disagree")
+        return "undecided", reasons
+    return by_mem, reasons
+
+
+def measure(base, model, max_tokens, timeout):
+    """One non-streaming single-stream request, sampling the counters throughout.
+
+    Non-streaming on purpose: a streamed response is chunked, and with speculative decoding a
+    chunk can carry several tokens, so counting chunks understates the rate. usage from the
+    response body is the only token count worth trusting.
+    """
+    import requests  # imported late so --help and the unit tests need no dependency
+
+    card_list = cards()
+    if not card_list:
+        raise RuntimeError("no DRM cards expose gpu_busy_percent/mem_busy_percent")
+
+    stop = threading.Event()
+    rows = []
+    t = threading.Thread(target=lambda: rows.extend(sample_busy(card_list, stop)), daemon=True)
+
+    payload = {"model": model,
+               "messages": [{"role": "user", "content": PROMPT}],
+               "max_tokens": max_tokens, "temperature": 0.0,
+               "chat_template_kwargs": {"enable_thinking": False}}
+
+    t.start()
+    t0 = time.perf_counter()
+    try:
+        r = requests.post(f"{base}/v1/chat/completions", json=payload, timeout=timeout)
+        r.raise_for_status()
+        body = r.json()
+    finally:
+        stop.set()
+        t.join(timeout=5)
+    wall = time.perf_counter() - t0
+
+    toks = (body.get("usage") or {}).get("completion_tokens") or 0
+    gpu, mem, n = busy_under_load(rows)
+    return {"tok_s": (toks / wall) if wall > 0 else None, "completion_tokens": toks,
+            "wall_s": round(wall, 3), "gpu_busy": gpu, "mem_busy": mem,
+            "samples_under_load": n, "samples_total": len(rows),
+            "cards": [c.name for c in card_list]}
+
+
+def main(argv=None):
+    ap = argparse.ArgumentParser(prog="llmband", description=__doc__,
+                                 formatter_class=argparse.RawDescriptionHelpFormatter)
+    ap.add_argument("--base", default="http://127.0.0.1:8080")
+    ap.add_argument("--model", required=True)
+    ap.add_argument("--max-tokens", type=int, default=256)
+    ap.add_argument("--expect-tps", type=float, default=None,
+                    help="known fast-band serial tok/s for this profile; enables the cross-check")
+    ap.add_argument("--tolerance", type=float, default=0.25,
+                    help="fraction below --expect-tps still counted as fast (default 0.25)")
+    ap.add_argument("--mem-busy-threshold", type=float, default=MEM_BUSY_THRESHOLD)
+    ap.add_argument("--timeout", type=float, default=600.0)
+    ap.add_argument("--json", action="store_true")
+    a = ap.parse_args(argv)
+
+    try:
+        m = measure(a.base, a.model, a.max_tokens, a.timeout)
+    except Exception as e:                                  # never crash a caller
+        if a.json:
+            print(json.dumps({"verdict": "undecided", "error": str(e)}, indent=2))
+        else:
+            print(f"llmband: undecided ({e})", file=sys.stderr)
+        return 2
+
+    verdict, reasons = classify(m["mem_busy"], m["gpu_busy"], m["tok_s"], a.expect_tps,
+                                a.mem_busy_threshold, a.tolerance)
+    out = {"verdict": verdict, "model": a.model, "reasons": reasons, **m}
+    if a.json:
+        print(json.dumps(out, indent=2))
+    else:
+        print(f"llmband: {a.model} -> {verdict.upper()} band")
+        for r in reasons:
+            print(f"  {r}")
+        print(f"  {m['completion_tokens']} tok in {m['wall_s']}s; "
+              f"{m['samples_under_load']}/{m['samples_total']} samples under load")
+        if verdict == "slow":
+            print("  a restart draws a new band; see docs/rdna4-decode-bands.md")
+    return {"fast": 0, "slow": 1}.get(verdict, 2)
+
+
+if __name__ == "__main__":
+    sys.exit(main())
