@@ -1,5 +1,19 @@
 # Block-FP8 GEMM kernels on gfx1201 (R9700)
 
+> **This has been tried and it regressed. Read this first.**
+>
+> `scripts/tune-dense-fp8` and `scripts/tune-dense-fp8-kernel.py` already exist, already sweep
+> these shapes, already write per-shape JSON, and already deploy it by individual file
+> bind-mounts. The root `CLAUDE.md` records the outcome: the synthetic Triton tile sweep
+> produced a **-50% regression under real inference**, and the MI300X defaults are kept
+> deliberately. Configs that win on `do_bench` with random tensors lose under a full model,
+> where memory pressure, interleaved operations and cache behaviour all differ.
+>
+> So the rule is in place: **do not add R9700 dense configs unless they were tuned under actual
+> vLLM inference load.** Anything below describes the mechanism, not a recommendation to re-run
+> an isolated sweep. A second attempt is only worth making if it measures end to end - serving
+> the model and timing real requests - rather than timing kernels in isolation.
+
 vLLM ships tuned Triton configs for the W8A8 block-FP8 GEMM for 219 device/shape
 combinations. None of them is an R9700. A boot of the 27B FP8 profile therefore
 emits twenty warnings - four ranks times five distinct shapes:
