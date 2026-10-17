@@ -55,17 +55,22 @@ Reported band ratios, fast:slow:
 ### Provenance of the numbers
 
 **The band centres and ratios in the two tables above are from the upstream report, not from a
-local two-band measurement.** Locally we have one side of the split at a time: a cold 27B
-container measured 76–87 tok/s single-stream across four prompt shapes, while the same profile in
-a container that had been up ~5.5 h measured 46% lower on the harness prompt; and a Flash-Next
-speed stage ran slow at its first block, fast through `medium-256`, then slow from `long-512`
-onward and never recovered — a flip inside one stage, which rules out a payload-size explanation.
+local two-band measurement.**
 
-So: the *existence* of two rates is local and solid, the *classifier threshold* is adopted from
-upstream and still wants local validation. Until a run is classified by `mem_busy` and by tok/s
-in both bands on this stack, treat a `slow` verdict as "probably, restart and re-measure" rather
-than as proof. `llmband --json` prints the counters it used so a verdict can be audited after
-the fact.
+The clean local observation is a Flash-Next speed stage whose four blocks ran, in chronological
+order, slow → fast → slow → slow, and never recovered. Because the slow blocks sit on both sides
+of the fast one, no property of the payload orders that sequence: something changed underneath a
+single server process, mid-run. That is the band behaviour, from one harness against one process.
+
+What is **not** yet local is the `mem_busy` threshold. No run on this stack has yet been
+classified by `mem_busy` and by tok/s in both bands, so 45% is adopted rather than verified.
+Until it is, read a `slow` verdict as "restart and re-measure", not as proof. `llmband --json`
+prints the counters behind every verdict so it can be audited afterwards.
+
+Comparing tok/s across runs is also harder than it looks. With speculative decoding the rate
+depends on the prompt and on the acceptance rate, so two numbers taken from different payloads
+are not evidence of a band difference however far apart they are. Only same-payload comparisons
+count, which is the whole reason `mem_busy` is the primary signal here.
 
 ## Ruled out as the mechanism
 
@@ -113,8 +118,6 @@ empirically effective — and use `llmband` as the post-start check that the wra
    window that missed the decode and an unreachable server.
 4. Never compare tok/s across different prompts or acceptance rates when deciding a band. Use
    `mem_busy`, or compare against a baseline measured with the identical payload.
-5. Benchmark results are only comparable within a band. A regression measured against a
-   long-lived container is not evidence of a regression — re-measure on a cold spawn first.
-
-Point 5 is the expensive lesson: a day of "the host move broke both production profiles" was
-band noise, and the band check is what would have caught it in two minutes.
+5. Benchmark results are only comparable within a band, so classify the band before believing a
+   regression. A number from a long-lived container and a number from a cold spawn are not
+   directly comparable, and re-measuring cold is the cheapest way to tell the two apart.

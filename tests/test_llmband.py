@@ -16,6 +16,7 @@ import subprocess
 import sys
 import tempfile
 import threading
+import time
 from pathlib import Path
 
 REPO = Path(__file__).resolve().parent.parent
@@ -112,6 +113,20 @@ def test_busy_under_load_drops_idle_samples():
     assert mem == 65.0
 
 
+def test_busy_under_load_drops_unused_cards_on_a_partial_tp_spawn():
+    """A TP2 spawn in a 4-card box: the two idle cards must be dropped, not averaged in.
+
+    Averaged across cards the mean gpu_busy would be ~50%, below the floor, and the whole
+    run would come back "undecided" on a healthy server.
+    """
+    rows = [(100.0, 64.0), (1.0, 0.0), (100.0, 66.0), (2.0, 1.0)] * 3
+    gpu, mem, n = band.busy_under_load(rows)
+    assert n == 6
+    assert gpu == 100.0
+    assert mem == 65.0
+    assert band.classify(mem, gpu)[0] == "fast"
+
+
 def test_busy_under_load_with_no_loaded_samples():
     assert band.busy_under_load([(1.0, 1.0), (2.0, 0.0)]) == (None, None, 0)
 
@@ -147,7 +162,7 @@ def test_read_percent_parses_and_tolerates_garbage():
         assert band.read_percent(Path(d) / "card9", "gpu") is None
 
 
-def test_sample_busy_stops_when_asked_and_averages_cards():
+def test_sample_busy_keeps_cards_separate_and_stops_when_asked():
     with tempfile.TemporaryDirectory() as d:
         _sysfs(d, {"card0": (100, 60), "card1": (100, 70)})
         cl = band.cards(Path(d))
@@ -159,12 +174,14 @@ def test_sample_busy_stops_when_asked_and_averages_cards():
 
         t = threading.Thread(target=run)
         t.start()
+        time.sleep(0.2)            # let it actually sample before asking it to stop
         stop.set()
         t.join(timeout=5)
         assert not t.is_alive()
-        for gpu, mem in rows:
-            assert gpu == 100.0
-            assert mem == 65.0     # mean across the two cards
+        assert rows, "sampler returned nothing; the rest of this test would pass vacuously"
+        mems = {m for _, m in rows}
+        assert mems == {60.0, 70.0}, f"cards were averaged together: {mems}"
+        assert all(g == 100.0 for g, _ in rows)
 
 
 # ─── CLI ─────────────────────────────────────────────────────────────────────────────

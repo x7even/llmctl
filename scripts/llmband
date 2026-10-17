@@ -57,23 +57,28 @@ def read_percent(card, which):
 
 
 def sample_busy(card_list, stop, interval=0.25, reader=read_percent):
-    """Sample both counters on every card until `stop` is set. Returns a list of (gpu, mem) means."""
+    """Sample both counters on every card until `stop` is set.
+
+    Returns a flat list of per-card (gpu, mem) pairs, deliberately NOT averaged across cards.
+    A profile need not use every card in the box - the 27B profile is allowed to run at TP2 -
+    and averaging an idle card together with a busy one drags the mean below the load floor,
+    which would throw away every sample and report "undecided" on a perfectly healthy server.
+    """
     rows = []
     while not stop.is_set():
-        g = [reader(c, "gpu") for c in card_list]
-        m = [reader(c, "mem") for c in card_list]
-        g = [v for v in g if v is not None]
-        m = [v for v in m if v is not None]
-        if g and m:
-            rows.append((statistics.fmean(g), statistics.fmean(m)))
+        for c in card_list:
+            g, m = reader(c, "gpu"), reader(c, "mem")
+            if g is not None and m is not None:
+                rows.append((g, m))
         time.sleep(interval)
     return rows
 
 
 def busy_under_load(rows, gpu_busy_floor=GPU_BUSY_FLOOR):
-    """Mean gpu/mem busy over only the samples where the GPUs were actually working.
+    """Mean gpu/mem busy over only the card-samples where that card was actually working.
 
-    Startup and teardown samples would drag the mean toward idle, so they are dropped.
+    Filtering per card-sample drops both the cards this profile does not use and the startup
+    and teardown samples, either of which would otherwise drag the mean toward idle.
     Returns (gpu_mean, mem_mean, n_used) or (None, None, 0).
     """
     loaded = [(g, m) for g, m in rows if g >= gpu_busy_floor]
@@ -154,7 +159,7 @@ def measure(base, model, max_tokens, timeout):
     gpu, mem, n = busy_under_load(rows)
     return {"tok_s": (toks / wall) if wall > 0 else None, "completion_tokens": toks,
             "wall_s": round(wall, 3), "gpu_busy": gpu, "mem_busy": mem,
-            "samples_under_load": n, "samples_total": len(rows),
+            "card_samples_under_load": n, "card_samples_total": len(rows),
             "cards": [c.name for c in card_list]}
 
 
@@ -192,7 +197,8 @@ def main(argv=None):
         for r in reasons:
             print(f"  {r}")
         print(f"  {m['completion_tokens']} tok in {m['wall_s']}s; "
-              f"{m['samples_under_load']}/{m['samples_total']} samples under load")
+              f"{m['card_samples_under_load']}/{m['card_samples_total']} card-samples under load"
+              f" across {len(m['cards'])} cards")
         if verdict == "slow":
             print("  a restart draws a new band; see docs/rdna4-decode-bands.md")
     return {"fast": 0, "slow": 1}.get(verdict, 2)
