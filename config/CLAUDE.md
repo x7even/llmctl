@@ -69,11 +69,31 @@ for — which is itself what sets `max_cudagraph_capture_size`. With MTP at
 *before* testing the piecewise key set. So there is no piecewise fallback: above 6 concurrent
 requests the step is fully eager.
 
-So for an MTP profile, ask for multiples of 3: `3 6 12 24 48 96` round-trips unchanged and
-covers up to 32 sequences (`--max-num-seqs`). Graph memory is taken *before* the KV cache is
-sized, so a longer list buys concurrency out of the KV budget; price it with `scripts/llmkv`
-rather than assuming it is free. Non-speculative profiles are unaffected and `1 2 4 8 16 32`
-means what it says.
+**That cliff reads like a bug, and fixing it has been measured as a loss. Do not "fix" it.**
+A list of multiples of 3 round-trips through the transform unchanged and does cover all 32
+sequences — and it is slower. Seven interleaved arms on the 27B MTP profile, `medium-256`,
+`--no-thinking`, 32 requests:
+
+| `--cudagraph-capture-sizes` | conc=8 | conc=16 | KV tokens | graph mem |
+|---|---|---|---|---|
+| `1 2 4 8 16 32` (shipped, ×3) | **207.3** | **358.4** | 260,406 | 0.70 GiB |
+| `3 6 12 24 48 96` (×2) | 193.4 | 334.4 | 245,015 | 0.99 GiB |
+| `3 6 9 12 15 18 21 24 30 36 42 48` (×2) | 192.4 | 331.8 | 225,280 | 1.78 GiB |
+
+Both aligned lists lose ~6–7% at exactly the concurrencies they were supposed to help, and pay
+6–14% of the KV budget for it. The dense list exists to test whether the sparse one was losing to
+graph padding (a 9-sequence batch pads to 48); it caps padding at one sequence and performs the
+same, so padding is not the mechanism. What the two losing lists share is that they capture graphs
+*above* 6 sequences, so conc=8/16 run as graph replays where the shipped list has already fallen
+through to eager — and here eager is the faster path. The `qwen3.8-flash-next-vllm` exception below
+is a more extreme case of the same effect, not an unrelated quirk.
+
+Measured at TP2 on this hardware; a TP4 re-check is still owed, and `conc=1` was flat across all
+seven arms (34.2–34.8) as the internal control, since batch 1 rounds to captured size 3 either way.
+
+Graph memory is taken *before* the KV cache is sized, so a longer list always buys concurrency out
+of the KV budget; price any change with `scripts/llmkv` rather than assuming it is free.
+Non-speculative profiles are unaffected and `1 2 4 8 16 32` means what it says.
 
 **Measured exception:** `qwen3.8-flash-next-vllm` uses `1 2 4 8` because larger captured
 sizes cut its single-stream decode by 30–50% (see docs/models.md). Keep an explicit short

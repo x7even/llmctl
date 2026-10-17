@@ -182,6 +182,40 @@ Two secondary findings from the same investigation, neither of which explains th
   GiB/GPU more graph memory**, because graph memory is taken before the KV cache is sized. So
   the lever trades context for concurrency and has to clear that 3.7% to be worth taking.
 
+  **It does not clear it. The lever is a loss, and the cliff is the fast path.** Seven interleaved
+  arms (`medium-256`, `--no-thinking`, 32 requests, decode tok/s):
+
+  | `--cudagraph-capture-sizes` | conc=8 | conc=16 | KV tokens | graph mem |
+  |---|---|---|---|---|
+  | `1 2 4 8 16 32` (production, ×3) | **207.3** | **358.4** | 260,406 | 0.70 GiB |
+  | `3 6 12 24 48 96` (×2) | 193.4 | 334.4 | 245,015 | 0.99 GiB |
+  | `3 6 9 12 15 18 21 24 30 36 42 48` (×2) | 192.4 | 331.8 | 225,280 | 1.78 GiB |
+
+  Both aligned lists lose ~6–7% at conc=8 and conc=16, against a within-arm repeatability of ~2%,
+  and no aligned arm beat any control arm. `conc=1` was flat across all seven (34.2–34.8), which is
+  the internal control: batch 1 rounds to captured size 3 under every list, so it *must* be
+  unchanged, and it is.
+
+  The dense list was run specifically to test graph padding as the mechanism — a captured graph
+  runs at its captured size, and the sparse list pads a 9-sequence batch (27 query tokens) all the
+  way to 48. The dense list caps padding at one sequence up to 24, an 8× difference in granularity,
+  and lands within 1% of the sparse list on both points. **Padding is not the mechanism.**
+
+  What the two losing lists share is that they capture graphs above 6 sequences, so conc=8/16
+  execute as full-graph replays where the production list has already fallen through to eager. The
+  production list is fastest at precisely the concurrencies where it is not using graphs, so on
+  this hardware full-graph replay at decode batch >6 is slower than eager. The KV reduction is a
+  real cost but not the cause: even 224K tokens is far more than this benchmark consumes.
+
+  An unverified candidate mechanism: the full-cudagraph path needs a uniform decode query length,
+  so a step mixing newly-arrived prefill with ongoing decode may be split into separate passes to
+  stay graph-eligible where the eager path fuses them. That is independent of padding granularity,
+  which fits. Not tested.
+
+  This also reframes the `qwen3.8-flash-next-vllm` exception (`1 2 4 8`, larger captured sizes cost
+  it 30–50% of single-stream decode) as a more extreme instance of the same effect rather than a
+  one-off quirk. Measured at TP2; a TP4 re-check is owed.
+
   Note also that the startup log reports the *requested* list (`cudagraph_capture_sizes': [...]`
   in the engine config dump), never the post-rounding set, and the tqdm capture bar that does
   carry the surviving count does not reach `podman logs` on this stack. There is no log line
