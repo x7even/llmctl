@@ -108,7 +108,7 @@ To watch startup progress: `llmctl logs <profile>` — wait for "Application sta
 
 ### vLLM profiles: mandatory flags
 
-Every vLLM profile **must** have these three things:
+Every vLLM profile **must** have these four things:
 
 ```yaml
 # 1. Nullify the AMD official image's broken ENTRYPOINT
@@ -124,14 +124,28 @@ vllm serve /models/...
 -v __LLMSTACK_DIR__/.triton-cache:/root/.triton/cache
 ```
 
+```yaml
+# 4. useModelName — a llama-swap key (NOT a vllm flag), set to this profile's
+#    --served-model-name. Without it every alias of the profile 404s: llama-swap routes
+#    by alias but forwards the client's model string upstream unchanged, and vLLM only
+#    answers to --served-model-name. Measured 2026-10-17 — 3 of 4 routing names failed.
+    useModelName: qwen3.8-27b-code
+```
+
 `__LLMSTACK_DIR__` is a placeholder. Run `scripts/configure` to replace it with the
 repo's absolute path before first use (llama-swap v223+ executes cmd without a shell).
 
-If you add a new vLLM profile and omit any of these, the first startup will take 18+ minutes
-or fail with `unrecognized arguments`.
+If you add a new vLLM profile and omit any of items 1-3, the first startup will take 18+ minutes
+or fail with `unrecognized arguments`. Omit item 4 and startup is fine but every alias is a 404
+— the profile answers only to its full name.
 
 **Important**: llama-swap v223+ executes `cmd` without a shell — `$LLMSTACK_DIR` and other
-shell variables are NOT expanded. Use hardcoded absolute paths in all volume mounts.
+shell variables are NOT expanded. Volume mounts therefore need an absolute path at run time,
+which `scripts/configure` writes into the working copy. Do **not** hand-write one and do not
+commit the configured file: the committed `config/models.yaml` carries `__LLMSTACK_DIR__`, and
+`tests/test_configure.py` fails if a real `/home/...` path reaches HEAD. Committing the
+configured form is what broke every fresh clone between `8f42c4e` and `89179ce` — the
+substitution silently no-ops when there is no placeholder left to replace.
 
 ### AWQ + expert-parallel = hard crash
 

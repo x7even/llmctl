@@ -68,6 +68,9 @@ models:
       - qwen3.8
       - 27b-3.8
       - qwen3.8-27b
+    # llama-swap forwards the client's model string upstream; vLLM only
+    # answers to --served-model-name, so without this every alias 404s.
+    useModelName: qwen3.8-27b-code
     cmd: |
       podman run --replace --rm
         --name llmstack-vllm-${MODEL_ID}
@@ -122,6 +125,9 @@ models:
     concurrencyLimit: 64
     aliases:
       - 27b-think
+    # llama-swap forwards the client's model string upstream; vLLM only
+    # answers to --served-model-name, so without this every alias 404s.
+    useModelName: qwen3.8-27b-think
     cmd: |
       podman run --replace --rm
         --name llmstack-vllm-${MODEL_ID}
@@ -173,6 +179,9 @@ models:
     aliases:
       - 27b-fast
       - qwen3.8-nothink
+    # llama-swap forwards the client's model string upstream; vLLM only
+    # answers to --served-model-name, so without this every alias 404s.
+    useModelName: qwen3.8-27b-fast
     cmd: |
       podman run --replace --rm
         --name llmstack-vllm-${MODEL_ID}
@@ -235,6 +244,9 @@ models:
       - qwen3.6
       - qwen3.6-35b
       - qwen3.6-35b-fp8
+    # llama-swap forwards the client's model string upstream; vLLM only
+    # answers to --served-model-name, so without this every alias 404s.
+    useModelName: qwen3.6-35b-code
     cmd: |
       podman run --replace --rm
         --name llmstack-vllm-${MODEL_ID}
@@ -294,6 +306,9 @@ models:
     concurrencyLimit: 64
     aliases:
       - 35b-nomtp
+    # llama-swap forwards the client's model string upstream; vLLM only
+    # answers to --served-model-name, so without this every alias 404s.
+    useModelName: qwen3.6-35b-128k-nomtp
     cmd: |
       podman run --replace --rm
         --name llmstack-vllm-${MODEL_ID}
@@ -352,6 +367,9 @@ models:
     aliases:
       - qwen3.6-fast
       - qwen3.6-nothin
+    # llama-swap forwards the client's model string upstream; vLLM only
+    # answers to --served-model-name, so without this every alias 404s.
+    useModelName: qwen3.6-35b-fast
     cmd: |
       podman run --replace --rm
         --name llmstack-vllm-${MODEL_ID}
@@ -491,6 +509,9 @@ models:
     concurrencyLimit: 32
     aliases:
       - flash-next-vllm
+    # llama-swap forwards the client's model string upstream; vLLM only
+    # answers to --served-model-name, so without this every alias 404s.
+    useModelName: qwen3.8-flash-next-vllm
     cmd: |
       __LLMSTACK_DIR__/scripts/llm-prestart
         --need-free-gib 80
@@ -648,6 +669,9 @@ models:
     aliases:
       - gemma4-vllm
       - gemma4-concurrent
+    # llama-swap forwards the client's model string upstream; vLLM only
+    # answers to --served-model-name, so without this every alias 404s.
+    useModelName: gemma4-26b-a4b
     cmd: |
       podman run --replace --rm
         --name llmstack-vllm-${MODEL_ID}
@@ -707,6 +731,9 @@ models:
     aliases:
       - gemma4-fp8
       - gemma4-fast-vllm
+    # llama-swap forwards the client's model string upstream; vLLM only
+    # answers to --served-model-name, so without this every alias 404s.
+    useModelName: gemma4-26b-fp8
     cmd: |
       podman run --replace --rm
         --name llmstack-vllm-${MODEL_ID}
@@ -757,6 +784,10 @@ models:
 #   checkEndpoint: /health
 #   aliases:
 #     - shortname
+#   useModelName: my-new-model     # must equal --served-model-name below, or every
+#                                  # alias above 404s: llama-swap routes by alias but
+#                                  # forwards the client's model string to a backend
+#                                  # that only answers to --served-model-name.
 #   cmd: |
 #     podman run --replace --rm
 #       --name llmstack-vllm-${MODEL_ID}

@@ -585,6 +585,33 @@ def test_bad_gpu_count_rejected():
 
 # ── Shipped-config hygiene ─────────────────────────────────────────────────
 
+def test_every_vllm_profile_sets_use_model_name_to_its_served_model_name():
+    """A vLLM profile without `useModelName` answers only to its full name.
+
+    llama-swap resolves an alias to pick the backend, then forwards the client's
+    `model` string upstream unchanged. vLLM validates that string against its single
+    `--served-model-name` and 404s anything else, so every alias of the profile fails
+    while the profile itself looks fine. Checked statically because reproducing it
+    needs a live backend. llama-server/GGUF profiles are exempt — they do not
+    validate the field the same way.
+    """
+    import yaml  # local: the rest of the suite does not need a yaml dependency
+
+    models = yaml.safe_load((REPO / "config" / "models.yaml").read_text())["models"]
+    problems = []
+    for name, prof in models.items():
+        cmd = prof.get("cmd", "")
+        served = re.search(r"--served-model-name\s+(\S+)", cmd)
+        if not served:
+            continue  # llama-server / GGUF profile
+        got = prof.get("useModelName")
+        if got is None:
+            problems.append(f"{name}: no useModelName (aliases would 404)")
+        elif got != served.group(1):
+            problems.append(f"{name}: useModelName={got!r} != --served-model-name={served.group(1)!r}")
+    assert not problems, "; ".join(problems)
+
+
 def test_shipped_config_ships_placeholders_not_a_configured_path():
     """The *committed* models.yaml must carry __LLMSTACK_DIR__, never a real path.
 

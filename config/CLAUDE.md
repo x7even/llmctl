@@ -31,8 +31,9 @@ starts (~2–3 min). For a machine with no `.vllm-cache/` yet, watch manually wi
 
 ## Mandatory settings for every vLLM profile
 
-Every vLLM profile **must** have all three of these. Omitting any will cause an 18+ minute
-startup or a startup failure.
+Every vLLM profile **must** have all four of these. Omitting one of the first three will
+cause an 18+ minute startup or a startup failure; omitting the fourth leaves the profile
+reachable only by its full name.
 
 ### 1. Override the broken AMD entrypoint
 
@@ -125,6 +126,34 @@ They are created automatically by `llmctl up` if missing.
 Use `__LLMSTACK_DIR__` as a placeholder in cmd strings; `scripts/configure` replaces it
 with the actual absolute path at setup time. Only `${MODEL_ID}` and `${PORT}` are
 substituted by llama-swap itself at runtime.
+
+### 4. `useModelName`
+
+```yaml
+    useModelName: <profile-id>     # must equal this profile's --served-model-name
+```
+
+A llama-swap key, not a vllm flag — it sits beside `aliases`, not inside `cmd`. It sets the
+`model` string llama-swap sends to the backend.
+
+Without it **every alias of the profile is a 404**, which is easy to miss because the profile
+itself works. llama-swap resolves an alias to decide which backend to route to, then forwards
+the client's `model` string upstream unchanged; vLLM answers only to `--served-model-name` and
+rejects anything else. The error therefore comes back in vLLM's shape, from a backend that is
+up and healthy:
+
+```
+{"error":{"message":"The model `qwen3.8` does not exist.","type":"NotFoundError","code":404}}
+```
+
+Measured 2026-10-17 on this stack: 3 of the 4 routing names for `qwen3.8-27b-code` failed
+(canonical name passed, all three aliases 404'd); with `useModelName` all 4 pass. `llmctl swap
+<alias>` *appears* to work either way, because llmctl resolves the alias locally to choose the
+profile — but its readiness probe asks the router for the alias, which is why a healthy model
+could still print `WARNING: no response from '<alias>'`.
+
+Keep it equal to `--served-model-name`. The llama-server/GGUF profiles do not need it
+(llama-server does not validate the `model` field the same way), and they do not set it.
 
 ---
 
@@ -272,10 +301,17 @@ unsupported profiles, and the file's line endings (LF or CRLF) are preserved.
 
 ## Template for a new vLLM profile
 
+> **This template is behind the live schema** — it still shows the `- name:` / `proxy:` /
+> `cmdType: pod` form, while `config/models.yaml` now keys profiles directly under `models:`
+> with `cmd: |` inline and `--group-add keep-groups`. Copy the template at the **bottom of
+> `config/models.yaml`** instead; it is the one that is kept in step with the working file.
+> Use the list below only as the checklist of keys a profile needs.
+
 ```yaml
   - name: <profile-id>
     aliases:
       - <short-alias>
+    useModelName: <profile-id>        # == --served-model-name, or every alias 404s
     ttl: 0
     metadata:                         # required, see "Profile requirements" above
       requires:
