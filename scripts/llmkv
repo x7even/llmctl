@@ -38,12 +38,27 @@ CONTEXT_POINTS = [8192, 16384, 32768, 65536, 131072, 262144]
 KV_RE = re.compile(r"GPU KV cache size:\s*([\d,]+)\s*tokens")
 CONC_RE = re.compile(r"Maximum concurrency for ([\d,]+) tokens per request:\s*([\d.]+)x")
 AVAIL_RE = re.compile(r"Available KV cache memory:\s*([\d.]+)\s*GiB")
+# Enough to read the KV numbers off. Note this is satisfied by the KV line itself, which is
+# deliberate: the default job is done as soon as the budget is known, well before the API binds.
 READY_RE = re.compile(r"Application startup complete|GPU KV cache size")
+# Actually serving. KV is reported before graph capture, so a --keep caller that stopped at
+# READY_RE would hand back a container that refuses connections for another minute or two.
+SERVING_RE = re.compile(r"Application startup complete")
 # How many FULL decode graphs were actually captured, read off the progress bar's own total.
 # This is the post-rounding count, which is the only one that matters: with speculative
 # decoding vLLM rounds every requested size up to num_speculative_tokens+1 and drops any that
 # then exceeds the largest requested size, so a profile asking for six sizes can get four.
 GRAPHS_RE = re.compile(r"Capturing CUDA graphs \(FULL\):\s*100%\|[^|]*\|\s*(\d+)/(\d+)")
+# The tqdm capture bar does not survive into `podman logs`, but vLLM also states the cost
+# outright, and that is the number the capture-size lever has to be judged on: graph memory
+# is taken before the KV cache is sized, so every GiB here is a GiB not spent on context.
+GRAPH_COST_RE = re.compile(r"Graph capturing finished in (\d+) secs, took ([\d.]+) GiB")
+# gpu_worker.py's memory breakdown, per rank. "requested" is what --gpu-memory-utilization
+# asked for; the rest is where it went.
+MEM_SPLIT_RE = re.compile(
+    r"Actual usage is ([\d.]+) GiB for weight, ([\d.]+) GiB for peak activation, "
+    r"([\d.]+) GiB for non-torch memory, and ([\d.]+) GiB for CUDAGraph memory")
+REQUESTED_CAPTURE_RE = re.compile(r"cudagraph_capture_sizes': \[([^]]*)\]")
 # vLLM's own note that cudagraph memory profiling has eaten into the KV budget.
 EFFECTIVE_UTIL_RE = re.compile(
     r"--gpu-memory-utilization=([\d.]+) is equivalent to --gpu-memory-utilization=([\d.]+)")
@@ -186,6 +201,9 @@ def parse_startup(log):
     avail = AVAIL_RE.search(log)
     conc = CONC_RE.search(log)
     graphs = GRAPHS_RE.findall(log)
+    cost = GRAPH_COST_RE.search(log)
+    split = MEM_SPLIT_RE.search(log)
+    req_sizes = REQUESTED_CAPTURE_RE.search(log)
     util = EFFECTIVE_UTIL_RE.search(log)
     return {
         "kv_cache_tokens": int(kv.group(1).replace(",", "")) if kv else None,
@@ -195,6 +213,15 @@ def parse_startup(log):
             if conc else None),
         # max over the per-rank bars: every TP rank captures the same set.
         "full_cudagraphs_captured": max((int(t) for _, t in graphs), default=None),
+        "requested_capture_sizes": (
+            [int(x) for x in req_sizes.group(1).replace(" ", "").split(",") if x]
+            if req_sizes else None),
+        "graph_capture_s": int(cost.group(1)) if cost else None,
+        "graph_mem_gib": float(cost.group(2)) if cost else None,
+        "mem_split_gib": (
+            dict(zip(("weight", "peak_activation", "non_torch", "cudagraph"),
+                     (float(x) for x in split.groups())))
+            if split else None),
         "requested_util": float(util.group(1)) if util else None,
         "effective_util": float(util.group(2)) if util else None,
     }
@@ -202,17 +229,22 @@ def parse_startup(log):
 
 def boot_and_read(argv, name, timeout, poll=5.0, log_path=None, keep=False):
     subprocess.run(["podman", "rm", "-f", name], capture_output=True)
-    run = subprocess.run(["podman", *argv], capture_output=True, text=True)
+    # argv is the whole command line out of models.yaml, podman included - don't add a second one.
+    run = subprocess.run(list(argv), capture_output=True, text=True)
     if run.returncode != 0:
         raise SystemExit(f"llmkv: podman run failed:\n{run.stderr.strip()}")
 
     deadline = time.monotonic() + timeout
     log = ""
+    # --keep exists so a caller can go on to send requests, so it has to wait for the API, not
+    # just for the KV numbers. Without this the container is handed over mid graph-capture and
+    # every request is refused.
+    ready = SERVING_RE if keep else READY_RE
     try:
         while time.monotonic() < deadline:
             log = subprocess.run(["podman", "logs", name],
                                  capture_output=True, text=True).stdout
-            if KV_RE.search(log) and READY_RE.search(log):
+            if KV_RE.search(log) and ready.search(log):
                 break
             if FAIL_RE.search(log):
                 break
@@ -314,6 +346,10 @@ def main(argv=None):
                   f"{parsed['effective_util']} effective after cudagraph profiling")
         if parsed["full_cudagraphs_captured"]:
             print(f"  full decode graphs captured: {parsed['full_cudagraphs_captured']}")
+        if parsed["graph_mem_gib"] is not None:
+            print(f"  graph capture: {parsed['graph_mem_gib']} GiB per GPU"
+                  f" in {parsed['graph_capture_s']}s"
+                  f"  (requested sizes {parsed['requested_capture_sizes']})")
         print(f"  {'context':>9}  {'streams':>8}")
         for row in result["concurrency"]:
             print(f"  {row['context']:>9,}  {row['streams']:>8.2f}")

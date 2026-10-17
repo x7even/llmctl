@@ -81,6 +81,27 @@ The band *ratios* in the table above are still upstream's, not measured here. Me
 locally needs N cold spawns with each classified and measured at serial and at concurrency,
 which is the experiment to run next.
 
+### A regression that is *not* a band draw, and how its shape says so
+
+A comparison of the same image and the same profile against a stored baseline (clean cold
+container, nothing else on the GPUs) came out 5–15% down on three of four prompts and failed the
+−5% gate on the headline one: medium-256 serial −14.9%, conc 8 −8.1%, conc 16 −10.8%. The
+useful part is the fourth prompt. `xlarge-2048` is **flat** at concurrency
+— +0.1% at conc 4, +1.0% at conc 8, −0.4% at conc 16 — while being 12–15% down at serial and
+conc 1.
+
+That shape rules out a band draw. A band is a whole-process property: it would take xlarge-2048
+down with everything else, at every concurrency. A deficit that disappears exactly where each
+step does the most compute is instead the signature of a **fixed per-step overhead increase**,
+amortised away once the step is long enough to hide it. That points at the per-step collective
+path rather than at anything payload-shaped, which is what promotes the TP4 all-reduce
+candidate below from "leading remaining" to directly indicated — and it is also why a
+single-boot A/B on any throughput lever is still uninterpretable: the two mechanisms coexist.
+
+The practical consequence is that `llmband` cannot be used to accept or reject arms whose lever
+plausibly changes serial step rate; it can only be used where the arm provably leaves batch 1
+alone (the capture-size lever is one such case: batch 1 lands on captured size 3 either way).
+
 ## Ruled out as the mechanism
 
 | Candidate | How it was excluded |
@@ -106,11 +127,27 @@ Two secondary findings from the same investigation, neither of which explains th
   clock ramp — 3 s of heavy GEMM immediately beforehand does not remove it. At step scale a
   20 ms host gap costs +0.75 ms. It matters for TTFT and idle-to-first-token, not for sustained
   decode.
-- **Speculative decoding shrinks the captured graph set.** With MTP the 3 tokens per sequence
-  multiply the batch dimension against `max_cudagraph_capture_size`, so a profile asking for
-  `--cudagraph-capture-sizes 1 2 4 8 16 32` captures only 4 sizes, the largest 18. Above roughly
-  6 concurrent sequences nothing is graph-replayed and every step runs eager. Raising the
-  capture sizes for the MTP profiles is a cheap and so far untested lever.
+- **Speculative decoding shrinks the captured graph set**, by an exact rule read out of the
+  image's own `vllm/config/compilation.py`. `adjust_cudagraph_sizes_for_spec_decode` rounds
+  every requested size *up* to a multiple of `uniform_decode_query_len =
+  num_speculative_tokens + 1`, and **drops** any rounded size that exceeds
+  `max_cudagraph_capture_size` — which `compilation.py` itself sets to the largest size that was
+  requested. With MTP at `num_speculative_tokens: 2` the multiple is 3, so the production list
+  `1 2 4 8 16 32` becomes `{3, 6, 9, 18}`: 32 rounds to 33, 33 > 32, and it is silently dropped.
+  Four graphs survive, the largest at 18 query-tokens = **6 sequences**. Above 6 concurrent
+  sequences every step runs eager. `3 6 12 24 48 96` round-trips unchanged and covers 32
+  sequences, i.e. all of `--max-num-seqs`.
+
+  This is not free, and the price is measured: `scripts/llmkv` on the 27B profile reads
+  1,009,850 KV tokens (17.60 GiB/GPU, effective utilization 0.9368) with the production list
+  against 972,613 (17.25 GiB/GPU, 0.9285) with the aligned one — **−3.7% KV budget for 0.35
+  GiB/GPU more graph memory**, because graph memory is taken before the KV cache is sized. So
+  the lever trades context for concurrency and has to clear that 3.7% to be worth taking.
+
+  Note also that the startup log reports the *requested* list (`cudagraph_capture_sizes': [...]`
+  in the engine config dump), never the post-rounding set, and the tqdm capture bar that does
+  carry the surviving count does not reach `podman logs` on this stack. There is no log line
+  that states what was actually captured, which is why this went unnoticed.
 
 ## Relationship to the Flash-Next half-speed starts
 

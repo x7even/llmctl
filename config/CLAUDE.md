@@ -55,8 +55,23 @@ Without `--entrypoint=""` plus an explicit `vllm serve` prefix, the command beco
 
 Without this, vLLM's default formula generates ~2000 batch sizes to capture.
 At ~5 ms each = 10+ minutes just for graph capture, every startup.
-With 6 explicit sizes = 13 s capture, with negligible throughput loss
-(batches > 32 fall back to eager, which is rare in practice).
+With 6 explicit sizes = 13 s capture.
+
+**With speculative decoding the list is not the list you get.** `adjust_cudagraph_sizes_for_spec_decode`
+(`vllm/config/compilation.py`) rounds every requested size *up* to a multiple of
+`num_speculative_tokens + 1`, and **drops** any result that exceeds the largest size you asked
+for — which is itself what sets `max_cudagraph_capture_size`. With MTP at
+`num_speculative_tokens: 2` the multiple is 3, so `1 2 4 8 16 32` becomes `{3, 6, 9, 18}`:
+32 rounds to 33, 33 > 32, and it is silently dropped. Four graphs survive, the largest at
+18 query-tokens = **6 sequences**, so a captured graph covers at most 6 concurrent requests
+and every step above that runs eager. The startup log's `Capturing CUDA graphs (FULL)` bar
+shows the count that actually survived, not the count you requested — read it.
+
+So for an MTP profile, ask for multiples of 3: `3 6 12 24 48 96` round-trips unchanged and
+covers up to 32 sequences (`--max-num-seqs`). Graph memory is taken *before* the KV cache is
+sized, so a longer list buys concurrency out of the KV budget; price it with `scripts/llmkv`
+rather than assuming it is free. Non-speculative profiles are unaffected and `1 2 4 8 16 32`
+means what it says.
 
 **Measured exception:** `qwen3.8-flash-next-vllm` uses `1 2 4 8` because larger captured
 sizes cut its single-stream decode by 30–50% (see docs/models.md). Keep an explicit short

@@ -302,8 +302,13 @@ INFO 10-17 19:08:03 [kv_cache_utils.py:1229] GPU KV cache size: 1,009,850 tokens
 INFO 10-17 19:08:03 [kv_cache_utils.py:1233] Maximum concurrency for 131,072 tokens per request: 7.70x
 Capturing CUDA graphs (FULL):   0%|          | 0/4 [00:00<?, ?it/s]Capturing CUDA graphs (FULL): 100%|##########| 4/4 [00:00<00:00,  5.00it/s]
 Capturing CUDA graphs (PIECEWISE):   0%|          | 0/6 [00:00<?, ?it/s]Capturing CUDA graphs (PIECEWISE): 100%|##########| 6/6 [00:02<00:00,  1.37it/s]
+(Worker_TP0 pid=475) INFO 10-17 20:19:33 [gpu_model_runner.py:6844] Graph capturing finished in 4 secs, took 0.70 GiB
+(Worker_TP0 pid=475) INFO 10-17 20:19:33 [gpu_worker.py:857] Free memory on device (31.42/31.86 GiB) on startup. Desired GPU memory utilization is (0.95, 30.27 GiB). Actual usage is 7.65 GiB for weight, 2.82 GiB for peak activation, 1.78 GiB for non-torch memory, and 0.7 GiB for CUDAGraph memory. Current kv cache memory in use is 17.6 GiB.
 INFO 10-17 19:09:41 [api_server.py:1813] Application startup complete.
 """
+
+# A real config dump is thousands of characters; this is the one key it is read for.
+CONFIG_DUMP = "... 'cudagraph_mode': 3, 'cudagraph_capture_sizes': [1, 2, 4, 8, 16, 32], ..."
 
 
 def test_parse_startup_reads_all_three_numbers():
@@ -323,6 +328,26 @@ def test_parse_startup_reads_the_captured_graph_count_not_the_requested_one():
     assert kv.parse_startup(LOG)["full_cudagraphs_captured"] == 4
 
 
+def test_parse_startup_prices_the_graph_capture():
+    """What the capture-size lever costs: graph memory comes out of the KV budget.
+
+    The tqdm bar above does not actually reach `podman logs` on this stack, so the graph
+    count can be absent while this line is present - which is why the cost is read
+    separately and not derived from the count.
+    """
+    got = kv.parse_startup(LOG)
+    assert got["graph_mem_gib"] == 0.70
+    assert got["graph_capture_s"] == 4
+    assert got["mem_split_gib"] == {"weight": 7.65, "peak_activation": 2.82,
+                                    "non_torch": 1.78, "cudagraph": 0.7}
+
+
+def test_parse_startup_reads_the_requested_capture_sizes_separately():
+    """Requested and captured are different numbers under MTP; report both, conflate neither."""
+    assert kv.parse_startup(CONFIG_DUMP)["requested_capture_sizes"] == [1, 2, 4, 8, 16, 32]
+    assert kv.parse_startup(CONFIG_DUMP)["full_cudagraphs_captured"] is None
+
+
 def test_parse_startup_reads_the_effective_utilization():
     """0.95 requested is 0.9368 effective once cudagraph profiling has taken its share."""
     got = kv.parse_startup(LOG)
@@ -335,6 +360,8 @@ def test_parse_startup_returns_nones_rather_than_raising_on_a_failed_boot():
         "torch.OutOfMemoryError: HIP out of memory\nTraceback (most recent call last)")
     assert got == {"kv_cache_tokens": None, "available_kv_gib_per_gpu": None,
                    "vllm_reported_concurrency": None, "full_cudagraphs_captured": None,
+                   "requested_capture_sizes": None, "graph_capture_s": None,
+                   "graph_mem_gib": None, "mem_split_gib": None,
                    "requested_util": None, "effective_util": None}
 
 
@@ -369,6 +396,94 @@ def test_cli_dry_run_builds_a_renamed_detached_command_and_boots_nothing():
     assert "PYTORCH_HIP_ALLOC_CONF=expandable_segments:True" in out
     assert out.index("-e PYTORCH_HIP_ALLOC_CONF") < out.index("docker.io/vllm"), \
         "podman -e must precede the image name or podman rejects it"
+
+
+def test_boot_execs_the_argv_as_given_without_a_second_podman():
+    """argv already starts with podman: models.yaml's cmd is a whole command line.
+
+    boot_and_read used to run ["podman", *argv], so every real boot exec'd
+    "podman podman run -d ..." and died on podman's own argument parsing. The dry-run test
+    above checks how argv is BUILT and cannot see what is EXEC'd, which is how this shipped.
+    """
+    calls = []
+
+    class _Fake:
+        returncode = 1
+        stderr = "boom"
+        stdout = ""
+
+    def fake_run(argv, **kw):
+        calls.append(list(argv))
+        return _Fake()
+
+    real = kv.subprocess.run
+    kv.subprocess.run = fake_run
+    try:
+        argv = ["podman", "run", "-d", "--name", "probe", "img", "vllm", "serve", "/m"]
+        try:
+            kv.boot_and_read(argv, "probe", timeout=1)
+        except SystemExit:
+            pass
+    finally:
+        kv.subprocess.run = real
+
+    boots = [c for c in calls if "run" in c]
+    assert boots, f"no podman run was attempted; calls={calls}"
+    assert boots[0] == argv, f"argv was rewritten before exec: {boots[0]}"
+    assert boots[0].count("podman") == 1, f"duplicated podman: {boots[0]}"
+
+
+def _fake_boot(keep, logs):
+    """Drive boot_and_read against a scripted sequence of `podman logs` outputs."""
+    seen = {"n": 0}
+
+    class _Ok:
+        returncode = 0
+        stderr = ""
+
+        def __init__(self, stdout=""):
+            self.stdout = stdout
+
+    def fake_run(argv, **kw):
+        if "logs" in argv:
+            i = min(seen["n"], len(logs) - 1)
+            seen["n"] += 1
+            return _Ok(logs[i])
+        if argv[:2] == ["podman", "inspect"]:
+            return _Ok("true\n")
+        return _Ok("")
+
+    real = kv.subprocess.run
+    kv.subprocess.run = fake_run
+    try:
+        log = kv.boot_and_read(["podman", "run", "-d", "img"], "probe",
+                               timeout=5, poll=0.0, keep=keep)
+    finally:
+        kv.subprocess.run = real
+    return log, seen["n"]
+
+
+KV_ONLY = "INFO [kv_cache_utils.py:1229] GPU KV cache size: 1,009,850 tokens\n"
+SERVING = KV_ONLY + "INFO [api_server.py:1813] Application startup complete.\n"
+
+
+def test_boot_returns_as_soon_as_the_kv_numbers_are_known():
+    """The default job is reading the budget, and that is knowable before the API binds."""
+    log, polls = _fake_boot(keep=False, logs=[KV_ONLY, SERVING])
+    assert "Application startup complete" not in log
+    assert polls == 1
+
+
+def test_boot_with_keep_waits_for_the_api_not_just_for_the_kv_line():
+    """--keep hands the container to a caller that will send requests.
+
+    READY_RE is satisfied by the KV line itself, and KV is reported before CUDA graph capture,
+    so stopping there returns a container that refuses connections for another minute or more -
+    which is exactly what made the first real A/B run bench against a closed port.
+    """
+    log, polls = _fake_boot(keep=True, logs=[KV_ONLY, KV_ONLY, SERVING])
+    assert "Application startup complete" in log, "handed back a server that was not serving"
+    assert polls == 3, f"stopped polling too early ({polls})"
 
 
 def test_cli_rejects_a_malformed_set():
