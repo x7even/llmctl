@@ -31,3 +31,6 @@ __pycache__/
 .DS_Store
 *.swp
 *~
+
+# llmband calibration is per-host: a committed baseline would silently misjudge another rig.
+config/band-baselines.json

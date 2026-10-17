@@ -35,6 +35,7 @@ no answer.
 """
 import argparse
 import json
+import re
 import statistics
 import sys
 import threading
@@ -59,10 +60,20 @@ PROMPT = ("Explain, in detail and without bullet points, how a write-ahead log g
           "data pages it describes.")
 
 
+CARD_RE = re.compile(r"^card(\d+)$")
+
+
 def cards(root=DRM):
-    """Every card<N> that exposes the two busy counters, in numeric order."""
+    """Every card<N> that exposes the two busy counters, in numeric order.
+
+    /sys/class/drm holds a directory per connector as well as per card - card0-DP-1,
+    card1-Writeback-2 and so on - so the name has to match card<N> exactly. A looser glob
+    picks those up and then fails trying to read a number out of "0-DP-1".
+    """
     out = []
-    for p in sorted(root.glob("card[0-9]*"), key=lambda q: int(str(q.name)[4:])):
+    named = [(int(m.group(1)), p) for p in root.iterdir()
+             for m in [CARD_RE.match(p.name)] if m]
+    for _, p in sorted(named):
         if (p / "device" / "gpu_busy_percent").exists() and (p / "device" / "mem_busy_percent").exists():
             out.append(p)
     return out

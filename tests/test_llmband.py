@@ -153,6 +153,20 @@ def test_cards_finds_and_orders_numerically():
         assert [c.name for c in band.cards(Path(d))] == ["card0", "card1", "card2", "card10"]
 
 
+def test_cards_ignores_drm_connector_directories():
+    """/sys/class/drm has a directory per connector too: card0-DP-1, card1-Writeback-2, ...
+
+    A card[0-9]* glob matches those and then dies parsing "0-DP-1" as an int, which is exactly
+    what happened on the first live run against a real server. The earlier fixture only ever
+    created card<N> directories, so it could not catch it.
+    """
+    with tempfile.TemporaryDirectory() as d:
+        _sysfs(d, {"card0": (100, 37), "card1": (100, 37),
+                   "card0-DP-1": (100, 37), "card1-Writeback-2": (100, 37),
+                   "renderD128": (100, 37)})
+        assert [c.name for c in band.cards(Path(d))] == ["card0", "card1"]
+
+
 def test_cards_skips_devices_without_the_counters():
     with tempfile.TemporaryDirectory() as d:
         _sysfs(d, {"card0": (100, 37), "card1": None})

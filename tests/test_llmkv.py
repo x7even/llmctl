@@ -51,6 +51,8 @@ models:
           --max-num-seqs 32 \\
           --gpu-memory-utilization 0.95 \\
           --enable-prefix-caching \\
+          --speculative-config '{"method": "mtp", "num_speculative_tokens": 2}' \\
+          --cudagraph-capture-sizes 1 2 4 8 16 32 \\
           --port ${PORT}
   trailing-profile:
     ttl: 0
@@ -145,6 +147,50 @@ def test_override_replaces_an_existing_flag_in_place():
     assert out[before + 1] == "0.92"
     assert applied["--gpu-memory-utilization"] == ("0.95", "0.92")
     assert len(out) == len(argv), "replacing a value must not change the argv length"
+
+
+def test_override_replaces_every_value_of_a_list_valued_flag():
+    """--cudagraph-capture-sizes 1 2 4 8 16 32 is one flag with six values.
+
+    Replacing only the first would leave "2 4 8 16 32" behind as stray positionals, and vllm
+    would either reject them or - worse - capture the old sizes. This is the flag the MTP
+    graph-capture lever changes, so it has to be right.
+    """
+    argv = _argv()
+    at = kv.find_serve_split(argv)
+    i = argv.index("--cudagraph-capture-sizes")
+    out, applied = kv.apply_overrides(
+        argv, at, {"cudagraph-capture-sizes": ["1", "2", "4", "8", "16", "32", "64", "128"]})
+    assert out[i + 1:i + 9] == ["1", "2", "4", "8", "16", "32", "64", "128"]
+    assert out[i + 9] == "--port", "a stray old value survived"
+    assert applied["--cudagraph-capture-sizes"] == ("1 2 4 8 16 32", "1 2 4 8 16 32 64 128")
+
+
+def test_override_shrinking_a_list_valued_flag_leaves_nothing_behind():
+    argv = _argv()
+    at = kv.find_serve_split(argv)
+    i = argv.index("--cudagraph-capture-sizes")
+    out, _ = kv.apply_overrides(argv, at, {"cudagraph-capture-sizes": ["1", "2"]})
+    assert out[i + 1:i + 3] == ["1", "2"]
+    assert out[i + 3] == "--port"
+
+
+def test_split_values_only_splits_a_bare_comma_list():
+    assert kv.split_values("1,2,4,8") == ["1", "2", "4", "8"]
+    assert kv.split_values("0.92") == ["0.92"]
+    assert kv.split_values("expandable_segments:True") == ["expandable_segments:True"]
+    # the flag that would break if this were greedy
+    spec = '{"method": "mtp", "num_speculative_tokens": 2}'
+    assert kv.split_values(spec) == [spec], "a JSON value must stay one argument"
+
+
+def test_override_keeps_a_json_valued_flag_as_one_argument():
+    argv = _argv()
+    at = kv.find_serve_split(argv)
+    new = '{"method": "mtp", "num_speculative_tokens": 3}'
+    out, _ = kv.apply_overrides(argv, at, {"speculative-config": kv.split_values(new)})
+    assert out[out.index("--speculative-config") + 1] == new
+    assert out[out.index("--speculative-config") + 2].startswith("--")
 
 
 def test_override_appends_a_flag_that_is_absent():
@@ -249,9 +295,13 @@ def test_concurrency_table_reports_a_budget_too_small_for_one_stream():
 
 # --- parse_startup -------------------------------------------------------------------
 
-LOG = """INFO 10-17 19:08:02 [gpu_worker.py:298] Available KV cache memory: 17.60 GiB
+# Real lines, copied from a 27B startup log.
+LOG = """(Worker_TP0 pid=490) INFO 10-17 08:36:43 [gpu_worker.py:739] CUDA graph memory profiling is enabled (default since v0.21.0). The current --gpu-memory-utilization=0.9500 is equivalent to --gpu-memory-utilization=0.9368 without CUDA graph memory profiling. To maintain the same effective KV cache size as before, increase --gpu-memory-utilization to 0.9632.
+INFO 10-17 19:08:02 [gpu_worker.py:298] Available KV cache memory: 17.60 GiB
 INFO 10-17 19:08:03 [kv_cache_utils.py:1229] GPU KV cache size: 1,009,850 tokens
 INFO 10-17 19:08:03 [kv_cache_utils.py:1233] Maximum concurrency for 131,072 tokens per request: 7.70x
+Capturing CUDA graphs (FULL):   0%|          | 0/4 [00:00<?, ?it/s]Capturing CUDA graphs (FULL): 100%|##########| 4/4 [00:00<00:00,  5.00it/s]
+Capturing CUDA graphs (PIECEWISE):   0%|          | 0/6 [00:00<?, ?it/s]Capturing CUDA graphs (PIECEWISE): 100%|##########| 6/6 [00:02<00:00,  1.37it/s]
 INFO 10-17 19:09:41 [api_server.py:1813] Application startup complete.
 """
 
@@ -263,11 +313,29 @@ def test_parse_startup_reads_all_three_numbers():
     assert got["vllm_reported_concurrency"] == {"at_tokens": 131072, "streams": 7.70}
 
 
+def test_parse_startup_reads_the_captured_graph_count_not_the_requested_one():
+    """The profile asks for six sizes; with MTP only four survive rounding.
+
+    Reading the requested list from the config dump would report six and hide the whole
+    problem, so the count comes off the FULL progress bar's own total. PIECEWISE bars (prefill)
+    must not be counted: they are not subject to the spec-decode rounding.
+    """
+    assert kv.parse_startup(LOG)["full_cudagraphs_captured"] == 4
+
+
+def test_parse_startup_reads_the_effective_utilization():
+    """0.95 requested is 0.9368 effective once cudagraph profiling has taken its share."""
+    got = kv.parse_startup(LOG)
+    assert got["requested_util"] == 0.95
+    assert got["effective_util"] == 0.9368
+
+
 def test_parse_startup_returns_nones_rather_than_raising_on_a_failed_boot():
     got = kv.parse_startup(
         "torch.OutOfMemoryError: HIP out of memory\nTraceback (most recent call last)")
     assert got == {"kv_cache_tokens": None, "available_kv_gib_per_gpu": None,
-                   "vllm_reported_concurrency": None}
+                   "vllm_reported_concurrency": None, "full_cudagraphs_captured": None,
+                   "requested_util": None, "effective_util": None}
 
 
 def test_parse_startup_on_an_empty_log():

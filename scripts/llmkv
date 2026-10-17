@@ -39,6 +39,14 @@ KV_RE = re.compile(r"GPU KV cache size:\s*([\d,]+)\s*tokens")
 CONC_RE = re.compile(r"Maximum concurrency for ([\d,]+) tokens per request:\s*([\d.]+)x")
 AVAIL_RE = re.compile(r"Available KV cache memory:\s*([\d.]+)\s*GiB")
 READY_RE = re.compile(r"Application startup complete|GPU KV cache size")
+# How many FULL decode graphs were actually captured, read off the progress bar's own total.
+# This is the post-rounding count, which is the only one that matters: with speculative
+# decoding vLLM rounds every requested size up to num_speculative_tokens+1 and drops any that
+# then exceeds the largest requested size, so a profile asking for six sizes can get four.
+GRAPHS_RE = re.compile(r"Capturing CUDA graphs \(FULL\):\s*100%\|[^|]*\|\s*(\d+)/(\d+)")
+# vLLM's own note that cudagraph memory profiling has eaten into the KV budget.
+EFFECTIVE_UTIL_RE = re.compile(
+    r"--gpu-memory-utilization=([\d.]+) is equivalent to --gpu-memory-utilization=([\d.]+)")
 FAIL_RE = re.compile(r"Traceback \(most recent call last\)|EngineCore failed|"
                      r"ValueError|torch\.OutOfMemoryError|Engine core initialization failed")
 
@@ -84,9 +92,18 @@ def extract_cmd(yaml_text, profile):
     return " ".join(p for p in body if p)
 
 
-def split_argv(cmd, profile, port):
-    """Substitute what llama-swap substitutes, then split respecting quotes."""
-    cmd = cmd.replace("${MODEL_ID}", profile).replace("${PORT}", str(port))
+def split_argv(cmd, profile, port, repo=None):
+    """Substitute what llama-swap substitutes, then split respecting quotes.
+
+    __LLMSTACK_DIR__ is substituted too. llama-swap never sees that placeholder - the repo
+    rule is that scripts/configure replaces it at setup time and the real path is what sits
+    in the working copy - but a checkout that has not been configured, or one where the path
+    has been put back for publication, would otherwise mount a literal "__LLMSTACK_DIR__"
+    directory and miss the compile cache, turning a 3-minute boot into an 18-minute one.
+    """
+    cmd = (cmd.replace("${MODEL_ID}", profile)
+              .replace("${PORT}", str(port))
+              .replace("__LLMSTACK_DIR__", str(repo or REPO)))
     return shlex.split(cmd)
 
 
@@ -99,29 +116,46 @@ def find_serve_split(argv):
 
 
 def apply_overrides(argv, split_at, sets):
-    """Replace or append `--flag value` in the vllm portion only.
+    """Replace or append `--flag value...` in the vllm portion only.
 
     A flag already present is replaced in place so its position (and any neighbours that care)
-    is preserved; one that is absent is appended. Values are not quoted or parsed: whatever is
-    given is passed through as a single argument.
+    is preserved; one that is absent is appended.
+
+    A flag's value is every consecutive argument after it that is not itself a flag, because
+    some vllm flags take a list: --cudagraph-capture-sizes 1 2 4 8 16 32 is one flag with six
+    values. Replacing only the first would leave the rest behind as stray positionals, so the
+    whole run is replaced. `sets` values are lists of arguments; a single-element list is the
+    ordinary one-value case and is passed through unquoted and unparsed.
     """
     out, applied = list(argv), {}
-    for key, val in sets.items():
+    for key, vals in sets.items():
         flag = f"--{key.lstrip('-')}"
+        vals = [vals] if isinstance(vals, str) else list(vals)
         try:
             i = out.index(flag, split_at)
         except ValueError:
-            out.extend([flag, val])
-            applied[flag] = (None, val)
+            out.extend([flag, *vals])
+            applied[flag] = (None, " ".join(vals))
             continue
-        # a flag's value is the next argument unless the next argument is itself a flag
-        if i + 1 < len(out) and not out[i + 1].startswith("--"):
-            applied[flag] = (out[i + 1], val)
-            out[i + 1] = val
-        else:
-            applied[flag] = (None, val)
-            out.insert(i + 1, val)
+        j = i + 1
+        while j < len(out) and not out[j].startswith("--"):
+            j += 1
+        applied[flag] = (" ".join(out[i + 1:j]) or None, " ".join(vals))
+        out[i + 1:j] = vals
     return out, applied
+
+
+LIST_VALUE_RE = re.compile(r"^[\w.:+-]+(,[\w.:+-]+)+$")
+
+
+def split_values(val):
+    """A comma-separated run of bare tokens is a list of arguments; anything else is one.
+
+    Deliberately narrow. --speculative-config '{"method": "mtp", "num_speculative_tokens": 2}'
+    has commas in it and must stay a single argument, so only values made entirely of bare
+    word-ish tokens separated by commas are split.
+    """
+    return val.split(",") if LIST_VALUE_RE.match(val) else [val]
 
 
 def rename_and_isolate(argv, name):
@@ -151,16 +185,22 @@ def parse_startup(log):
     kv = KV_RE.search(log)
     avail = AVAIL_RE.search(log)
     conc = CONC_RE.search(log)
+    graphs = GRAPHS_RE.findall(log)
+    util = EFFECTIVE_UTIL_RE.search(log)
     return {
         "kv_cache_tokens": int(kv.group(1).replace(",", "")) if kv else None,
         "available_kv_gib_per_gpu": float(avail.group(1)) if avail else None,
         "vllm_reported_concurrency": (
             {"at_tokens": int(conc.group(1).replace(",", "")), "streams": float(conc.group(2))}
             if conc else None),
+        # max over the per-rank bars: every TP rank captures the same set.
+        "full_cudagraphs_captured": max((int(t) for _, t in graphs), default=None),
+        "requested_util": float(util.group(1)) if util else None,
+        "effective_util": float(util.group(2)) if util else None,
     }
 
 
-def boot_and_read(argv, name, timeout, poll=5.0, log_path=None):
+def boot_and_read(argv, name, timeout, poll=5.0, log_path=None, keep=False):
     subprocess.run(["podman", "rm", "-f", name], capture_output=True)
     run = subprocess.run(["podman", *argv], capture_output=True, text=True)
     if run.returncode != 0:
@@ -186,8 +226,9 @@ def boot_and_read(argv, name, timeout, poll=5.0, log_path=None):
     finally:
         if log_path:
             Path(log_path).write_text(log)
-        subprocess.run(["podman", "stop", "-t", "20", name], capture_output=True)
-        subprocess.run(["podman", "rm", "-f", name], capture_output=True)
+        if not keep:
+            subprocess.run(["podman", "stop", "-t", "20", name], capture_output=True)
+            subprocess.run(["podman", "rm", "-f", name], capture_output=True)
     return log
 
 
@@ -196,7 +237,8 @@ def main(argv=None):
                                  formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("profile")
     ap.add_argument("--set", action="append", default=[], metavar="FLAG=VALUE",
-                    help="override a vllm flag, without the leading dashes; repeatable")
+                    help="override a vllm flag, without the leading dashes; repeatable. "
+                         "A list-valued flag takes commas: cudagraph-capture-sizes=1,2,4,8")
     ap.add_argument("--env", action="append", default=[], metavar="K=V",
                     help="add a container environment variable; repeatable")
     ap.add_argument("--port", type=int, default=9711, help="must be free (profile uses host net)")
@@ -206,6 +248,9 @@ def main(argv=None):
     ap.add_argument("--out", default=None, help="write json here (and the startup log beside it)")
     ap.add_argument("--json", action="store_true")
     ap.add_argument("--dry-run", action="store_true", help="print the podman argv and stop")
+    ap.add_argument("--keep", action="store_true",
+                    help="leave the container running so a benchmark can use the same boot; "
+                         "stop it yourself with podman stop")
     a = ap.parse_args(argv)
 
     sets = {}
@@ -213,7 +258,7 @@ def main(argv=None):
         if "=" not in s:
             raise SystemExit(f"llmkv: --set wants FLAG=VALUE, got {s!r}")
         k, v = s.split("=", 1)
-        sets[k] = v
+        sets[k] = split_values(v)
 
     cmd = extract_cmd(MODELS_YAML.read_text(), a.profile)
     argv_full = split_argv(cmd, a.profile, a.port)
@@ -232,7 +277,7 @@ def main(argv=None):
         return 0
 
     log_path = (Path(a.out).with_suffix(".log")) if a.out else None
-    log = boot_and_read(argv_full, name, a.timeout, log_path=log_path)
+    log = boot_and_read(argv_full, name, a.timeout, log_path=log_path, keep=a.keep)
     parsed = parse_startup(log)
 
     mml = None
@@ -264,6 +309,11 @@ def main(argv=None):
             print(f"  env {e}")
         print(f"  KV cache: {parsed['kv_cache_tokens']:,} tokens"
               f"  ({parsed['available_kv_gib_per_gpu']} GiB per GPU)")
+        if parsed["effective_util"]:
+            print(f"  gpu-memory-utilization: {parsed['requested_util']} requested, "
+                  f"{parsed['effective_util']} effective after cudagraph profiling")
+        if parsed["full_cudagraphs_captured"]:
+            print(f"  full decode graphs captured: {parsed['full_cudagraphs_captured']}")
         print(f"  {'context':>9}  {'streams':>8}")
         for row in result["concurrency"]:
             print(f"  {row['context']:>9,}  {row['streams']:>8.2f}")
