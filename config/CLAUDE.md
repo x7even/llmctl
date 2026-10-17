@@ -63,9 +63,11 @@ With 6 explicit sizes = 13 s capture.
 for — which is itself what sets `max_cudagraph_capture_size`. With MTP at
 `num_speculative_tokens: 2` the multiple is 3, so `1 2 4 8 16 32` becomes `{3, 6, 9, 18}`:
 32 rounds to 33, 33 > 32, and it is silently dropped. Four graphs survive, the largest at
-18 query-tokens = **6 sequences**, so a captured graph covers at most 6 concurrent requests
-and every step above that runs eager. The startup log's `Capturing CUDA graphs (FULL)` bar
-shows the count that actually survived, not the count you requested — read it.
+18 query-tokens = **6 sequences**. The ceiling moves too — the function ends with
+`max_cudagraph_capture_size = rounded_sizes[-1]`, so it collapses from 32 to 18 — and
+`cudagraph_dispatcher.dispatch` returns `CUDAGraphMode.NONE` for `num_tokens > max_size`
+*before* testing the piecewise key set. So there is no piecewise fallback: above 6 concurrent
+requests the step is fully eager.
 
 So for an MTP profile, ask for multiples of 3: `3 6 12 24 48 96` round-trips unchanged and
 covers up to 32 sequences (`--max-num-seqs`). Graph memory is taken *before* the KV cache is

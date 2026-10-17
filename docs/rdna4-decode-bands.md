@@ -77,9 +77,38 @@ order, slow → fast → slow → slow, and never recovered. Because the slow bl
 of the fast one, no property of the payload orders that sequence: something changed underneath a
 single server process, mid-run. That is the band behaviour, from one harness against one process.
 
-The band *ratios* in the table above are still upstream's, not measured here. Measuring them
-locally needs N cold spawns with each classified and measured at serial and at concurrency,
-which is the experiment to run next.
+### First local measurement of a band draw
+
+On 2026-10-17 a cold 27B TP4 spawn was caught in the slow band by `llmband`, against a baseline
+calibrated two spawns earlier on the same profile and the same image:
+
+| | healthy spawn | slow spawn | ratio |
+|---|---|---|---|
+| decode steps/s (serial, 256 tok) | 36.42 | 19.12 | **1.905** |
+| tok/s | 81.77 | 42.93 | 1.905 |
+| accepted tokens/step (MTP) | 2.246 | 2.246 | 1.000 |
+| `mem_busy` under load | 46% | 26% | — |
+| `gpu_busy` under load | 100% | 100% | — |
+
+Three things in that table matter more than the ratio:
+
+- **Acceptance is identical to three decimal places.** The slow spawn is not drafting worse; it
+  is executing the same accepted tokens per step at half the step rate. This is what the
+  step-rate-primary design was built to separate, and it settles that the band is not a
+  speculative-decoding artifact. It also means token/s and step/s agree here, so either would
+  have detected *this* draw — but only step rate is guaranteed to.
+- **`gpu_busy` is pinned at 100% in both bands**, so the GPUs are not idle-waiting. Whatever the
+  mechanism is, it keeps the queues full while doing half the work per unit time.
+- **`mem_busy` moves in the direction upstream reports** (slow band lower: 26% here against
+  upstream's 24–27% cluster) even though the healthy value does not match upstream's upper
+  cluster at all (46% here against 62–67%). So the *sign* of the `mem_busy` shift transfers
+  across rigs and the *level* does not, which is exactly why `llmband` treats it as
+  corroborating-only and decides on step rate against a locally calibrated baseline.
+
+The 1.905 ratio sits close to upstream's 1.73 hybrid/MoE figure and well above the 1.21–1.28
+dense range. One draw is not a distribution: the ratios in the table above are still upstream's.
+But the band is now confirmed to exist on this rig, at roughly 2x, with a detector that catches
+it — the draw above was rejected before it could be benchmarked as an A/B arm.
 
 ### A regression that is *not* a band draw, and how its shape says so
 
@@ -134,9 +163,18 @@ Two secondary findings from the same investigation, neither of which explains th
   `max_cudagraph_capture_size` — which `compilation.py` itself sets to the largest size that was
   requested. With MTP at `num_speculative_tokens: 2` the multiple is 3, so the production list
   `1 2 4 8 16 32` becomes `{3, 6, 9, 18}`: 32 rounds to 33, 33 > 32, and it is silently dropped.
-  Four graphs survive, the largest at 18 query-tokens = **6 sequences**. Above 6 concurrent
-  sequences every step runs eager. `3 6 12 24 48 96` round-trips unchanged and covers 32
-  sequences, i.e. all of `--max-num-seqs`.
+  Four graphs survive, the largest at 18 query-tokens = **6 sequences**. The function's last act
+  is `self.max_cudagraph_capture_size = rounded_sizes[-1]`, so the ceiling collapses from 32 to
+  **18** as well, and `cudagraph_dispatcher.dispatch` returns `CUDAGraphMode.NONE` for any
+  `num_tokens > max_size` *before* it ever tests the PIECEWISE key set. There is therefore no
+  piecewise fallback to soften it: above 6 concurrent sequences the step is fully eager.
+  `3 6 12 24 48 96` round-trips unchanged, keeps the ceiling at 96, and covers 32 sequences,
+  i.e. all of `--max-num-seqs`. Run against the image's own config class:
+
+  ```
+  [1, 2, 4, 8, 16, 32]  -> sizes=[3, 6, 9, 18]              max=18  seqs covered=6
+  [3, 6, 12, 24, 48, 96]-> sizes=[3, 6, 12, 24, 48, 96]     max=96  seqs covered=32
+  ```
 
   This is not free, and the price is measured: `scripts/llmkv` on the 27B profile reads
   1,009,850 KV tokens (17.60 GiB/GPU, effective utilization 0.9368) with the production list

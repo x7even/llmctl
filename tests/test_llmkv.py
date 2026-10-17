@@ -486,6 +486,39 @@ def test_boot_with_keep_waits_for_the_api_not_just_for_the_kv_line():
     assert polls == 3, f"stopped polling too early ({polls})"
 
 
+def test_boot_sees_readiness_when_it_is_only_on_stderr():
+    """vLLM logs to stdout; uvicorn's "Application startup complete." goes to stderr.
+
+    Reading only podman's stdout therefore finds the KV numbers and never finds readiness, so
+    --keep polled until its 900 s timeout against a server that had been up for minutes.
+    """
+    seen = {"n": 0}
+
+    class _Split:
+        returncode = 0
+
+        def __init__(self, out="", err=""):
+            self.stdout, self.stderr = out, err
+
+    def fake_run(argv, **kw):
+        if "logs" in argv:
+            seen["n"] += 1
+            return _Split(KV_ONLY, "INFO:     Application startup complete.\n")
+        if argv[:2] == ["podman", "inspect"]:
+            return _Split("true\n")
+        return _Split()
+
+    real = kv.subprocess.run
+    kv.subprocess.run = fake_run
+    try:
+        log = kv.boot_and_read(["podman", "run", "-d", "img"], "probe",
+                               timeout=5, poll=0.0, keep=True)
+    finally:
+        kv.subprocess.run = real
+    assert "Application startup complete" in log
+    assert seen["n"] == 1, f"did not accept a stderr-only readiness line ({seen['n']} polls)"
+
+
 def test_cli_rejects_a_malformed_set():
     r = _run(["qwen3.8-27b-code", "--dry-run", "--set", "no-equals-sign"])
     assert r.returncode != 0

@@ -227,6 +227,14 @@ def parse_startup(log):
     }
 
 
+def container_log(name):
+    """Both streams. vLLM's own logger writes to stdout, but the line that says the server is
+    actually accepting requests - uvicorn's "Application startup complete." - goes to stderr,
+    so reading only stdout can see the KV numbers and never see readiness."""
+    p = subprocess.run(["podman", "logs", name], capture_output=True, text=True)
+    return (p.stdout or "") + (p.stderr or "")
+
+
 def boot_and_read(argv, name, timeout, poll=5.0, log_path=None, keep=False):
     subprocess.run(["podman", "rm", "-f", name], capture_output=True)
     # argv is the whole command line out of models.yaml, podman included - don't add a second one.
@@ -242,8 +250,7 @@ def boot_and_read(argv, name, timeout, poll=5.0, log_path=None, keep=False):
     ready = SERVING_RE if keep else READY_RE
     try:
         while time.monotonic() < deadline:
-            log = subprocess.run(["podman", "logs", name],
-                                 capture_output=True, text=True).stdout
+            log = container_log(name)
             if KV_RE.search(log) and ready.search(log):
                 break
             if FAIL_RE.search(log):
