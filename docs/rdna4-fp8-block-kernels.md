@@ -116,3 +116,15 @@ A tuned config changes the batch-1 kernel, so `llmband` cannot gate a comparison
 of it: the baseline it compares against was calibrated with the untuned kernel,
 and a legitimate improvement is indistinguishable from a band draw by step rate
 alone. Any measurement here needs interleaved arms and best-of-N draws instead.
+
+## The shapes depend on the tensor-parallel size
+
+The five shapes above were collected at TP4. Booting the same profile at TP2 emits a warning for
+`N=8192,K=5120`, which is the TP4 shape `N=4096,K=5120` with N doubled: a column-parallel shard's
+N scales with the number of ranks, and a row-parallel shard's K does the same. So the untuned set
+is a property of the profile *and* its TP size, not of the model alone.
+
+Two consequences for tuning. A tuned config deployed for TP4 does nothing for the same model run
+at TP2, because the kernel looks up a different file name. And anyone collecting the shape list
+has to collect it at the TP size they intend to serve at - reading it off a TP4 boot and then
+serving at TP2 would leave every linear untuned while appearing to be covered.
