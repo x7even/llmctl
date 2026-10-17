@@ -18,31 +18,21 @@ the band split — see "Ruled out" below.
 ## Detecting it
 
 ```
-scripts/llmband --model <profile> [--expect-tps <fast-band serial tok/s>] [--json]
+scripts/llmband --model <profile> --calibrate   # once, against a server believed to be fast
+scripts/llmband --model <profile>               # thereafter, after any cold start
 ```
 
-Exit status: `0` fast band, `1` slow band, `2` undecided. Undecided includes every error path:
-a false "restart the server" is worse than no answer.
+Exit status: `0` fast band, `1` slow band, `2` undecided. Undecided covers every error path and
+the no-baseline case: a false "restart the server" is worse than no answer.
 
-The primary signal is **`mem_busy_percent`**, read from
-`/sys/class/drm/card*/device/mem_busy_percent` while a single-stream decode runs. During
-decode `gpu_busy_percent` reads ~100 in *both* bands — the GPUs look equally busy — while
-`mem_busy_percent` sits far lower in the slow band. Reported centres:
+The signal is the **decode step rate**, measured as streamed SSE chunks per second and compared
+against a stored per-profile baseline in `config/band-baselines.json`.
 
-| Band | `gpu_busy_percent` | `mem_busy_percent` |
-|---|---|---|
-| fast | ~100 | 62–67% |
-| slow | ~100 | 24–27% |
-
-Because the two clusters are far apart and do not move with the model, `mem_busy_percent` is an
-**absolute** classifier: it needs no per-profile baseline, which is what makes it usable on a
-freshly started server before you know what that server's fast rate should be. The threshold is
-set at 45%, the midpoint of a wide gap.
-
-Measured tok/s is only a cross-check, enabled by `--expect-tps`. It is the weaker signal because
-absolute tok/s on these profiles depends on the prompt and (with speculative decoding) on the
-acceptance rate, so a baseline measured on a different payload is not comparable. When the two
-signals disagree the answer is `undecided`, not a guess.
+Step rate is the right quantity for two reasons. The band moves the duration of a decode step,
+so step rate is what it acts on directly. And with speculative decoding one SSE chunk is one
+decode step carrying however many tokens that step accepted, so token rate varies with the
+acceptance rate — which itself moves with the prompt, the temperature and whether thinking is
+enabled — while step rate does not. Two step rates are comparable where two token rates are not.
 
 Reported band ratios, fast:slow:
 
@@ -52,40 +42,75 @@ Reported band ratios, fast:slow:
 | MoE | 1.73 |
 | gated-delta-net hybrid | 2.00–2.2 |
 
-### Provenance of the numbers
+The narrowest of those puts the slow band 17.4% below the fast one, and within-band variance is
+a few percent, so the default `--tolerance 0.12` separates them with room on both sides.
 
-**The band centres and ratios in the two tables above are from the upstream report, not from a
-local two-band measurement.**
+### Why there is no baseline-free threshold
+
+`mem_busy_percent` was tried as an absolute classifier and **it does not work on this rig.**
+
+The idea was sound: during decode `gpu_busy_percent` reads ~100 in both bands, so the GPUs look
+equally busy, while upstream reports `mem_busy_percent` splitting cleanly into two clusters —
+24–27% slow against 62–67% fast. That would have been an absolute signal needing no baseline,
+usable on a freshly started server before anyone knows what that server's rate should be.
+
+Measured here, a healthy, continuously decoding 27B FP8 TP4+MTP server sampled **36.7–37.5%
+mean** (p50 37–38, max 42, tight) — between upstream's two clusters. A 45% threshold, the
+midpoint of upstream's gap, would have called that server slow and told the operator to restart
+it. Upstream measured a different model and configuration, so the absolute values simply do not
+transfer.
+
+`llmband` therefore reports `mem_busy` and compares it against the baseline's own `mem_busy`,
+but it only ever corroborates. It cannot call a server slow on its own, and when it contradicts
+a slow step rate the verdict is downgraded to undecided rather than acted on. A disagreeing
+`mem_busy` does not block a `fast` verdict, because "carry on" is the safe outcome.
+
+The practical consequence is that **a baseline is mandatory**, and it must be recorded on this
+rig, for this profile, on this image. Re-calibrate after any image, profile, driver or firmware
+change, and remember that `--calibrate` records whatever band the server happened to be in — it
+is a fast-band reference only if the server really was in the fast band when you ran it.
+
+### What the local evidence actually supports
 
 The clean local observation is a Flash-Next speed stage whose four blocks ran, in chronological
 order, slow → fast → slow → slow, and never recovered. Because the slow blocks sit on both sides
 of the fast one, no property of the payload orders that sequence: something changed underneath a
 single server process, mid-run. That is the band behaviour, from one harness against one process.
 
-What is **not** yet local is the `mem_busy` threshold. No run on this stack has yet been
-classified by `mem_busy` and by tok/s in both bands, so 45% is adopted rather than verified.
-Until it is, read a `slow` verdict as "restart and re-measure", not as proof. `llmband --json`
-prints the counters behind every verdict so it can be audited afterwards.
-
-Comparing tok/s across runs is also harder than it looks. With speculative decoding the rate
-depends on the prompt and on the acceptance rate, so two numbers taken from different payloads
-are not evidence of a band difference however far apart they are. Only same-payload comparisons
-count, which is the whole reason `mem_busy` is the primary signal here.
+The band *ratios* in the table above are still upstream's, not measured here. Measuring them
+locally needs N cold spawns with each classified and measured at serial and at concurrency,
+which is the experiment to run next.
 
 ## Ruled out as the mechanism
 
 | Candidate | How it was excluded |
 |---|---|
-| Kernel-dispatch latency | Measured on-box at 2.0–2.6 µs/launch; a decode-shaped step is 1.34 ms eager. The band gap is tens of ms/step — three orders of magnitude off. No dispatch-related env knob moves it. |
+| Kernel-dispatch latency | Measured on-box: 2.56 µs/launch host submit, 2.77 µs back-to-back, 21.5 µs launch→completion, and a 500-dispatch decode-shaped step at 1.34 ms eager / 1.10 ms as a graph replay. At ~450–550 dispatches per token that is 3–5% of a healthy step, and graph replay saves only 0.24 ms, so neither dispatch cost nor total graph-capture failure can produce a tens-of-ms/step gap. Three different wait paths agree within 0.8 µs, so there is no host wake penalty either. Upstream measures the same floor on the same part and reports it unchanged across ROCm 7.2 / 7.14 / 10.0 (ROCm/TheRock#9241). `AMD_DIRECT_DISPATCH=0` is 13–23% *worse*, which incidentally proves direct dispatch is already on. **Scope limit:** this measures a fresh HIP context, so it says the per-launch floor is normal — not that a given long-lived vLLM process is healthy. It also does not test #9297's actual trigger, which needs several `hipStreamWaitEvent`s left pending while timing; the probe used only completed sync fences, so #9297 is untested here rather than excluded. |
 | Clocks / power / thermals | Identical in both bands. `THROTTLE_STATUS` on this driver is not trustworthy and was not relied on. |
 | PCIe link state | Gen5 x16 on every card in both bands, read from `/sys/bus/pci/devices/<bdf>/current_link_speed` (amd-smi's PCIe fields are idle-time artifacts). |
 | Host CPU contention | A full-machine busy-loop load changed serial decode by <1%. |
 | vLLM config | Startup logs of a slow and a fast spawn are line-for-line identical apart from timings. |
 
-A secondary finding from the same investigation, unrelated to the bands: there is an idle-wake
-ladder on this architecture — a kernel launch costs ~22 µs warm but 389–493 µs after ~10 ms of
-idle, with GFXOFF enabled. That penalty is per-wake, so it affects trickle traffic, not
-sustained decode.
+Still **not** excluded, and the leading remaining candidate: the TP4 collective path. On
+gfx1201 every fast all-reduce backend is unavailable — QuickReduce is gfx94/gfx95 only,
+CustomAllreduce disables itself above two PCIe-only GPUs, and AITER does not support this
+architecture at all — so the engine falls back to `PYNCCL`, confirmed in the startup log as
+`Using ['PYNCCL'] all-reduce backends ... out of potential backends: ['NCCL_SYMM_MEM',
+'QUICK_REDUCE', 'FLASHINFER', 'AITER_CUSTOM', 'CUSTOM', 'SYMM_MEM', 'PYNCCL']`. Every TP4
+collective therefore goes through generic RCCL over PCIe, and that path is unmeasured.
+
+Two secondary findings from the same investigation, neither of which explains the bands:
+
+- **An idle-wake ladder.** A kernel launch costs ~22 µs warm but 137 µs after a 1 ms host gap
+  and 389 µs after 10 ms, with GFXOFF enabled in `ppfeaturemask`. It is a per-wake cost, not a
+  clock ramp — 3 s of heavy GEMM immediately beforehand does not remove it. At step scale a
+  20 ms host gap costs +0.75 ms. It matters for TTFT and idle-to-first-token, not for sustained
+  decode.
+- **Speculative decoding shrinks the captured graph set.** With MTP the 3 tokens per sequence
+  multiply the batch dimension against `max_cudagraph_capture_size`, so a profile asking for
+  `--cudagraph-capture-sizes 1 2 4 8 16 32` captures only 4 sizes, the largest 18. Above roughly
+  6 concurrent sequences nothing is graph-replayed and every step runs eager. Raising the
+  capture sizes for the MTP profiles is a cheap and so far untested lever.
 
 ## Relationship to the Flash-Next half-speed starts
 
@@ -111,13 +136,16 @@ empirically effective — and use `llmband` as the post-start check that the wra
 
 ## Operational guidance
 
-1. After any cold start of a throughput-critical profile, run `scripts/llmband --model <profile>`.
-2. On `slow`, restart the model (`llmctl swap` re-executes the profile's `cmd`, including any
+1. Calibrate once per profile per image: `scripts/llmband --model <profile> --calibrate`,
+   against a server you have reason to believe is fast (for instance one that has just produced
+   a normal benchmark result).
+2. After any cold start of a throughput-critical profile, run `scripts/llmband --model <profile>`.
+3. On `slow`, restart the model (`llmctl swap` re-executes the profile's `cmd`, including any
    prestart wrapper) and check again. A restart draws a new band; it is not a repair.
-3. On `undecided`, read the printed counters before acting. The common causes are a sampling
+4. On `undecided`, read the printed counters before acting. The common causes are a sampling
    window that missed the decode and an unreachable server.
-4. Never compare tok/s across different prompts or acceptance rates when deciding a band. Use
-   `mem_busy`, or compare against a baseline measured with the identical payload.
-5. Benchmark results are only comparable within a band, so classify the band before believing a
+5. Never compare tok/s across different prompts or acceptance rates when deciding a band. Use
+   step rate, or compare against a baseline measured with the identical payload.
+6. Benchmark results are only comparable within a band, so classify the band before believing a
    regression. A number from a long-lived container and a number from a cold spawn are not
    directly comparable, and re-measuring cold is the cheapest way to tell the two apart.

@@ -1,0 +1,267 @@
+#!/usr/bin/env python3
+"""llmkv - what does a profile's KV cache actually buy you, in context x concurrency?
+
+    llmkv qwen3.8-27b-code
+    llmkv qwen3.8-27b-code --set gpu-memory-utilization=0.92 --set max-num-batched-tokens=16384
+    llmkv qwen3.8-27b-code --env PYTORCH_HIP_ALLOC_CONF=expandable_segments:True
+
+Boots the profile from config/models.yaml under a throwaway container name, reads the KV cache
+size vLLM reports at startup, prints how many concurrent streams that allows at a range of
+context lengths, and stops the container again. No benchmark, no requests: about the length of
+one warm start.
+
+The point is that "how much context" and "how many users" are the same budget. A profile that
+advertises --max-model-len 131072 and --max-num-seqs 32 can be unable to serve even two
+requests at 131072, and the only number that says so is the KV total. Changing
+--gpu-memory-utilization, --max-num-batched-tokens, --kv-cache-dtype or --max-model-len all move
+it, sometimes in the opposite direction to the obvious guess, so measure instead of predicting.
+
+Overrides apply to the vllm flags only, never to the podman arguments, and the container is
+always renamed, so this cannot disturb a running production container. It does need the GPUs:
+run it when nothing else is using them.
+"""
+import argparse
+import json
+import re
+import shlex
+import subprocess
+import sys
+import time
+from pathlib import Path
+
+REPO = Path(__file__).resolve().parent.parent
+MODELS_YAML = REPO / "config" / "models.yaml"
+
+# What a reader actually wants to know: at this context length, how many streams fit at once?
+CONTEXT_POINTS = [8192, 16384, 32768, 65536, 131072, 262144]
+
+KV_RE = re.compile(r"GPU KV cache size:\s*([\d,]+)\s*tokens")
+CONC_RE = re.compile(r"Maximum concurrency for ([\d,]+) tokens per request:\s*([\d.]+)x")
+AVAIL_RE = re.compile(r"Available KV cache memory:\s*([\d.]+)\s*GiB")
+READY_RE = re.compile(r"Application startup complete|GPU KV cache size")
+FAIL_RE = re.compile(r"Traceback \(most recent call last\)|EngineCore failed|"
+                     r"ValueError|torch\.OutOfMemoryError|Engine core initialization failed")
+
+
+def extract_cmd(yaml_text, profile):
+    """Pull one profile's `cmd:` literal block out of models.yaml.
+
+    Deliberately a line-oriented read rather than a YAML parse: the repo's own format rules keep
+    this file parseable by a regex reader, a Go yaml.v3 reader and llama-swap alike, and adding a
+    PyYAML dependency to a diagnostic script would be the only thing here that needs one.
+    """
+    lines = yaml_text.splitlines()
+    start = None
+    for i, ln in enumerate(lines):
+        if re.match(rf"^\s{{2}}{re.escape(profile)}:\s*$", ln):
+            start = i
+            break
+    if start is None:
+        raise SystemExit(f"llmkv: no profile {profile!r} in {MODELS_YAML}")
+
+    cmd_at = None
+    for i in range(start + 1, len(lines)):
+        if re.match(r"^\s{2}\S", lines[i]):          # next profile began
+            break
+        if re.match(r"^\s{4}cmd:\s*\|\s*$", lines[i]):
+            cmd_at = i
+            break
+    if cmd_at is None:
+        raise SystemExit(f"llmkv: profile {profile!r} has no block-style cmd:")
+
+    body = []
+    for ln in lines[cmd_at + 1:]:
+        if ln.strip() and not ln.startswith("      "):   # block ended
+            break
+        body.append(ln.strip())
+    return " ".join(p for p in body if p)
+
+
+def split_argv(cmd, profile, port):
+    """Substitute what llama-swap substitutes, then split respecting quotes."""
+    cmd = cmd.replace("${MODEL_ID}", profile).replace("${PORT}", str(port))
+    return shlex.split(cmd)
+
+
+def find_serve_split(argv):
+    """Index of the first vllm flag: everything before it is podman's and is left alone."""
+    for i, a in enumerate(argv):
+        if a == "serve" and i + 1 < len(argv):
+            return i + 2          # skip "serve" and the model path
+    raise SystemExit("llmkv: could not find 'vllm serve <model>' in the profile cmd")
+
+
+def apply_overrides(argv, split_at, sets):
+    """Replace or append `--flag value` in the vllm portion only.
+
+    A flag already present is replaced in place so its position (and any neighbours that care)
+    is preserved; one that is absent is appended. Values are not quoted or parsed: whatever is
+    given is passed through as a single argument.
+    """
+    out, applied = list(argv), {}
+    for key, val in sets.items():
+        flag = f"--{key.lstrip('-')}"
+        try:
+            i = out.index(flag, split_at)
+        except ValueError:
+            out.extend([flag, val])
+            applied[flag] = (None, val)
+            continue
+        # a flag's value is the next argument unless the next argument is itself a flag
+        if i + 1 < len(out) and not out[i + 1].startswith("--"):
+            applied[flag] = (out[i + 1], val)
+            out[i + 1] = val
+        else:
+            applied[flag] = (None, val)
+            out.insert(i + 1, val)
+    return out, applied
+
+
+def rename_and_isolate(argv, name):
+    """Force a throwaway container name and detached mode so production is never touched."""
+    out = list(argv)
+    try:
+        i = out.index("--name")
+        out[i + 1] = name
+    except ValueError:
+        out[1:1] = ["--name", name]
+    if "-d" not in out and "--detach" not in out:
+        out.insert(out.index("run") + 1, "-d")
+    return out
+
+
+def concurrency_table(kv_tokens, max_model_len, points=CONTEXT_POINTS):
+    """Streams that fit at each context length, capped at what the profile will admit."""
+    rows = []
+    for ctx in points:
+        if max_model_len and ctx > max_model_len:
+            continue
+        rows.append({"context": ctx, "streams": round(kv_tokens / ctx, 2)})
+    return rows
+
+
+def parse_startup(log):
+    kv = KV_RE.search(log)
+    avail = AVAIL_RE.search(log)
+    conc = CONC_RE.search(log)
+    return {
+        "kv_cache_tokens": int(kv.group(1).replace(",", "")) if kv else None,
+        "available_kv_gib_per_gpu": float(avail.group(1)) if avail else None,
+        "vllm_reported_concurrency": (
+            {"at_tokens": int(conc.group(1).replace(",", "")), "streams": float(conc.group(2))}
+            if conc else None),
+    }
+
+
+def boot_and_read(argv, name, timeout, poll=5.0, log_path=None):
+    subprocess.run(["podman", "rm", "-f", name], capture_output=True)
+    run = subprocess.run(["podman", *argv], capture_output=True, text=True)
+    if run.returncode != 0:
+        raise SystemExit(f"llmkv: podman run failed:\n{run.stderr.strip()}")
+
+    deadline = time.monotonic() + timeout
+    log = ""
+    try:
+        while time.monotonic() < deadline:
+            log = subprocess.run(["podman", "logs", name],
+                                 capture_output=True, text=True).stdout
+            if KV_RE.search(log) and READY_RE.search(log):
+                break
+            if FAIL_RE.search(log):
+                break
+            alive = subprocess.run(["podman", "inspect", "-f", "{{.State.Running}}", name],
+                                   capture_output=True, text=True).stdout.strip()
+            if alive != "true":
+                break
+            time.sleep(poll)
+        else:
+            log += f"\n[llmkv] timed out after {timeout}s\n"
+    finally:
+        if log_path:
+            Path(log_path).write_text(log)
+        subprocess.run(["podman", "stop", "-t", "20", name], capture_output=True)
+        subprocess.run(["podman", "rm", "-f", name], capture_output=True)
+    return log
+
+
+def main(argv=None):
+    ap = argparse.ArgumentParser(prog="llmkv", description=__doc__,
+                                 formatter_class=argparse.RawDescriptionHelpFormatter)
+    ap.add_argument("profile")
+    ap.add_argument("--set", action="append", default=[], metavar="FLAG=VALUE",
+                    help="override a vllm flag, without the leading dashes; repeatable")
+    ap.add_argument("--env", action="append", default=[], metavar="K=V",
+                    help="add a container environment variable; repeatable")
+    ap.add_argument("--port", type=int, default=9711, help="must be free (profile uses host net)")
+    ap.add_argument("--name", default=None, help="throwaway container name")
+    ap.add_argument("--timeout", type=float, default=900.0)
+    ap.add_argument("--label", default=None, help="recorded in the json output")
+    ap.add_argument("--out", default=None, help="write json here (and the startup log beside it)")
+    ap.add_argument("--json", action="store_true")
+    ap.add_argument("--dry-run", action="store_true", help="print the podman argv and stop")
+    a = ap.parse_args(argv)
+
+    sets = {}
+    for s in a.set:
+        if "=" not in s:
+            raise SystemExit(f"llmkv: --set wants FLAG=VALUE, got {s!r}")
+        k, v = s.split("=", 1)
+        sets[k] = v
+
+    cmd = extract_cmd(MODELS_YAML.read_text(), a.profile)
+    argv_full = split_argv(cmd, a.profile, a.port)
+    split_at = find_serve_split(argv_full)
+    argv_full, applied = apply_overrides(argv_full, split_at, sets)
+    # -e goes among podman's own options, which must all precede the image name
+    at = argv_full.index("run") + 1
+    for e in a.env:
+        argv_full[at:at] = ["-e", e]
+        at += 2
+    name = a.name or f"llmkv-{a.profile}"
+    argv_full = rename_and_isolate(argv_full, name)
+
+    if a.dry_run:
+        print(" ".join(shlex.quote(x) for x in argv_full))
+        return 0
+
+    log_path = (Path(a.out).with_suffix(".log")) if a.out else None
+    log = boot_and_read(argv_full, name, a.timeout, log_path=log_path)
+    parsed = parse_startup(log)
+
+    mml = None
+    try:
+        mml = int(argv_full[argv_full.index("--max-model-len") + 1])
+    except (ValueError, IndexError):
+        pass
+
+    result = {"profile": a.profile, "label": a.label,
+              "overrides": {k: {"was": w, "now": n} for k, (w, n) in applied.items()},
+              "env_added": a.env, "max_model_len": mml, **parsed}
+    if parsed["kv_cache_tokens"]:
+        result["concurrency"] = concurrency_table(parsed["kv_cache_tokens"], mml)
+
+    if a.out:
+        Path(a.out).write_text(json.dumps(result, indent=2))
+
+    if a.json:
+        print(json.dumps(result, indent=2))
+    elif not parsed["kv_cache_tokens"]:
+        tail = "\n".join(log.splitlines()[-25:])
+        print(f"llmkv: {a.profile} did not report a KV cache size. Last lines:\n{tail}",
+              file=sys.stderr)
+    else:
+        print(f"llmkv: {a.profile}" + (f"  [{a.label}]" if a.label else ""))
+        for flag, (was, now) in applied.items():
+            print(f"  override {flag}: {was} -> {now}")
+        for e in a.env:
+            print(f"  env {e}")
+        print(f"  KV cache: {parsed['kv_cache_tokens']:,} tokens"
+              f"  ({parsed['available_kv_gib_per_gpu']} GiB per GPU)")
+        print(f"  {'context':>9}  {'streams':>8}")
+        for row in result["concurrency"]:
+            print(f"  {row['context']:>9,}  {row['streams']:>8.2f}")
+    return 0 if parsed["kv_cache_tokens"] else 1
+
+
+if __name__ == "__main__":
+    sys.exit(main())

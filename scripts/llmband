@@ -1,23 +1,37 @@
 #!/usr/bin/env python3
 """llmband - decide whether a just-started vLLM server landed in the slow decode band.
 
-    llmband --model qwen3.8-27b-code [--expect-tps 66] [--json]
+    llmband --model qwen3.8-27b-code --calibrate   # once, against a server known to be fast
+    llmband --model qwen3.8-27b-code                # thereafter, any time after a start
 
-Why: on gfx1201 (RDNA4) vLLM decode throughput is bimodal and the band is fixed when the
-server process spawns. Two stable bands roughly 1.2x (dense) to 2.4x (hybrid/MoE) apart, with
-almost no variance inside a band, and a process stays in its band for most of its life. A
-server that spawns into the slow band serves at a fraction of its speed until it is restarted,
-and nothing in the startup log says so: clocks, temperatures, power and VRAM all look normal.
-See docs/rdna4-decode-bands.md and ROCm/legacy-rocm-build#6347.
+Why: on gfx1201 (RDNA4) vLLM decode throughput is bimodal and the band is fixed when the server
+process spawns. Two stable bands, reported upstream as 1.21-1.28x apart for dense models and up
+to 2.2x for gated-delta-net hybrids, with little variance inside a band, and a process stays in
+its band for most of its life. A server that spawns into the slow band serves at a fraction of
+its speed until it is restarted, and nothing in the startup log says so: clocks, temperatures,
+power, VRAM and the log lines themselves look normal. See docs/rdna4-decode-bands.md and
+ROCm/legacy-rocm-build#6347.
 
-The giveaway is that the GPUs are busy but moving less data. During single-stream decode
-`gpu_busy_percent` reads ~100 in both bands, while `mem_busy_percent` sits far lower in the slow
-band than in the fast one. That makes `mem_busy_percent` an absolute signal needing no baseline,
-which is why it is the primary one here; measured tok/s is used as a cross-check when a
-baseline is supplied with --expect-tps.
+The signal is **decode step rate**, measured as streamed chunks per second against a stored
+per-profile baseline. Step rate is the right quantity because the band moves the duration of a
+decode step, and because with speculative decoding one SSE chunk is one step carrying however
+many tokens that step accepted. Token rate therefore varies with the acceptance rate (prompt,
+temperature, thinking) while step rate does not, which makes step rate comparable between two
+runs in a way tok/s is not.
 
-Exit status: 0 fast band, 1 slow band, 2 undecided (including any error). Undecided is never
-reported as slow: a false "restart the server" is worse than no answer.
+A baseline is required, and there is no universal threshold to fall back on:
+
+    `mem_busy_percent` was tried as an absolute, baseline-free classifier on the strength of
+    upstream's two clusters (24-27% slow, 62-67% fast, with gpu_busy ~100 in both). It does not
+    transfer. A healthy, continuously decoding 27B FP8 TP4+MTP server on this rig sampled
+    36.7-37.5% mean (p50 37-38, max 42) - between upstream's two clusters, so any universal
+    threshold would have called it slow and told the operator to restart a healthy server.
+    mem_busy is still reported, and compared against the baseline's own mem_busy, but it only
+    corroborates; it never decides on its own.
+
+Exit status: 0 fast band, 1 slow band, 2 undecided (including any error, and including "no
+baseline yet"). Undecided is never reported as slow: a false "restart the server" is worse than
+no answer.
 """
 import argparse
 import json
@@ -28,12 +42,17 @@ import time
 from pathlib import Path
 
 DRM = Path("/sys/class/drm")
+BASELINES = Path(__file__).resolve().parent.parent / "config" / "band-baselines.json"
 
-# Published band centres for gfx1201 single-stream decode: slow 24-27%, fast 62-67% mem_busy.
-# 45 is the midpoint of the gap, and the gap is wide, so the exact value is not delicate.
-MEM_BUSY_THRESHOLD = 45.0
-# Below this gpu_busy the GPUs are not actually decoding and mem_busy means nothing.
+# A drop of this fraction below the baseline step rate reads as the slow band. The narrowest
+# reported gap is 1.21x, i.e. the slow band sits 17.4% below the fast one, and within-band
+# variance is a few percent - so 12% separates the two without catching normal noise.
+STEP_TOLERANCE = 0.12
+# Below this gpu_busy a card was not decoding and its counters say nothing about the band.
 GPU_BUSY_FLOOR = 80.0
+# How far mem_busy may sit from the baseline before it stops corroborating. Wide on purpose:
+# it is a tie-break, not a gate.
+MEM_BUSY_MARGIN = 0.30
 
 PROMPT = ("Explain, in detail and without bullet points, how a write-ahead log gives a "
           "database engine crash consistency, and why the log must be flushed before the "
@@ -89,45 +108,56 @@ def busy_under_load(rows, gpu_busy_floor=GPU_BUSY_FLOOR):
             len(loaded))
 
 
-def classify(mem_busy, gpu_busy, tps=None, expect_tps=None,
-             mem_threshold=MEM_BUSY_THRESHOLD, tolerance=0.25,
-             gpu_busy_floor=GPU_BUSY_FLOOR):
-    """Return (verdict, reasons) where verdict is "fast", "slow" or "undecided".
+def classify(steps_s, baseline, mem_busy=None, gpu_busy=None,
+             tolerance=STEP_TOLERANCE, gpu_busy_floor=GPU_BUSY_FLOOR,
+             mem_margin=MEM_BUSY_MARGIN):
+    """Return (verdict, reasons): "fast", "slow" or "undecided".
 
-    mem_busy is the primary signal. tok/s is only a cross-check, and when the two disagree the
-    answer is "undecided" rather than a guess: both signals have been seen to be individually
-    misleading (mem_busy if the sampling window missed the decode, tok/s if the baseline was
-    measured on a different prompt or a different acceptance rate).
+    Step rate against the baseline decides. mem_busy can only corroborate, and when it
+    contradicts a *slow* step rate the answer is downgraded to undecided rather than acted on:
+    telling someone to restart a healthy server is the one outcome worth being timid about.
+    A disagreeing mem_busy does not block a "fast" verdict, because "carry on" is safe.
     """
     reasons = []
-    if mem_busy is None or gpu_busy is None:
-        return "undecided", ["no usable samples from the busy counters"]
-    if gpu_busy < gpu_busy_floor:
+    if not baseline or not baseline.get("steps_s"):
+        return "undecided", ["no baseline for this profile; run --calibrate against a server "
+                             "you have reason to believe is in the fast band"]
+    if steps_s is None:
+        return "undecided", ["no step rate measured"]
+    if gpu_busy is not None and gpu_busy < gpu_busy_floor:
         return "undecided", [f"gpu_busy {gpu_busy:.0f}% < {gpu_busy_floor:.0f}%: "
                              "the GPUs were not decoding while sampled"]
 
-    by_mem = "fast" if mem_busy >= mem_threshold else "slow"
-    reasons.append(f"mem_busy {mem_busy:.0f}% vs threshold {mem_threshold:.0f}% -> {by_mem}")
+    base = baseline["steps_s"]
+    floor = base * (1.0 - tolerance)
+    by_steps = "fast" if steps_s >= floor else "slow"
+    reasons.append(f"{steps_s:.2f} steps/s vs baseline {base:.2f}, floor {floor:.2f} "
+                   f"(-{tolerance:.0%}) -> {by_steps}")
 
-    by_tps = None
-    if tps is not None and expect_tps:
-        floor = expect_tps * (1.0 - tolerance)
-        by_tps = "fast" if tps >= floor else "slow"
-        reasons.append(f"{tps:.1f} tok/s vs floor {floor:.1f} "
-                       f"({expect_tps:.0f} -{tolerance:.0%}) -> {by_tps}")
+    base_mem = baseline.get("mem_busy")
+    if mem_busy is not None and base_mem:
+        lo, hi = base_mem * (1 - mem_margin), base_mem * (1 + mem_margin)
+        agrees = lo <= mem_busy <= hi
+        reasons.append(f"mem_busy {mem_busy:.0f}% vs baseline {base_mem:.0f}% "
+                       f"(+/-{mem_margin:.0%}) -> {'consistent' if agrees else 'inconsistent'}")
+        if by_steps == "slow" and agrees:
+            reasons.append("step rate says slow but mem_busy matches the fast-band baseline; "
+                           "not calling it slow on a split signal")
+            return "undecided", reasons
+    return by_steps, reasons
 
-    if by_tps and by_tps != by_mem:
-        reasons.append("signals disagree")
-        return "undecided", reasons
-    return by_mem, reasons
 
+def measure(base, model, max_tokens, timeout, ignore_eos=True):
+    """One streamed single-stream decode, sampling the busy counters throughout.
 
-def measure(base, model, max_tokens, timeout):
-    """One non-streaming single-stream request, sampling the counters throughout.
+    Streamed on purpose, and the chunks are counted on purpose: with speculative decoding one
+    chunk is one decode step, so chunks/s is the step rate, which is what the band moves.
+    Token count comes from `usage` rather than from the chunk count - a chunk carries every
+    token that step accepted, so counting chunks as tokens understates the rate by the
+    acceptance factor (about 2.2-2.4 on the MTP profiles here).
 
-    Non-streaming on purpose: a streamed response is chunked, and with speculative decoding a
-    chunk can carry several tokens, so counting chunks understates the rate. usage from the
-    response body is the only token count worth trusting.
+    ignore_eos keeps the amount of work identical between runs; without it the model may stop
+    early and the comparison is against a different-sized job.
     """
     import requests  # imported late so --help and the unit tests need no dependency
 
@@ -141,26 +171,69 @@ def measure(base, model, max_tokens, timeout):
 
     payload = {"model": model,
                "messages": [{"role": "user", "content": PROMPT}],
-               "max_tokens": max_tokens, "temperature": 0.0,
+               "max_tokens": max_tokens, "min_tokens": max_tokens, "temperature": 0.0,
+               "ignore_eos": ignore_eos, "stream": True,
+               "stream_options": {"include_usage": True},
                "chat_template_kwargs": {"enable_thinking": False}}
 
     t.start()
-    t0 = time.perf_counter()
     try:
-        r = requests.post(f"{base}/v1/chat/completions", json=payload, timeout=timeout)
+        r = requests.post(f"{base}/v1/chat/completions", json=payload,
+                          timeout=timeout, stream=True)
         r.raise_for_status()
-        body = r.json()
+        steps, toks, t_first, t_last = 0, 0, None, None
+        for line in r.iter_lines():
+            if not line or not line.startswith(b"data: "):
+                continue
+            body = line[6:]
+            if body == b"[DONE]":
+                break
+            try:
+                ev = json.loads(body)
+            except ValueError:
+                continue
+            usage = ev.get("usage")
+            if usage:
+                toks = usage.get("completion_tokens") or toks
+            if ev.get("choices"):
+                now = time.perf_counter()
+                if t_first is None:
+                    t_first = now          # excludes prefill/TTFT from the rate
+                else:
+                    steps += 1
+                    t_last = now
     finally:
         stop.set()
         t.join(timeout=5)
-    wall = time.perf_counter() - t0
 
-    toks = (body.get("usage") or {}).get("completion_tokens") or 0
+    decode_s = (t_last - t_first) if (t_first and t_last) else None
     gpu, mem, n = busy_under_load(rows)
-    return {"tok_s": (toks / wall) if wall > 0 else None, "completion_tokens": toks,
-            "wall_s": round(wall, 3), "gpu_busy": gpu, "mem_busy": mem,
+    return {"steps_s": (steps / decode_s) if decode_s else None,
+            "tok_s": (toks / decode_s) if (decode_s and toks) else None,
+            "steps": steps, "completion_tokens": toks,
+            "accepted_per_step": round(toks / steps, 3) if steps and toks else None,
+            "decode_s": round(decode_s, 3) if decode_s else None,
+            "gpu_busy": gpu, "mem_busy": mem,
             "card_samples_under_load": n, "card_samples_total": len(rows),
             "cards": [c.name for c in card_list]}
+
+
+def load_baselines(path=BASELINES):
+    try:
+        return json.loads(path.read_text())
+    except (OSError, ValueError):
+        return {}
+
+
+def save_baseline(model, m, path=BASELINES, now=None):
+    """Record a profile's fast-band reference. Overwrites any previous one for that profile."""
+    data = load_baselines(path)
+    data[model] = {"steps_s": m["steps_s"], "tok_s": m["tok_s"],
+                   "mem_busy": m["mem_busy"], "accepted_per_step": m["accepted_per_step"],
+                   "calibrated": now or time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime())}
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(json.dumps(data, indent=2, sort_keys=True) + "\n")
+    return data[model]
 
 
 def main(argv=None):
@@ -169,11 +242,12 @@ def main(argv=None):
     ap.add_argument("--base", default="http://127.0.0.1:8080")
     ap.add_argument("--model", required=True)
     ap.add_argument("--max-tokens", type=int, default=256)
-    ap.add_argument("--expect-tps", type=float, default=None,
-                    help="known fast-band serial tok/s for this profile; enables the cross-check")
-    ap.add_argument("--tolerance", type=float, default=0.25,
-                    help="fraction below --expect-tps still counted as fast (default 0.25)")
-    ap.add_argument("--mem-busy-threshold", type=float, default=MEM_BUSY_THRESHOLD)
+    ap.add_argument("--calibrate", action="store_true",
+                    help="record this run as the profile's fast-band baseline")
+    ap.add_argument("--tolerance", type=float, default=STEP_TOLERANCE,
+                    help=f"fraction below the baseline step rate that reads as slow "
+                         f"(default {STEP_TOLERANCE})")
+    ap.add_argument("--baselines", default=str(BASELINES))
     ap.add_argument("--timeout", type=float, default=600.0)
     ap.add_argument("--json", action="store_true")
     a = ap.parse_args(argv)
@@ -187,18 +261,39 @@ def main(argv=None):
             print(f"llmband: undecided ({e})", file=sys.stderr)
         return 2
 
-    verdict, reasons = classify(m["mem_busy"], m["gpu_busy"], m["tok_s"], a.expect_tps,
-                                a.mem_busy_threshold, a.tolerance)
-    out = {"verdict": verdict, "model": a.model, "reasons": reasons, **m}
+    path = Path(a.baselines)
+    if a.calibrate:
+        if not m["steps_s"]:
+            print("llmband: nothing measured, not writing a baseline", file=sys.stderr)
+            return 2
+        rec = save_baseline(a.model, m, path)
+        out = {"verdict": "calibrated", "model": a.model, "baseline": rec, **m}
+        if a.json:
+            print(json.dumps(out, indent=2))
+        else:
+            print(f"llmband: baseline for {a.model} written to {path}")
+            print(f"  {m['steps_s']:.2f} steps/s, {m['tok_s']:.1f} tok/s, "
+                  f"{m['accepted_per_step']} accepted/step, mem_busy {m['mem_busy']:.0f}%")
+            print("  This is only a fast-band reference if the server really was in the fast "
+                  "band.\n  Re-calibrate after any image, profile or driver change.")
+        return 0
+
+    baseline = load_baselines(path).get(a.model)
+    verdict, reasons = classify(m["steps_s"], baseline, m["mem_busy"], m["gpu_busy"],
+                                a.tolerance)
+    out = {"verdict": verdict, "model": a.model, "reasons": reasons,
+           "baseline": baseline, **m}
     if a.json:
         print(json.dumps(out, indent=2))
     else:
         print(f"llmband: {a.model} -> {verdict.upper()} band")
         for r in reasons:
             print(f"  {r}")
-        print(f"  {m['completion_tokens']} tok in {m['wall_s']}s; "
-              f"{m['card_samples_under_load']}/{m['card_samples_total']} card-samples under load"
-              f" across {len(m['cards'])} cards")
+        if m["steps_s"]:
+            print(f"  {m['steps']} steps / {m['completion_tokens']} tok in {m['decode_s']}s "
+                  f"({m['accepted_per_step']} accepted/step); "
+                  f"{m['card_samples_under_load']}/{m['card_samples_total']} card-samples "
+                  f"under load across {len(m['cards'])} cards")
         if verdict == "slow":
             print("  a restart draws a new band; see docs/rdna4-decode-bands.md")
     return {"fast": 0, "slow": 1}.get(verdict, 2)

@@ -1,17 +1,19 @@
 #!/usr/bin/env python3
 """
 Unit tests for scripts/llmband (slow-decode-band detector for gfx1201 vLLM servers):
-the band decision from mem_busy, the gpu_busy guard, the tok/s cross-check and what happens
-when the two signals disagree, dropping idle samples, card discovery, and that errors come
-back as "undecided" with exit status 2 rather than as a crash.
+the band decision from step rate against a stored baseline, the refusal to decide without one,
+the gpu_busy guard, mem_busy's corroborating-only role, dropping idle cards and idle samples,
+card discovery, baseline round-tripping, and that errors come back as "undecided" with exit
+status 2 rather than as a crash.
 
-No GPU and no server are needed: the sysfs tree is a temp directory and the counters are
-supplied directly.
+No GPU and no server are needed: the sysfs tree is a temp directory and the counters and
+baselines are supplied directly.
 
 Run:  python3 tests/test_llmband.py        (also pytest-compatible)
 """
 import importlib.machinery
 import importlib.util
+import json
 import subprocess
 import sys
 import tempfile
@@ -27,6 +29,8 @@ _spec = importlib.util.spec_from_loader("llmband", _loader)
 band = importlib.util.module_from_spec(_spec)
 _loader.exec_module(band)
 
+FAST = {"steps_s": 30.0, "tok_s": 70.0, "mem_busy": 37.0, "accepted_per_step": 2.33}
+
 
 def _sysfs(root, spec):
     """spec: {"card0": (gpu_busy, mem_busy) or None to omit the counters}"""
@@ -40,77 +44,85 @@ def _sysfs(root, spec):
         (d / "mem_busy_percent").write_text(f"{m}\n")
 
 
-# ─── classify ────────────────────────────────────────────────────────────────────────
+# ─── classify: the baseline is mandatory ─────────────────────────────────────────────
 
-def test_fast_band_from_mem_busy():
-    verdict, reasons = band.classify(mem_busy=64.0, gpu_busy=100.0)
+def test_no_baseline_is_undecided_not_a_guess():
+    """Without a baseline there is nothing to compare against, and no universal threshold."""
+    for b in (None, {}, {"steps_s": None}):
+        verdict, reasons = band.classify(30.0, b)
+        assert verdict == "undecided", (b, reasons)
+        assert any("calibrate" in r for r in reasons)
+
+
+def test_fast_when_step_rate_matches_baseline():
+    verdict, reasons = band.classify(29.5, FAST, mem_busy=37.0, gpu_busy=100.0)
     assert verdict == "fast", reasons
-    assert any("mem_busy 64%" in r for r in reasons)
 
 
-def test_slow_band_from_mem_busy():
-    verdict, reasons = band.classify(mem_busy=26.0, gpu_busy=100.0)
+def test_slow_when_step_rate_is_far_below_baseline():
+    verdict, reasons = band.classify(15.0, FAST, mem_busy=25.0, gpu_busy=100.0)
     assert verdict == "slow", reasons
 
 
-def test_threshold_is_inclusive_at_the_boundary():
-    assert band.classify(mem_busy=45.0, gpu_busy=100.0)[0] == "fast"
-    assert band.classify(mem_busy=44.9, gpu_busy=100.0)[0] == "slow"
+def test_tolerance_separates_the_narrowest_band_gap_from_noise():
+    """The narrowest reported gap is 1.21x: the slow band is 17.4% down. Noise is a few percent."""
+    assert band.classify(30.0 * 0.95, FAST, gpu_busy=100.0)[0] == "fast"   # noise
+    assert band.classify(30.0 / 1.21, FAST, gpu_busy=100.0)[0] == "slow"   # dense band gap
+    assert band.classify(30.0 / 2.0, FAST, gpu_busy=100.0)[0] == "slow"    # hybrid band gap
+
+
+def test_tolerance_boundary_is_inclusive():
+    floor = 30.0 * (1 - band.STEP_TOLERANCE)
+    assert band.classify(floor, FAST, gpu_busy=100.0)[0] == "fast"
+    assert band.classify(floor - 0.01, FAST, gpu_busy=100.0)[0] == "slow"
+
+
+def test_missing_step_rate_is_undecided():
+    assert band.classify(None, FAST, gpu_busy=100.0)[0] == "undecided"
 
 
 def test_idle_gpus_are_undecided_not_slow():
-    """mem_busy is meaningless when the GPUs were not decoding; must not report "slow"."""
-    verdict, reasons = band.classify(mem_busy=5.0, gpu_busy=3.0)
+    """If the GPUs were not decoding, the whole measurement is void - don't report a band."""
+    verdict, reasons = band.classify(2.0, FAST, mem_busy=5.0, gpu_busy=3.0)
     assert verdict == "undecided", reasons
     assert any("not decoding" in r for r in reasons)
 
 
-def test_missing_samples_are_undecided():
-    assert band.classify(mem_busy=None, gpu_busy=None)[0] == "undecided"
-    assert band.classify(mem_busy=60.0, gpu_busy=None)[0] == "undecided"
+# ─── classify: mem_busy corroborates, it never decides ───────────────────────────────
 
+def test_mem_busy_cannot_by_itself_call_a_server_slow():
+    """The upstream 24-27%/62-67% clusters do not transfer to this rig.
 
-def test_tps_crosscheck_agrees():
-    verdict, reasons = band.classify(mem_busy=64.0, gpu_busy=100.0, tps=63.0, expect_tps=66.0)
-    assert verdict == "fast", reasons
-    assert any("tok/s" in r for r in reasons)
-
-
-def test_tps_crosscheck_agrees_on_slow():
-    assert band.classify(mem_busy=25.0, gpu_busy=100.0, tps=30.0, expect_tps=66.0)[0] == "slow"
-
-
-def test_disagreement_is_undecided():
-    """A fast mem_busy with a slow tok/s (or the reverse) must not be resolved by guessing."""
-    verdict, reasons = band.classify(mem_busy=64.0, gpu_busy=100.0, tps=30.0, expect_tps=66.0)
-    assert verdict == "undecided", reasons
-    assert "signals disagree" in reasons
-
-    verdict, _ = band.classify(mem_busy=25.0, gpu_busy=100.0, tps=65.0, expect_tps=66.0)
-    assert verdict == "undecided"
-
-
-def test_tolerance_band_is_generous_enough_for_normal_variance():
-    # 25% below the baseline is still "fast": the bands are >=1.2x apart, and run-to-run
-    # variance from prompt and acceptance-rate differences is a few percent.
-    assert band.classify(mem_busy=64.0, gpu_busy=100.0, tps=50.0, expect_tps=66.0)[0] == "fast"
-    assert band.classify(mem_busy=25.0, gpu_busy=100.0, tps=49.0, expect_tps=66.0)[0] == "slow"
-
-
-def test_expect_tps_absent_leaves_mem_busy_in_charge():
-    verdict, reasons = band.classify(mem_busy=64.0, gpu_busy=100.0, tps=30.0, expect_tps=None)
+    A healthy server here sampled 36.7-37.5%. A mem_busy far from any upstream cluster must
+    not override a step rate that matches the baseline.
+    """
+    verdict, _ = band.classify(29.5, FAST, mem_busy=26.0, gpu_busy=100.0)
     assert verdict == "fast"
-    assert not any("tok/s" in r for r in reasons)
+
+
+def test_mem_busy_matching_fast_baseline_downgrades_a_slow_call_to_undecided():
+    """Split signal: don't tell someone to restart a server on a contradiction."""
+    verdict, reasons = band.classify(15.0, FAST, mem_busy=37.0, gpu_busy=100.0)
+    assert verdict == "undecided", reasons
+    assert any("split signal" in r for r in reasons)
+
+
+def test_mem_busy_disagreement_does_not_block_a_fast_verdict():
+    """"Carry on" is the safe outcome, so it does not need both signals to agree."""
+    assert band.classify(29.5, FAST, mem_busy=5.0, gpu_busy=100.0)[0] == "fast"
+
+
+def test_baseline_without_mem_busy_still_decides_on_steps():
+    b = {"steps_s": 30.0}
+    assert band.classify(15.0, b, mem_busy=37.0, gpu_busy=100.0)[0] == "slow"
 
 
 # ─── busy_under_load ─────────────────────────────────────────────────────────────────
 
 def test_busy_under_load_drops_idle_samples():
-    rows = [(2.0, 1.0), (100.0, 64.0), (100.0, 66.0), (0.0, 0.0)]
+    rows = [(2.0, 1.0), (100.0, 36.0), (100.0, 38.0), (0.0, 0.0)]
     gpu, mem, n = band.busy_under_load(rows)
-    assert n == 2
-    assert gpu == 100.0
-    assert mem == 65.0
+    assert (gpu, mem, n) == (100.0, 37.0, 2)
 
 
 def test_busy_under_load_drops_unused_cards_on_a_partial_tp_spawn():
@@ -119,12 +131,9 @@ def test_busy_under_load_drops_unused_cards_on_a_partial_tp_spawn():
     Averaged across cards the mean gpu_busy would be ~50%, below the floor, and the whole
     run would come back "undecided" on a healthy server.
     """
-    rows = [(100.0, 64.0), (1.0, 0.0), (100.0, 66.0), (2.0, 1.0)] * 3
+    rows = [(100.0, 36.0), (1.0, 0.0), (100.0, 38.0), (2.0, 1.0)] * 3
     gpu, mem, n = band.busy_under_load(rows)
-    assert n == 6
-    assert gpu == 100.0
-    assert mem == 65.0
-    assert band.classify(mem, gpu)[0] == "fast"
+    assert (gpu, mem, n) == (100.0, 37.0, 6)
 
 
 def test_busy_under_load_with_no_loaded_samples():
@@ -139,24 +148,23 @@ def test_busy_under_load_on_empty_input():
 
 def test_cards_finds_and_orders_numerically():
     with tempfile.TemporaryDirectory() as d:
-        _sysfs(d, {"card0": (100, 60), "card1": (100, 60), "card2": (100, 60),
-                   "card10": (100, 60)})
-        names = [c.name for c in band.cards(Path(d))]
-        assert names == ["card0", "card1", "card2", "card10"]
+        _sysfs(d, {"card0": (100, 37), "card1": (100, 37), "card2": (100, 37),
+                   "card10": (100, 37)})
+        assert [c.name for c in band.cards(Path(d))] == ["card0", "card1", "card2", "card10"]
 
 
 def test_cards_skips_devices_without_the_counters():
     with tempfile.TemporaryDirectory() as d:
-        _sysfs(d, {"card0": (100, 60), "card1": None})
+        _sysfs(d, {"card0": (100, 37), "card1": None})
         assert [c.name for c in band.cards(Path(d))] == ["card0"]
 
 
 def test_read_percent_parses_and_tolerates_garbage():
     with tempfile.TemporaryDirectory() as d:
-        _sysfs(d, {"card0": (100, 64)})
+        _sysfs(d, {"card0": (100, 37)})
         c = Path(d) / "card0"
         assert band.read_percent(c, "gpu") == 100.0
-        assert band.read_percent(c, "mem") == 64.0
+        assert band.read_percent(c, "mem") == 37.0
         (c / "device" / "mem_busy_percent").write_text("not-a-number\n")
         assert band.read_percent(c, "mem") is None
         assert band.read_percent(Path(d) / "card9", "gpu") is None
@@ -164,7 +172,7 @@ def test_read_percent_parses_and_tolerates_garbage():
 
 def test_sample_busy_keeps_cards_separate_and_stops_when_asked():
     with tempfile.TemporaryDirectory() as d:
-        _sysfs(d, {"card0": (100, 60), "card1": (100, 70)})
+        _sysfs(d, {"card0": (100, 36), "card1": (100, 38)})
         cl = band.cards(Path(d))
         stop = threading.Event()
         rows = []
@@ -179,9 +187,42 @@ def test_sample_busy_keeps_cards_separate_and_stops_when_asked():
         t.join(timeout=5)
         assert not t.is_alive()
         assert rows, "sampler returned nothing; the rest of this test would pass vacuously"
-        mems = {m for _, m in rows}
-        assert mems == {60.0, 70.0}, f"cards were averaged together: {mems}"
+        assert {m for _, m in rows} == {36.0, 38.0}, "cards were averaged together"
         assert all(g == 100.0 for g, _ in rows)
+
+
+# ─── baselines ───────────────────────────────────────────────────────────────────────
+
+def test_baseline_round_trips_and_is_used_by_classify():
+    with tempfile.TemporaryDirectory() as d:
+        p = Path(d) / "sub" / "band-baselines.json"
+        m = {"steps_s": 30.0, "tok_s": 70.0, "mem_busy": 37.0, "accepted_per_step": 2.33}
+        rec = band.save_baseline("prof", m, p, now="2026-10-17T00:00:00Z")
+        assert rec["steps_s"] == 30.0
+        assert rec["calibrated"] == "2026-10-17T00:00:00Z"
+        loaded = band.load_baselines(p)["prof"]
+        assert band.classify(29.5, loaded, gpu_busy=100.0)[0] == "fast"
+        assert band.classify(15.0, loaded, gpu_busy=100.0)[0] == "slow"
+
+
+def test_save_baseline_keeps_other_profiles():
+    with tempfile.TemporaryDirectory() as d:
+        p = Path(d) / "b.json"
+        band.save_baseline("a", {"steps_s": 1.0, "tok_s": 1.0, "mem_busy": 1.0,
+                                 "accepted_per_step": 1.0}, p)
+        band.save_baseline("b", {"steps_s": 2.0, "tok_s": 2.0, "mem_busy": 2.0,
+                                 "accepted_per_step": 2.0}, p)
+        data = json.loads(p.read_text())
+        assert set(data) == {"a", "b"}
+        assert data["a"]["steps_s"] == 1.0
+
+
+def test_load_baselines_tolerates_missing_and_corrupt_files():
+    with tempfile.TemporaryDirectory() as d:
+        assert band.load_baselines(Path(d) / "nope.json") == {}
+        bad = Path(d) / "bad.json"
+        bad.write_text("{not json")
+        assert band.load_baselines(bad) == {}
 
 
 # ─── CLI ─────────────────────────────────────────────────────────────────────────────
