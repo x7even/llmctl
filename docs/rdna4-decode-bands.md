@@ -422,6 +422,16 @@ the flag, or on a profile that does not have it.
    image (nightly against v0.26.0), and one matched pair cannot separate them. The 35B and
    gemma4 profiles are still unmeasured.
 
+   Calibrate the profile while you are at it. `config/band-baselines.json` is gitignored
+   because the numbers are per-rig, so `llmband` returns `undecided` on Flash-Next until
+   somebody runs `--calibrate` against it; on this rig the stock arm read **58.41 steps/s** at
+   `mem_busy` 32%. Calibrate the *stock* arm, since stock is what the profile ships, and treat
+   the result as a throughput reference rather than a *band* reference: no slow Flash-Next draw
+   has ever been observed, so the figure says "this is what a healthy spawn does", and the
+   two-band separation that makes the 27B's baseline a genuine band discriminator has not been
+   demonstrated here. At the detector's ±12% tolerance a 58.41 baseline floors at 51.4, which
+   the flagged arm (54.3) clears, so calibrating on stock does not mislabel the variant either.
+
    A slow draw under the flag is anomalous rather than expected, so treat it as a signal to
    investigate, not just to restart. Remember to recalibrate after adding the flag: a baseline
    from a pre-flag spawn reads ~13% high and leaves every spawn `undecided`.
