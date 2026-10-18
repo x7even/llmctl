@@ -265,3 +265,46 @@ Which profile to reach for therefore depends on context depth, and the crossover
 
 Whether `27b-code` should also give up MTP to get the flat curve is a policy question about
 the default workload, not a measurement question; the measurements are above.
+
+### The `27b-code` default: the evidence points both ways
+
+This is left as the user's call because the two benchmarks that bear on it disagree, and
+each is right about its own workload.
+
+`medium-256` (a 256-token prompt, `--requests 32`, free generation) says keep MTP. The
+no-MTP + TRITON configuration loses at every concurrency:
+
+| conc | `27b-code` (MTP, shipped) | no-MTP + TRITON | ratio |
+|---|---|---|---|
+| 1 | 66 | 46.2 | 0.70× |
+| 2 | 113 | 80.6 | 0.71× |
+| 4 | 194 | 150.8 | 0.78× |
+| 8 | 361 | 267.3 | 0.74× |
+| 16 | 549 | 457.7 | 0.83× |
+
+The prewarmed depth matrix (`gen 128`, prefix-cache hit, aggregate tok/s) says the opposite
+from 4K upwards:
+
+| depth | conc | MTP + ROCM | no-MTP + TRITON | ratio |
+|---|---|---|---|---|
+| 4,096 | 8 | 175.1 | 269.6 | 1.54× |
+| 16,384 | 8 | 109.2 | 192.3 | 1.76× |
+| 65,536 | 8 | 36.6 | 143.4 | 3.92× |
+
+Both are real; they measure different regimes, and neither is a general claim. `medium-256`
+is a 256-token prompt, which is far below any agent's working context — `bench/CLAUDE.md`
+says plainly that it tells you nothing about depth. The depth cells are prefix-cache hits
+with a fixed 128-token generation, so they isolate decode and exclude the unique-prefill
+contention a real fleet pays.
+
+What follows for routing, and what does not:
+
+- **Keep `27b-code`'s flags as they are.** Nothing here shows the shipped default is wrong
+  for short-prompt, high-concurrency work, and flipping it would cost 17–30% there.
+- **Route long-context agent work to `27b-think` explicitly.** Coding-agent contexts start
+  well above 4K and grow, which is the region where every cell favours it.
+- **The default alias is still an open question**, because which of the two tables describes
+  the real fleet depends on prompt-depth distribution, and that has not been measured here —
+  vLLM does not log per-request token counts at INFO, so it cannot be recovered from the
+  existing logs. Measuring it is the prerequisite for changing the default, not another
+  benchmark of either profile.
