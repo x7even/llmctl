@@ -186,12 +186,26 @@ def server_max_model_len(url, model, headers, timeout):
 
 
 def run_cell(url, model, depth_words, conc, gen, timeout, no_thinking, headers,
-             shared_prefix, seed_base):
+             shared_prefix, seed_base, prewarm=False):
     """Run `conc` concurrent requests at one depth. Returns the aggregate row."""
     msgs = [
         build_messages(depth_words, seed=(seed_base if shared_prefix else seed_base + i))
         for i in range(conc)
     ]
+
+    # Without this, every stream in a deep cell pays a full unique prefill, and
+    # chunked prefill interleaves those tokens into everyone else's decode steps.
+    # The cell then measures prefill contention: at 65K x conc=4 the measured TTFT
+    # was 181 s and two requests at conc=8 timed out outright. A real agent fleet
+    # does not work that way -- its context grows a turn at a time and prefix
+    # caching covers nearly all of it -- so prewarm populates the cache one stream
+    # at a time, serially, and the measured pass then decodes from a cache hit.
+    # The result is a steady-state decode rate, which is what scales (or does not)
+    # with concurrency. It is not a cold-fleet figure; do not quote it as one.
+    if prewarm:
+        for m in msgs:
+            one_request(url, model, m, 1, timeout, no_thinking, headers)
+
     with ThreadPoolExecutor(max_workers=conc) as pool:
         futs = [
             pool.submit(one_request, url, model, m, gen, timeout, no_thinking, headers)
@@ -239,6 +253,9 @@ def main(argv=None):
                     help="target prompt_tokens per request, comma separated")
     ap.add_argument("--concurrency", default="1",
                     help="comma separated concurrency levels")
+    ap.add_argument("--prewarm", action="store_true",
+                    help="populate the prefix cache serially before each cell, so it "
+                         "measures steady-state decode instead of prefill contention")
     ap.add_argument("--max-model-len", type=int, default=None,
                     help="context window to clamp depths against. Needed when going "
                          "through llama-swap, whose /v1/models does not report it.")
@@ -264,8 +281,10 @@ def main(argv=None):
     print("depths     : %s" % depths)
     print("concurrency: %s" % concs)
     print("gen        : %d tokens/request (ignore_eos)" % args.gen)
-    print("prompts    : %s" % ("SHARED (prefix-cache regime)" if args.shared_prefix
-                               else "unique per request"))
+    print("prompts    : %s%s" % ("SHARED (prefix-cache regime)" if args.shared_prefix
+                                 else "unique per request",
+                                 ", PREWARMED (steady-state decode)" if args.prewarm
+                                 else ""))
     print()
 
     print("calibrating words-per-token ...", end=" ", flush=True)
@@ -311,7 +330,8 @@ def main(argv=None):
         for conc in concs:
             row = run_cell(args.url, args.model, depth_words, conc, args.gen,
                            args.timeout, args.no_thinking, headers,
-                           args.shared_prefix, args.seed + depth * 1000)
+                           args.shared_prefix, args.seed + depth * 1000,
+                           prewarm=args.prewarm)
             row["depth_requested"] = depth
             row["concurrency"] = conc
             rows.append(row)
