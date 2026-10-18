@@ -50,16 +50,21 @@ Serial −3.8%, conc=8 +5.2%.
   recover.
 - **The two deltas are noise, and they point in opposite directions.** A −3.8% serial and a
   +5.2% conc=8 from one spawn each, on a profile whose documented conc=8 spread is 150-185, is
-  not a result. Had the flag been doing what it does on the 27B, the serial column would have
-  moved by 89%, not 4%.
-- **So the flag is a per-profile candidate, not a blanket fix.** The mechanism is device-level
-  and shared by every container on this GPU, but whether a given model's decode step is
-  launch-bound enough to care is a property of the model. Flash-Next is a 6B-active MoE whose
-  step is dominated by expert routing and all-reduce; the 27B is a dense GDN hybrid whose step
-  is a long chain of small kernel launches. Only the second one is hurt by queue contention.
-- **One matched pair cannot prove the flag never helps here.** What it does establish is that
-  the flag is not needed to reach full speed on this profile, and that is the question that
-  decides the config. The flag was reverted; Flash-Next ships stock.
+  not a result.
+- **This measures whether the flag is needed here, not whether it works here.** The distinction
+  matters and it is easy to fumble. The flag's job is to convert a slow draw into a fast one;
+  this profile's stock spawn was already fast, so there was nothing for it to recover and the
+  pair cannot speak to its effect on a slow Flash-Next draw. What it does establish — and what
+  decides the config — is that Flash-Next reaches full speed without it.
+- **The cause is not established.** It is tempting to explain the absence of a band by
+  architecture: Flash-Next is a 6B-active MoE whose step is dominated by expert routing and
+  all-reduce, the 27B a dense GDN hybrid whose step is a long chain of small kernel launches,
+  and only the latter should suffer queue contention. That is a hypothesis, not a finding, and
+  there is a second difference sitting right beside it: **Flash-Next runs the nightly image,
+  the 27B runs v0.26.0.** Model and image both vary, so this pair cannot attribute the
+  difference to either. Separating them would need the 27B on the nightly image, or Flash-Next
+  on v0.26.0 if it will run there at all.
+- **The flag was reverted; Flash-Next ships stock.**
 
 The 35B and `gemma4` profiles are still unmeasured, and after this result they should be
 measured rather than assumed either way.

@@ -399,8 +399,11 @@ mean; "1.9x" is the single-stream figure, not the fleet figure. The three `qwen3
 **It is not universal.** Measured on Flash-Next 2026-10-18 and deliberately not shipped there:
 serial 55.6 stock vs 53.5 flagged, conc=8 187.4 vs 197.2, and `mem_busy` ~31% on *both* arms
 where the 27B's bands separate at 26%/46% with no overlap — there is no band to fix on that
-profile. The 35B and gemma4 profiles are still unmeasured. Measure per profile; the mechanism is
-device-level but whether a model's step is launch-bound enough to care is not.
+profile. That shows the flag is not *needed* there, not that it fails on that model: the stock
+spawn was already fast, so there was no slow draw to recover. **Cause not established** —
+Flash-Next differs from the 27B in both architecture and image (nightly vs v0.26.0), and one
+pair cannot separate them. The 35B and gemma4 profiles are still unmeasured. Measure per
+profile rather than generalising in either direction.
 
 Two local corrections to the upstream framing. **Here the draw is deterministic, not a
 lottery** — stock was slow on every one of five spawns across two launchers, three launch

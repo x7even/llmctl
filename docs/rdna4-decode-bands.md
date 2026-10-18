@@ -413,9 +413,14 @@ the flag, or on a profile that does not have it.
    found no band to fix on `qwen3.8-flash-next-vllm`: serial 55.6 stock against 53.5 flagged,
    conc=8 187.4 against 197.2, and `mem_busy` ~31% on *both* arms where the 27B's bands separate
    at 26% / 46% with no overlap. Both arms sat at or above the profile's best stored conc=8
-   figure. So the flag is a candidate per profile, not a blanket fix — the mechanism is
-   device-level, but whether a given model's step is launch-bound enough to care is not.
-   The 35B and gemma4 profiles are still unmeasured.
+   figure. So the flag is a candidate per profile, not a blanket fix.
+
+   What that pair establishes is narrow: the stock spawn was already fast, so it shows the flag
+   is not *needed* on this profile, not that the flag fails to work on this model — there was no
+   slow draw to recover from. **The cause is not established.** Flash-Next differs from the 27B
+   in two ways simultaneously, model architecture (6B-active MoE against a dense GDN hybrid) and
+   image (nightly against v0.26.0), and one matched pair cannot separate them. The 35B and
+   gemma4 profiles are still unmeasured.
 
    A slow draw under the flag is anomalous rather than expected, so treat it as a signal to
    investigate, not just to restart. Remember to recalibrate after adding the flag: a baseline

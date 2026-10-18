@@ -200,8 +200,14 @@ Serial −3.8%, conc=8 +5.2% — both inside this profile's own session spread, 
 at or above the best stored conc=8 figure (182), so neither was a slow draw to begin with. The
 decisive column is `mem_busy`: ~31% on both arms, where the 27B's two bands separate cleanly at
 26% against 46% with no overlap. There is no band to fix here, so the flag is not shipped on
-this profile. One matched pair cannot prove the flag never helps Flash-Next; it does show the
-flag is not needed to reach full speed on it, which is the question that decides the config.
+this profile.
+
+Be careful what this does and does not establish. The stock spawn was already fast, so the pair
+answers "is the flag *needed* on this profile" — no — and not "does the flag work on this
+model", which would need a slow stock draw to recover from and none occurred. **The cause is not
+established.** Flash-Next differs from the 27B in two ways at once: it is a 6B-active MoE rather
+than a dense GDN hybrid, *and* it runs the nightly image rather than v0.26.0. Either could
+explain the absence of a band, and this pair cannot separate them.
 
 **The 35B and gemma4 profiles remain unmeasured.** Measure before adding it there — the
 Flash-Next result above is the reason to measure rather than assume. Give any *new* vLLM profile
@@ -495,10 +501,16 @@ Two things to know before testing it, both checked rather than assumed:
 - **It does not close the 3D split-KV path.** The worry is obvious — the long-context fix in
   `docs/rdna4-long-context.md` depends entirely on TRITON_ATTN's 3D decode kernel, and a KV
   dtype change is exactly the sort of thing that silently drops a kernel to a fallback. It
-  does not. In the pinned v0.26.0 image, `triton_attn.py` lists `fp8`, `fp8_e4m3` and
-  `fp8_e5m2` in `supported_kv_cache_dtypes`, and its only `NotImplementedError` for a
-  quantized cache is on the **encoder** attention path, which decoder-only Qwen3.x never
-  takes. The decode path just views the cache as FP8.
+  does not, and the place to confirm that is the `use_3d` predicate itself, not the backend's
+  advertised dtype list. In the pinned v0.26.0 image,
+  `vllm/v1/attention/ops/triton_unified_attention.py` decides the grid from eight disjuncts:
+  five "are the softmax segment buffers allocated" checks, `max_seqlen_q > 1` (the MTP /
+  prefill gate), `num_seqs > seq_threshold_3D` (the 32 ceiling) and `is_batch_invariant`.
+  **No dtype term appears in it.** FP8 is handled *inside* whichever kernel runs, as the
+  `USE_FP8`, `Q_IS_FP8` and `KV_QUANT_MODE` constexpr toggles. Supporting evidence from the
+  backend: `triton_attn.py` lists `fp8`, `fp8_e4m3` and `fp8_e5m2` in
+  `supported_kv_cache_dtypes`, and raises `NotImplementedError` for a quantized cache only on
+  the **encoder** attention path, which decoder-only Qwen3.x never takes.
 - **The precedent that it can go wrong is image-level, not flag-level.** On the 2026-10-15
   Radiance canary, FP8 KV fell back to Triton paged attention and cost 35-46% of decode at 8K+
   with 2x TTFT. That was measured on a different image and does not transfer to v0.26.0 — but
