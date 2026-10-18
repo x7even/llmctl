@@ -31,9 +31,10 @@ starts (~2–3 min). For a machine with no `.vllm-cache/` yet, watch manually wi
 
 ## Mandatory settings for every vLLM profile
 
-Every vLLM profile **must** have all four of these. Omitting one of the first three will
+Every vLLM profile **must** have all five of these. Omitting one of the first three will
 cause an 18+ minute startup or a startup failure; omitting the fourth leaves the profile
-reachable only by its full name.
+reachable only by its full name; omitting the fifth can leave it serving at half speed with
+nothing in the logs to say so.
 
 ### 1. Override the broken AMD entrypoint
 
@@ -154,6 +155,54 @@ could still print `WARNING: no response from '<alias>'`.
 
 Keep it equal to `--served-model-name`. The llama-server/GGUF profiles do not need it
 (llama-server does not validate the `model` field the same way), and they do not set it.
+
+### 5. `-e GPU_MAX_HW_QUEUES=1` — on gfx1201, treat this as mandatory too
+
+```yaml
+        -e GPU_MAX_HW_QUEUES=1
+```
+
+A container env var, next to `-e HSA_ENABLE_SDMA=0`. Without it a gfx1201 vLLM container can
+come up in a **slow decode band** and stay there for the life of the process: the same compiled
+graphs and the same kernels, separated by ~15 µs of idle per launch instead of ~3 µs, serving at
+roughly half speed. Nothing in the logs says so, `gpu_busy` sits at 100%, and MTP acceptance is
+unchanged — so it is invisible unless you benchmark or run `scripts/llmband`.
+
+Measured same-day on this rig, 4× R9700 TP4, `qwen3.8-27b-code`, `v0.26.0`, `medium-256`,
+`--no-thinking`, `--requests 32`, varying nothing but this one variable:
+
+| | stock | with the flag | stored baseline |
+|---|---|---|---|
+| draws | 5/5 slow | 3/3 fast | — |
+| serial | 35.6 | **67.2** (1.89×) | 66.5 |
+| conc=1 | 35.1 | 66.0 (1.88×) | 65.6 |
+| conc=2 | 64.4 | 113.1 (1.76×) | 113.1 |
+| conc=4 | 119.6 | 186.7 (1.56×) | 194.2 |
+| conc=8 | 320.9 | **357.6** (1.11×) | 365.3 |
+| conc=16 | 460.5 | **536.8** (1.17×) | 545.9 |
+| `mem_busy` under load | 26% | 46% | 46% |
+
+The penalty is a fixed per-step tax, so it **amortises with batch size** — 1.89× on one stream,
+1.11× at conc=8. Do not quote "1.9×" for a saturated server. The flagged arm lands within 4% of
+the stored baseline at every level, so the flag itself costs nothing measurable. It is set on the three
+`qwen3.8-27b-*` profiles. **It is not yet set on the 35B, gemma4 or Flash-Next profiles** — the
+mechanism is device-level and upstream reports it helps dense and MoE models too, but nothing on
+this rig has been measured for them, and Flash-Next especially has its own capture-size and
+image quirks. Measure before adding it there; give any *new* vLLM profile the flag from the
+start, since the downside is bounded and the upside is a silent 2×.
+
+Two detection notes, both learned the hard way:
+
+- **MTP acceptance is not a band signal.** Slow draws read both 2.349 and 2.246 accepted
+  tokens/step; the fast draws read 2.246. Keying on acceptance calls a fast server slow.
+- **`llmband` warms up before measuring, and must.** A server's first decode after startup runs
+  ~12% below steady state (4/4 cold probes 31.5–31.7 steps/s, 4/4 warm probes on the same
+  containers 36.2), which is the same order as its slow-band tolerance. Comparing a cold probe
+  against a warm-calibrated baseline made every healthy spawn read `undecided`. Fixed in
+  `scripts/llmband` (`--warmup-tokens`, default 128). If you recalibrate, the baseline and the
+  checks must both be warmed the same way — which they now are by default.
+
+Full write-up, including what was ruled out: `docs/rdna4-decode-bands.md`.
 
 ---
 

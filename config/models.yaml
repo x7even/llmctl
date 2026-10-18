@@ -71,6 +71,15 @@ models:
     # llama-swap forwards the client's model string upstream; vLLM only
     # answers to --served-model-name, so without this every alias 404s.
     useModelName: qwen3.8-27b-code
+    # -e GPU_MAX_HW_QUEUES=1 in cmd is load-bearing on gfx1201, not a tuning knob.
+    # Without it this profile can come up in a slow decode band -- same kernels, same
+    # compiled graphs, ~15 us of idle between small kernel launches -- and serve at
+    # roughly half speed for the life of the container. Measured same-day on 4x R9700
+    # TP4, medium-256, --no-thinking, --requests 32: serial 35.6 -> 67.2 tok/s,
+    # conc=8 320.9 -> 357.6, conc=16 460.5 -> 536.8, i.e. within 4% of the stored
+    # baseline at every level. A fixed per-step tax, so it amortises with batch size
+    # (1.89x serial, 1.11x at conc=8) and costs nothing measurable either way.
+    # See docs/rdna4-decode-bands.md.
     cmd: |
       podman run --replace --rm
         --name llmstack-vllm-${MODEL_ID}
@@ -86,6 +95,7 @@ models:
         -v __LLMSTACK_DIR__/.vllm-cache:/root/.cache/vllm
         -v __LLMSTACK_DIR__/.triton-cache:/root/.triton/cache
         -e HSA_ENABLE_SDMA=0
+        -e GPU_MAX_HW_QUEUES=1
         -e TORCH_BLAS_PREFER_HIPBLASLT=1
         --entrypoint=""
         docker.io/vllm/vllm-openai-rocm:v0.26.0
@@ -128,6 +138,15 @@ models:
     # llama-swap forwards the client's model string upstream; vLLM only
     # answers to --served-model-name, so without this every alias 404s.
     useModelName: qwen3.8-27b-think
+    # -e GPU_MAX_HW_QUEUES=1 in cmd is load-bearing on gfx1201, not a tuning knob.
+    # Without it this profile can come up in a slow decode band -- same kernels, same
+    # compiled graphs, ~15 us of idle between small kernel launches -- and serve at
+    # roughly half speed for the life of the container. Measured same-day on 4x R9700
+    # TP4, medium-256, --no-thinking, --requests 32: serial 35.6 -> 67.2 tok/s,
+    # conc=8 320.9 -> 357.6, conc=16 460.5 -> 536.8, i.e. within 4% of the stored
+    # baseline at every level. A fixed per-step tax, so it amortises with batch size
+    # (1.89x serial, 1.11x at conc=8) and costs nothing measurable either way.
+    # See docs/rdna4-decode-bands.md.
     cmd: |
       podman run --replace --rm
         --name llmstack-vllm-${MODEL_ID}
@@ -143,6 +162,7 @@ models:
         -v __LLMSTACK_DIR__/.vllm-cache:/root/.cache/vllm
         -v __LLMSTACK_DIR__/.triton-cache:/root/.triton/cache
         -e HSA_ENABLE_SDMA=0
+        -e GPU_MAX_HW_QUEUES=1
         -e TORCH_BLAS_PREFER_HIPBLASLT=1
         --entrypoint=""
         docker.io/vllm/vllm-openai-rocm:v0.26.0
@@ -182,6 +202,15 @@ models:
     # llama-swap forwards the client's model string upstream; vLLM only
     # answers to --served-model-name, so without this every alias 404s.
     useModelName: qwen3.8-27b-fast
+    # -e GPU_MAX_HW_QUEUES=1 in cmd is load-bearing on gfx1201, not a tuning knob.
+    # Without it this profile can come up in a slow decode band -- same kernels, same
+    # compiled graphs, ~15 us of idle between small kernel launches -- and serve at
+    # roughly half speed for the life of the container. Measured same-day on 4x R9700
+    # TP4, medium-256, --no-thinking, --requests 32: serial 35.6 -> 67.2 tok/s,
+    # conc=8 320.9 -> 357.6, conc=16 460.5 -> 536.8, i.e. within 4% of the stored
+    # baseline at every level. A fixed per-step tax, so it amortises with batch size
+    # (1.89x serial, 1.11x at conc=8) and costs nothing measurable either way.
+    # See docs/rdna4-decode-bands.md.
     cmd: |
       podman run --replace --rm
         --name llmstack-vllm-${MODEL_ID}
@@ -197,6 +226,7 @@ models:
         -v __LLMSTACK_DIR__/.vllm-cache:/root/.cache/vllm
         -v __LLMSTACK_DIR__/.triton-cache:/root/.triton/cache
         -e HSA_ENABLE_SDMA=0
+        -e GPU_MAX_HW_QUEUES=1
         -e TORCH_BLAS_PREFER_HIPBLASLT=1
         --entrypoint=""
         docker.io/vllm/vllm-openai-rocm:v0.26.0

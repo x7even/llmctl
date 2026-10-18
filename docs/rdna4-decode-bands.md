@@ -77,21 +77,23 @@ order, slow → fast → slow → slow, and never recovered. Because the slow bl
 of the fast one, no property of the payload orders that sequence: something changed underneath a
 single server process, mid-run. That is the band behaviour, from one harness against one process.
 
-### A local 1.905x slow spawn — re-attributed to a hardware fault, not a band draw
+### A local ~1.9x slow draw — confirmed as a band draw, and fixed
 
-> **Correction.** This section originally presented the measurement below as the first confirmed
-> band draw on this rig. It is not one. Between the baseline calibration and the slow spawn, one
-> GPU's PCIe slot link downtrained from Gen5 to Gen4 — halving that card's bandwidth and,
-> because every TP4 decode step does an all-reduce that runs at its slowest participant's speed,
-> halving the step rate. The 1.905 ratio is that hardware fault. No band draw has been cleanly
-> isolated on this rig yet. The measurement is kept because what it says about *detector design*
-> holds regardless of which mechanism produced the slowdown — see the bullets below, which is
-> why they are worth reading even though the attribution was wrong.
+> **Correction history.** This section said twice before what it does not say now. First it
+> called the measurement below the first confirmed band draw; then a Gen4 PCIe downtrain was
+> found on one card and the section was rewritten to re-attribute the loss to that hardware
+> fault, concluding "no band draw has been cleanly isolated on this rig yet." **That second
+> rewrite was wrong and is withdrawn.** It is a band draw. Setting `GPU_MAX_HW_QUEUES=1` in the
+> container restores the full stored baseline across the whole concurrency sweep — at TP4, with
+> the downtrained card still in the tensor-parallel group and its link still at Gen4. A one-line
+> environment variable cannot repair a PCIe link, so the link was never what the loss was made
+> of. (The downtrain is a real fault and is still open; it just costs ~0% of decode. The
+> arithmetic is in the PCIe section of the root `CLAUDE.md`.)
 
 A cold 27B TP4 spawn was caught in the slow band by `llmband`, against a baseline calibrated
 two spawns earlier on the same profile and the same image:
 
-| | fast (link Gen5) | slow (link Gen4) | ratio |
+| | fast draw | slow draw | ratio |
 |---|---|---|---|
 | decode steps/s (serial, 256 tok) | 36.42 | 19.12 | **1.905** |
 | tok/s | 81.77 | 42.93 | 1.905 |
@@ -116,20 +118,121 @@ Three things in that table matter more than the ratio:
   corroborating-only treatment in `llmband` more clearly right, not less — but it also means
   **a low `mem_busy` must never be read as "band draw" on its own.**
 
-What survives, then, is a detector result and not a band characterisation: `llmband` correctly
-flagged a real ~2x regression from a locally calibrated baseline, and rejected the spawn before
-it could be benchmarked as an A/B arm. That is the job it exists to do, and it did it for a
-cause nobody had hypothesised. The upstream ratios (1.21–1.28 dense, 1.73 MoE, 2.00–2.2 GDN
-hybrid) remain upstream's; **no band draw has yet been isolated on this rig.** Isolating one
-requires a host with all four links at Gen5 — see the warning below.
+`llmband` also did its job: it flagged a real ~2x regression against a locally calibrated
+baseline and rejected the spawn before it could be benchmarked as an A/B arm.
+
+### What settled the attribution
+
+A controlled A/B on one host, one image (`v0.26.0`), one profile (`qwen3.8-27b-code`, TP4),
+varying nothing but the container environment:
+
+| | stock | `GPU_MAX_HW_QUEUES=1` | stored baseline |
+|---|---|---|---|
+| draws | **5/5 slow** | **3/3 fast** | — |
+| `llmband` steps/s | 17.86–18.05 | 31.5–31.7 | 36.42 |
+| `mem_busy` under load | 26% | 46% | 46% |
+| accepted tok/step | 2.246–2.349 | 2.246 | 2.246 |
+| serial tok/s | 35.6 | **67.2** | 66.5 |
+| conc=1 | 35.1 | 66.0 | 65.6 |
+| conc=2 | 64.4 | 113.1 | 113.1 |
+| conc=4 | 119.6 | 186.7 | 194.2 |
+| conc=8 | 320.9 | **357.6** | 365.3 |
+| conc=16 | 460.5 | **536.8** | 545.9 |
+
+Fast-over-slow by level: **1.89x serial, 1.88x conc=1, 1.76x conc=2, 1.56x conc=4, 1.11x
+conc=8, 1.17x conc=16.** The flagged arm sits within 4% of the stored baseline everywhere, and
+at or above it below conc=4.
+
+(`medium-256`, `--no-thinking`, `--requests 32` at every level, which is what `bench/CLAUDE.md`
+requires for the conc=8/16 cells to be comparable. An earlier run of the same arms at
+`--requests 16` read 258 at conc=8 and was briefly mistaken for a cost of the flag; it is a
+two-wave artifact, not a tax.)
+
+The penalty is a **fixed per-step tax, so it amortises with batch size**: 1.89x on a single
+stream, 1.11x at conc=8. That makes the flag worth most to interactive single-stream use and
+least to a saturated agent fleet — but the fleet case is still 11-17% for one env var, and the
+slow band is also the state in which a 2x regression is easiest to misread as a real one.
+
+That shape is itself evidence about the mechanism. A per-step latency that a larger batch hides
+is what ~15 us of idle after each kernel launch looks like: the gap is paid once per step
+regardless of how many sequences that step carries, so the more work per step, the smaller its
+share. It is not a bandwidth or compute deficit, which would scale with the work rather than
+dilute against it. (The same reasoning is why the Gen4 slot link could be dismissed: an
+all-reduce tax would also amortise, but the arithmetic puts it ~600x too small to matter either
+way.)
+
+Three further facts from that table are worth separating out, because each kills a different
+alternative explanation:
+
+- **The compiled code is identical in both arms.** Every spawn, fast and slow, loads the same
+  two AOT cache entries (one hash for the main model, one for the MTP drafter).
+  `GPU_MAX_HW_QUEUES` is not part of the compile key. So the two bands are the *same generated
+  kernels* running at half the rate — which is what upstream reports too, as identical kernel
+  durations separated by ~15 µs of idle instead of ~3 µs.
+- **Acceptance cannot classify a band.** Stock draws read both 2.349 and 2.246; the fast draws
+  read 2.246. A detector keyed on MTP acceptance would have called a fast server slow.
+- **`mem_busy` separated the bands cleanly where step rate did not** — 26% slow against 46%
+  fast, a 1.8x spread with no overlap. That does not promote `mem_busy` to a standalone
+  classifier (see the warning above: a PCIe fault can produce a low `mem_busy` too), but on
+  this host it was the signal that held.
+
+**The 13% step-rate gap is explained, and it was the detector, not the flag.** Under the flag
+`llmband`'s first probe after boot read 31.5-31.7 steps/s against a 36.42 calibration while
+end-to-end throughput was at baseline, and that contradiction stood open for a while. The cause
+is that **a server's first decode after startup runs ~12% below its steady state**: four cold
+first-probes read 31.5-31.7 and four warm probes on the same containers read 36.16-36.21.
+Prefill is not it - the probe already excludes TTFT - so it is in-process lazy work the first
+decode pays for and later ones do not. The original 36.42 baseline had been calibrated on a
+server that had just finished a benchmark, i.e. warm.
+
+So `llmband` was comparing cold probes against a warm baseline, 12% apart, against a 12%
+tolerance. That is why every flagged spawn came back `undecided`, and it had nothing to do with
+`GPU_MAX_HW_QUEUES`. The tool now runs one discarded decode before measuring
+(`--warmup-tokens`, default 128, `0` to disable for diagnosis). Re-measured on a genuinely cold
+container: 36.13 steps/s, verdict `fast`, against a warm-calibrated 36.21 - one baseline now
+serves cold and warm probes alike.
+
+The lesson generalises past this one tool: **a detector meant for cold starts must be
+calibrated cold**, or its tolerance is spent on the warmup it never accounted for. It came
+within one split-signal guard of telling an operator to restart a server running at full
+speed.
+
+The upstream ratios (1.21–1.28 dense, 1.73 MoE, 2.00–2.2 GDN hybrid) remain upstream's. This
+rig's 27B is a GDN hybrid — `qwen3_5`, 64 layers, `full_attention_interval: 4`, so 16 full
+attention layers and 48 gated-delta-net — which is upstream's worst row, and the measured 1.89x
+lands squarely on it.
+
+### One local correction to the upstream framing: here the draw is deterministic
+
+Upstream describes a per-spawn lottery, and reports improving the odds: a dense 14B went 2/12 to
+12/12 fast spawns with the flag, and a four-card TP4 rig went 6/8 slow boots to 0/2.
+
+On this host it is not a lottery. Stock is **5/5 slow** — across two different launchers, three
+different launch contexts (interactive shell at nice 5, a unit forked by the user systemd
+manager at nice 0, and the harness), two reboots and a cold power-off. With the flag it is
+**3/3 fast**. Launch context was tested directly because it was the best-fitting explanation
+for a loss that never recovered, and it was refuted: a stock spawn at nice 0 with a fresh cgroup
+and full CPU affinity, verified on the vLLM process *and every one of its threads*, still came
+back at 18.05 steps/s and `mem_busy` 26%.
+
+That determinism is better news than a lottery, not worse: it makes the flag a reliable fix
+rather than a way of shortening the odds, and it means a slow draw after the flag is shipped is
+genuinely anomalous and worth investigating rather than expected noise.
+
+What is still unexplained is why the stock path stopped reaching the fast band at all. Spawns
+were fast earlier on the same day and every spawn since has been slow. Firmware, the PCIe link,
+launch context and compile-cache contents have each been tested and refuted as the cause of that
+step change.
 
 > **Before trusting any band measurement on this rig**, confirm every GPU's PCIe link trains to
 > its rated speed *under load*. An idle read is useless: these links sit at 2.5 GT/s when idle.
 > `scripts/pcie-link-check` does this. A single downtrained link mimics a permanent slow band
 > perfectly — same ~2x step-rate loss, same 100% `gpu_busy`, same low `mem_busy`, same
-> unchanged MTP acceptance — except that it never draws fast, no matter how many times you
-> restart the container. **If `llmband` reports slow on every spawn across a reboot, suspect
-> the interconnect before the band.**
+> unchanged MTP acceptance. **Run the probe; do not reason from persistence.** "Slow on every
+> spawn across a reboot" feels like it must mean hardware, and on this rig it did not: the slow
+> state repeated across more than a dozen spawns and two reboots while a downtrained link was
+> present and innocent. Persistence rules out a *per-process* cause. It does not rule in the
+> interconnect, and the environment a container is launched in persists across reboots too.
 
 ### A regression that is *not* a band draw, and how its shape says so
 
@@ -172,9 +275,9 @@ Three durable lessons:
   a 15% loss to a 46% fault would have closed an open question that is still open.
 - **A per-step collective tax and a slow band are not distinguishable by throughput alone.**
   Both halve step rate at 100% `gpu_busy` with unchanged acceptance. The discriminators are
-  that a band is drawn per process (so it changes across restarts) while a link fault does not,
-  and that only the link fault shows up in a bandwidth probe. Check the hardware first: it is a
-  five-minute test and it is falsifiable.
+  that only the link fault shows up in a bandwidth probe. Check the hardware first: it is a
+  five-minute test and it is falsifiable. What is *not* a discriminator is whether the state
+  survives a restart — see the note above.
 
 The practical consequence for A/B work is unchanged: `llmband` cannot accept or reject arms
 whose lever plausibly changes serial step rate; it can only be used where the arm provably
@@ -296,6 +399,17 @@ the experiment to run next. Until then keep the prestart wrapper — it is cheap
 empirically effective — and use `llmband` as the post-start check that the wrapper worked.
 
 ## Operational guidance
+
+**0. Set `GPU_MAX_HW_QUEUES=1` in the container first.** It is the only known remedy, and on
+this rig it is a complete one: it converted a 5/5-slow profile into a 3/3-fast one and restored
+the stored baseline at every concurrency level with no measurable cost. The three
+`qwen3.8-27b-*` profiles ship with it. Everything below is for detecting a slow draw *despite*
+the flag, or on a profile that does not have it yet (the 35B, gemma4 and Flash-Next profiles are
+unmeasured — the flag is a candidate for them, not a decision).
+
+   A slow draw under the flag is anomalous rather than expected, so treat it as a signal to
+   investigate, not just to restart. Remember to recalibrate after adding the flag: a baseline
+   from a pre-flag spawn reads ~13% high and leaves every spawn `undecided`.
 
 1. Calibrate once per profile per image: `scripts/llmband --model <profile> --calibrate`,
    against a server you have reason to believe is fast (for instance one that has just produced
