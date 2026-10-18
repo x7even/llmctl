@@ -295,8 +295,7 @@ models:
     metadata:
       requires:
         gpus: [2, 4]
-        estimate: true
-        note: "inferred from head counts identical to qwen3.8-27b-code (24 attention / 4 KV heads, 16 linear-attention key heads, vocab 248320): TP3 cannot work, TP1 would have to fit 29 GB of weights on one 32 GB card. TP2/TP1 not run on this checkpoint."
+        note: "measured 2026-10-18 on this checkpoint, all four counts run: TP4 and TP2 both serve real completions (TP2 KV pool 259,165 tokens = 1.98x concurrency at 131K, against 8.38x at TP4, so TP2 is viable but nearly single-stream at full depth); TP1 OOMs loading weights, 29.78 GiB allocated on a 31.86 GiB card; TP3 fails at startup with AssertionError: 16 is not divisible by 3, the 16 linear-attention key heads."
     checkEndpoint: /health
     concurrencyLimit: 64
     aliases:

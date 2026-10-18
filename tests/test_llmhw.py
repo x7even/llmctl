@@ -212,12 +212,13 @@ def test_parse_requires_stops_at_next_top_level_key():
     assert llmhw.parse_requires("no models section\n") == {}
 
 
-def test_parse_requires_real_config_all_twelve_profiles():
+def test_parse_requires_real_config_all_thirteen_profiles():
     text = (REPO / "config" / "models.yaml").read_text()
     req = llmhw.parse_requires(text)
     expected = {
         "qwen3.8-27b-code", "qwen3.8-27b-think", "qwen3.8-27b-fast",
         "qwen3.8-flash-next", "qwen3.8-flash-next-vllm",
+        "qwen3.6-27b-code",
         "qwen3.6-35b-code", "qwen3.6-35b-128k-nomtp", "qwen3.6-35b-fast",
         "gemma4-26b-a4b", "gemma4-26b-fp8", "gemma4-26b-q8", "gemma4-12b-q4",
     }
