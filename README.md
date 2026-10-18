@@ -41,15 +41,17 @@ scripts/configure
 # 4. Start the router
 llmctl up
 
-# 5. Load a model and wait until ready
+# 5. Load a model cmd and wait until ready OR from the TUI using llmpanel
 llmctl swap qwen3.8-27b-code
+# OR
+llmpanel #select a model
 
 # 6. Make a request
 curl http://localhost:8080/v1/chat/completions \
   -H "Content-Type: application/json" \
   -d '{"model":"qwen3.8-27b-code","messages":[{"role":"user","content":"Write a Python quicksort"}]}'
 
-# 7. Open the TUI control panel (optional)
+# 7. Open the TUI control panel (optional) to monitor / observe utilization & throughput
 llmpanel
 ```
 
