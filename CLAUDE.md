@@ -418,9 +418,10 @@ carrying however many tokens that step accepted, so token rate moves with accept
 rate does not. Baselines live in `config/band-baselines.json`.
 
 Things that are NOT the band, each ruled out by measurement here: clocks (full boost, 3382-3455
-MHz, while in the slow band), power (draw at or above default board power while slow), the PCIe
-slot link (see the arithmetic above), page cache at load, MTP acceptance (unchanged or better
-when slow), CUDA-graph capture sizes, and the card in any particular slot. Full write-up and the
+MHz, while in the slow band), power (the GPUs were not power-limited in either band), the PCIe
+slot link (see the arithmetic above), page cache at load, MTP acceptance (not a discriminator —
+the slow band read both the higher and the lower of the two observed values), CUDA-graph capture
+sizes, and the card in any particular slot. Full write-up and the
 ruled-out list: `docs/rdna4-decode-bands.md`. Also ruled out, by direct test: the launch
 context (a stock spawn forked by the user systemd manager at nice 0, fresh cgroup, full CPU
 affinity, verified on every thread, was still slow) and the compile cache (fast and slow spawns

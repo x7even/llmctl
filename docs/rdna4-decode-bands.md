@@ -192,10 +192,13 @@ tolerance. That is why every flagged spawn came back `undecided`, and it had not
 container: 36.13 steps/s, verdict `fast`, against a warm-calibrated 36.21 - one baseline now
 serves cold and warm probes alike.
 
-The lesson generalises past this one tool: **a detector meant for cold starts must be
-calibrated cold**, or its tolerance is spent on the warmup it never accounted for. It came
-within one split-signal guard of telling an operator to restart a server running at full
-speed.
+The lesson generalises past this one tool: **a detector's baseline has to be taken under the
+same conditions as the runs it will judge**, or its tolerance is spent on a systematic offset it
+never accounted for. The fix here is not "calibrate cold" — it is to put the warmup on both
+sides, so that calibration and measurement traverse the identical code path and the remaining
+difference is the thing being measured. Note how close this came to doing real harm: one
+split-signal guard was all that stood between it and telling an operator to restart a server
+running at full speed.
 
 The upstream ratios (1.21–1.28 dense, 1.73 MoE, 2.00–2.2 GDN hybrid) remain upstream's. This
 rig's 27B is a GDN hybrid — `qwen3_5`, 64 layers, `full_attention_interval: 4`, so 16 full
