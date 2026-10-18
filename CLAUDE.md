@@ -108,7 +108,7 @@ To watch startup progress: `llmctl logs <profile>` — wait for "Application sta
 
 ### vLLM profiles: mandatory flags
 
-Every vLLM profile **must** have these three things:
+Every vLLM profile **must** have these five things:
 
 ```yaml
 # 1. Nullify the AMD official image's broken ENTRYPOINT
@@ -124,14 +124,41 @@ vllm serve /models/...
 -v __LLMSTACK_DIR__/.triton-cache:/root/.triton/cache
 ```
 
+```yaml
+# 4. useModelName — a llama-swap key (NOT a vllm flag), set to this profile's
+#    --served-model-name. Without it every alias of the profile 404s: llama-swap routes
+#    by alias but forwards the client's model string upstream unchanged, and vLLM only
+#    answers to --served-model-name. Measured 2026-10-17 — 3 of 4 routing names failed.
+    useModelName: qwen3.8-27b-code
+```
+
+```yaml
+# 5. GPU_MAX_HW_QUEUES=1 — a container env var. Without it a gfx1201 container can come
+#    up in the slow decode band and serve at ~half speed for its whole life, with nothing
+#    in the logs, gpu_busy pinned at 100% and MTP acceptance unchanged. Measured 2026-10-18
+#    on the 27B at TP4: stock 5/5 slow at 35.6 serial / 320.9 conc=8; with the flag 3/3 fast at
+#    67.2 / 357.6, within 4% of the stored baseline at every level. A fixed per-step tax, so it
+#    amortises: 1.89x serial, 1.11x at conc=8. Set on the three qwen3.8-27b-* profiles; NOT yet
+#    measured on 35B/gemma4/Flash-Next.
+-e GPU_MAX_HW_QUEUES=1
+```
+
 `__LLMSTACK_DIR__` is a placeholder. Run `scripts/configure` to replace it with the
 repo's absolute path before first use (llama-swap v223+ executes cmd without a shell).
 
-If you add a new vLLM profile and omit any of these, the first startup will take 18+ minutes
-or fail with `unrecognized arguments`.
+If you add a new vLLM profile and omit any of items 1-3, the first startup will take 18+ minutes
+or fail with `unrecognized arguments`. Omit item 4 and startup is fine but every alias is a 404
+— the profile answers only to its full name. Omit item 5 and everything looks healthy while
+throughput is halved; `scripts/llmband` is how you find out. Details for 5:
+`docs/rdna4-decode-bands.md` and `config/CLAUDE.md`.
 
 **Important**: llama-swap v223+ executes `cmd` without a shell — `$LLMSTACK_DIR` and other
-shell variables are NOT expanded. Use hardcoded absolute paths in all volume mounts.
+shell variables are NOT expanded. Volume mounts therefore need an absolute path at run time,
+which `scripts/configure` writes into the working copy. Do **not** hand-write one and do not
+commit the configured file: the committed `config/models.yaml` carries `__LLMSTACK_DIR__`, and
+`tests/test_configure.py` fails if a real `/home/...` path reaches HEAD. Committing the
+configured form is what broke every fresh clone between `8f42c4e` and `89179ce` — the
+substitution silently no-ops when there is no placeholder left to replace.
 
 ### AWQ + expert-parallel = hard crash
 
@@ -232,7 +259,7 @@ See `tui/CLAUDE.md` for architecture and coding conventions.
 | Profile | Backend | VRAM | Active params | Notes |
 |---------|---------|------|--------------|-------|
 | `qwen3.8-27b-code` ✓ | vLLM + MTP | ~31 GB + KV | 27B (dense) | **Default.** Thinking (medium effort); 131K ctx; 361 tok/s @ conc=8 |
-| `qwen3.8-27b-think` | vLLM | ~31 GB + KV | 27B (dense) | Thinking, no MTP — parallel agent fleets |
+| `qwen3.8-27b-think` ✓ | vLLM + TRITON_ATTN | ~31 GB + KV | 27B (dense) | Thinking, no MTP — parallel agent fleets. **The long-context profile:** 33 tok/s at 131K vs 1.4 without the backend flag |
 | `qwen3.8-27b-fast` | vLLM + MTP | ~31 GB + KV | 27B (dense) | Thinking OFF by default |
 | `qwen3.8-flash-next` | llama-server (Vulkan) | ~81 GB | 6B (MoE, 125B) | UD-IQ4_XS GGUF, custom llama.cpp fork; single-user |
 | `qwen3.8-flash-next-vllm` | vLLM TP4+EP (nightly image) | ~19 GB/GPU + ~48 GB pinned PLE in host RAM (~96 GB host RAM recommended) | 6B (MoE, 125B) | W4A16 INT4 + FP8 PLE; 262K ctx, **medium effort by default** (xhigh runs away); 55.7 tok/s serial, ~150-185 @ conc=8 (182 best run), 216 @ conc=16, flat ~55 out to 258K; needs `--ulimit memlock=-1:-1` and all 4 GPUs; exclusive VRAM |
@@ -293,6 +320,166 @@ Baselines for removed profiles remain in `docs/models.md` and `bench/baselines/`
   profile's `cmd` therefore starts with `scripts/llm-prestart`, which drops cached model files first.
   Keep the wrapper in front of podman. Details: `docs/flash-next-half-speed.md`.
 
+### Check the PCIe links before trusting any TP benchmark
+
+**A GPU whose slot link trains one generation low is a real fault, but on this stack it did
+NOT measurably cost throughput — do not reach for it as an explanation.** gfx1201 has no fast
+all-reduce backend (QuickReduce is gfx94/gfx95 only, CustomAllreduce disables above two
+PCIe-only GPUs, AITER unsupported), so vLLM TP falls back to `PYNCCL` over PCIe and every decode
+step ends in an all-reduce. That sounds decisive and isn't: for a 27B dense model at TP4 the
+per-step collective traffic is ~2 MB over one rank's link, i.e. ~35 us at Gen5 against ~76 us at
+Gen4 — a 41 us difference against a ~25 ms step. **~600x too small to see.** Do the arithmetic
+for your own model before blaming a link.
+
+This stack has had one card's slot link sit at Gen4 (16 GT/s) at x16 while the other three
+reached Gen5 (32 GT/s). It survived a cold power-off and a forced DPM level, so it is physical.
+It was initially blamed for a ~2x decode-throughput loss measured around the same time, and that
+was wrong — the arithmetic above is the reason, and a slow decode-band draw turned out to account
+for the loss in full. Suggestive but not proof: the kernel log of the boot that produced the
+fastest stored baseline shows that card already enumerating at 16.0 GT/s. Enumeration is the
+BIOS-trained speed, logged before amdgpu loads and before the SMU retrains the link, so it does
+not establish what the link did under load that day. Fix a downtrained link because it is a
+fault, not because it will give throughput back.
+
+What actually halves decode on this hardware is the gfx1201 bimodal decode band (next section).
+The two are near-indistinguishable on every metric people reach for: ~2x step-rate loss,
+`gpu_busy` pinned at 100%, low `mem_busy`, unchanged MTP acceptance, clean logs. **The one thing
+that tells them apart is a host-to-device bandwidth probe** — `scripts/pcie-link-check` — because
+only the link fault shows up in it.
+
+Do not use "it came back slow after a restart" as the separator. It is tempting and it is wrong:
+on this stack the slow state repeated across more than a dozen spawns and two reboots and the
+link was still not the cause. A draw that persists tells you the cause is not per-process; it
+does not tell you the cause is hardware.
+
+**Every GPU-level PCIe readout is blind to this.** `roctop`, `amd-smi metric` (`PCIE: SPEED`)
+and anything else reporting "the GPU's PCIe speed" read the *endpoint's* link. These cards carry
+their own PCIe switch, so the endpoint's link is the on-card one — GPU to its own switch — and
+that stays Gen5 even when the slot link below it is Gen4. During the incident above, all four
+cards showed x16 32 GT/s in `roctop` while one card's slot link was at 16 GT/s, and the two
+bridges upstream of that GPU were the only devices reporting it. Confirm with a host-to-device
+bandwidth probe, which has to cross the slot link: the bad card read 26 GB/s against 56 GB/s on
+the other three.
+
+**And the naive sysfs check gives a false pass too.** These links idle at 2.5 GT/s, so reading
+`current_link_speed` at rest reports 2.5 on a healthy card. Only the speed reached *under load*
+means anything:
+
+```bash
+scripts/pcie-link-check --load     # needs the GPUs free; exit 0 ok / 1 downtrained / 2 inconclusive
+scripts/pcie-link-check            # passive: sample while a model is actually serving
+```
+
+Run it before any TP benchmark you intend to trust, and first whenever throughput drops without
+a config change. It reports per *link*, not per device — these cards carry their own PCIe
+switch, so each GPU's chain is four devices but only two links, and link 0 is the one that
+leaves the motherboard. A downtrain on link 0 is physical: cold power-off (PSU off ~30 s), then
+reseat the card and riser, then swap slots to tell a bad card from a bad slot. A downtrain on a
+later link is inside the card. Also check `max_link_speed` — if that is low too, something is
+capping the slot in BIOS.
+
+### The decode band is drawn at spawn — classify every cold start
+
+On gfx1201 a vLLM server's decode throughput is **bimodal**. The process lands in one of two
+stable bands when it spawns, stays there for most of its life, and serves every request at that
+band's rate. Within-band variance is almost nil, and **nothing in the startup log distinguishes
+them**: clocks, temperature, power, VRAM, graph-capture sizes and the log lines are identical.
+Reported fast:slow ratios are 1.21-1.28 dense, 1.73 MoE, **2.00-2.2 gated-delta-net hybrid** —
+and both Qwen3.8 profiles are GDN hybrids (the 27B is 16 full-attention + 48 GDN layers), so
+they sit on the worst row. Upstream: `ROCm/legacy-rocm-build#6347` (= `ROCm/TheRock#9228`).
+
+**The remedy is `-e GPU_MAX_HW_QUEUES=1` in the container, and on this hardware it is
+complete.** Measured 2026-10-18 on the 27B at TP4, same image and profile either side, varying
+only that variable: stock drew slow 5/5 at 35.6 tok/s serial, 320.9 at conc=8, 460.5 at conc=16;
+with the flag it drew fast 3/3 at 67.2 / 357.6 / 536.8 — within 4% of the stored baseline at
+every level, for no measurable cost. The penalty is a fixed per-step tax and so **amortises with
+batch size**: 1.89x on a single stream, 1.76x at conc=2, 1.11x at conc=8. Quote the level you
+mean; "1.9x" is the single-stream figure, not the fleet figure. The three `qwen3.8-27b-*` profiles ship with it (mandatory item 5 above).
+
+**It is not universal.** Measured on Flash-Next 2026-10-18 and deliberately not shipped there:
+serial 55.6 stock vs 53.5 flagged, conc=8 187.4 vs 197.2, and `mem_busy` ~31% on *both* arms
+where the 27B's bands separate at 26%/46% with no overlap — there is no band to fix on that
+profile. That shows the flag is not *needed* there, not that it fails on that model: the stock
+spawn was already fast, so there was no slow draw to recover. **Cause not established** —
+Flash-Next differs from the 27B in both architecture and image (nightly vs v0.26.0), and one
+pair cannot separate them. The 35B and gemma4 profiles are still unmeasured. Measure per
+profile rather than generalising in either direction.
+
+Two local corrections to the upstream framing. **Here the draw is deterministic, not a
+lottery** — stock was slow on every one of five spawns across two launchers, three launch
+contexts, two reboots and a cold power-off, which makes the flag a reliable fix rather than a
+way of improving odds, and makes a slow draw *after* the flag genuinely anomalous. And
+**`mem_busy` under load is the discriminator that held** (26% slow against 46% fast, no
+overlap) where step rate alone did not; a low `mem_busy` still must not be read as "band" on its
+own, since a PCIe fault produces one too.
+
+So a benchmark that does not state which band it was drawn in is not a measurement. Classify
+after every cold start:
+
+```bash
+scripts/llmband --model <profile> --calibrate   # once, against a server believed to be fast
+scripts/llmband --model <profile>               # thereafter; exit 0 fast / 1 slow / 2 undecided
+```
+
+The signal is **decode step rate**, not token rate: with MTP one SSE chunk is one decode step
+carrying however many tokens that step accepted, so token rate moves with acceptance while step
+rate does not. Baselines live in `config/band-baselines.json`.
+
+Things that are NOT the band, each ruled out by measurement here: clocks (full boost, 3382-3455
+MHz, while in the slow band), power (the GPUs were not power-limited in either band), the PCIe
+slot link (see the arithmetic above), page cache at load, MTP acceptance (not a discriminator —
+the slow band read both the higher and the lower of the two observed values), CUDA-graph capture
+sizes, and the card in any particular slot. Full write-up and the
+ruled-out list: `docs/rdna4-decode-bands.md`. Also ruled out, by direct test: the launch
+context (a stock spawn forked by the user systemd manager at nice 0, fresh cgroup, full CPU
+affinity, verified on every thread, was still slow) and the compile cache (fast and slow spawns
+load byte-identical AOT entries — `GPU_MAX_HW_QUEUES` is not part of the compile key, so the two
+bands run the *same generated kernels*).
+
+`llmband` warms up before it measures, because a server's first decode after startup runs ~12%
+below steady state — the same order as the detector's own tolerance, so an unwarmed probe of a
+healthy cold spawn read `undecided`. That 12% was never a cost of the flag; end-to-end
+throughput is at baseline at all six concurrency levels. Use `--warmup-tokens 0` only to study
+the warmup effect itself.
+### Long context: the default attention backend collapses, TRITON_ATTN does not
+
+On gfx1201 a Qwen3.x profile's decode rate can fall away to nothing as the prompt gets
+deeper — 40 tok/s at 1K down to **1.4 tok/s at 131K** on the no-MTP 27B, a **28x** decay
+across the window. `--attention-backend TRITON_ATTN` turns that into a 1.39x decay (46.3 ->
+33.4), i.e. **24x faster at 131K**, and it wins every depth x concurrency cell measured
+(65,536 x conc=8: 24.5 -> 143.4 tok/s). Shipped on `qwen3.8-27b-think`.
+
+The cause is parallelism starvation: no kernel on this GPU parallelises over context length
+unless TRITON_ATTN's 3D split-KV path is open. Four gates decide it, all keyed on `query_len`:
+
+1. ROCm's custom paged-attention kernel needs `head_size == 128`. **Every Qwen3.x checkpoint
+   here is `head_dim = 256`**, so it is permanently disqualified — a shape mismatch, not a
+   tuning problem.
+2. The 2D fallback launches `(num_seqs, num_kv_heads)`. At TP4 with 2-4 KV heads that is
+   **one workgroup** at conc=1, however long the context is.
+3. TRITON_ATTN's 3D path adds a segment dimension and is the only depth-scaling kernel — but
+   its predicate excludes `max_query_len > 1`, so **MTP closes it**.
+4. The predicate is evaluated per *batch*. A step carrying a prefill chunk drops every
+   co-batched deep decoder to the 2D grid. This one cannot be configured away.
+
+Operational consequences:
+
+- **`--max-num-seqs` above 32 silently closes the 3D path.** The threshold snaps to the
+  nearest CUDA-graph capture size, which is 32 today. Changing `--max-num-seqs` or the
+  capture-size list can undo the whole fix with nothing in the log.
+- **`VLLM_ATTENTION_BACKEND` does not exist in 0.26.0.** Use the CLI `--attention-backend`;
+  an invalid name **silently falls back to auto-selection**. Always confirm with
+  `podman logs <container> | grep ATTN` — the pass line is
+  `Using TRITON_ATTN backend (selected via --attention-backend)`.
+- **Do not flip `qwen3.8-27b-code`.** At 256-token prompts MTP wins 17-30% (conc=8: 361 vs
+  267), so the default keeps MTP and long-context work goes to `27b-think` explicitly.
+- **Benchmark depth, and check retrieval.** `bench/depth_bench.py` sweeps depth x concurrency
+  (`--prewarm` for steady-state decode); `concurrent_bench.py` at `medium-256` cannot see any
+  of this. A split-KV kernel that mis-combines its softmax segments benchmarks perfectly while
+  losing context, so any attention or kernel change must also pass `bench/needle_check.py`.
+
+Full write-up, with source lines and the prefill-kernel caveat: `docs/rdna4-long-context.md`.
+
 **Note:** R9700-tuned MoE configs (-33% at conc=8) were reverted; all 35b profiles use MI300X
 defaults, which outperform at concurrent load.
 
@@ -317,11 +504,16 @@ docs/gpu-counts.md   Running with fewer than 4 GPUs (valid TP sizes, per-profile
 docs/llmctl.md       Full CLI reference
 docs/workarounds.md  Active bugs + workarounds (vLLM SSE null name)
 docs/flash-next-half-speed.md  Half-speed Flash-Next starts: cause (full page cache) and the llm-prestart guard
+docs/rdna4-decode-bands.md     gfx1201 bimodal decode bands: detection with llmband, ratios, ruled-out list
+docs/rdna4-long-context.md     Why decode collapses at depth on gfx1201 and the TRITON_ATTN fix (four query_len gates)
 docs/hard-code-tasks.md        Harder code tests: caps vs 4-bit weights, 27B early stops, ceiling check
 docs/upgrade-plan-2026-*.md    Image/ROCm upgrade canaries and their gates
 scripts/llm-prestart  exec wrapper in front of Flash-Next's podman run (drops page cache first)
+scripts/pcie-link-check  Checks every GPU's PCIe link reaches its rated speed UNDER LOAD
 scripts/llmhw.py     Hardware/requirements checker used by configure, llmctl and llmpanel
 bench/codetests/     Code-correctness suite (11 tasks, 5 of them the harder set) run by run_codetests.py
+bench/depth_bench.py Context-depth x concurrency sweep (--prewarm for steady-state decode)
+bench/needle_check.py Long-context retrieval, sweeping needle position — the correctness gate for kernel changes
 .vllm-cache/         Persistent Inductor compilation cache (gitignored)
 .triton-cache/       Persistent Triton kernel cache (gitignored)
 ```

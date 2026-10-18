@@ -1,0 +1,257 @@
+#!/usr/bin/env python3
+"""pcie-link-check - verify every GPU's PCIe link trains to its rated speed under load.
+
+    pcie-link-check                 # sample while something else drives the GPUs
+    pcie-link-check --load          # drive the traffic too (needs the vLLM image, exclusive GPUs)
+
+Why: a link that trains one PCIe generation low halves that card's host-transfer bandwidth. It
+is a real fault and worth catching early - but do NOT assume it costs decode throughput. On this
+stack a Gen4 downtrain was blamed for a ~50% serial decode loss and that was wrong: the
+collective traffic in a 27B TP4 decode step is ~2 MB over one rank's link, so Gen4 vs Gen5 is a
+~41 us difference against a ~25 ms step. One environment variable (GPU_MAX_HW_QUEUES=1) then
+restored full baseline throughput at TP4 with the downtrained card still in the group, which a
+one-line env var cannot do to a PCIe link. The loss was a slow gfx1201 decode-band draw
+(docs/rdna4-decode-bands.md), which presents identically: ~2x step-rate loss, gpu_busy pinned at
+100%, low mem_busy, unchanged MTP acceptance, nothing unusual in any log. A host-to-device
+bandwidth probe is the only thing that separates them, which is what this script is for. Do not
+use "it is still slow after a restart" as the separator: on this stack the slow state repeated
+across more than a dozen spawns and two reboots and the link was still not the cause. And do the
+bandwidth arithmetic for your own model before blaming a link for throughput.
+
+It is easy to miss because every obvious check gives a false pass, in two different ways.
+
+First, GPU-level tools report the wrong link. `roctop`, `amd-smi metric` and anything else
+showing "the GPU's PCIe speed" read the *endpoint's* link. A card with its own PCIe switch has
+two links, and the endpoint's is the on-card one, which stays at full speed while the slot link
+below it is degraded. Only the two bridges upstream of the GPU report the slot link, which is
+why this scans the whole PCI chain rather than the GPU.
+
+Second, reading sysfs at rest proves nothing. These links sit at 2.5 GT/s when idle, so
+`current_link_speed` read at rest reports 2.5 GT/s on a perfectly healthy card and whatever a
+broken one happens to be parked at - on the rig where this was found, the *faulty* card read
+higher at idle than the healthy ones. Only the speed reached **under load** means anything.
+
+So this samples `current_link_speed`/`current_link_width` across every device in every GPU's
+PCI chain many times and keeps the **peak** per device. Peak is the right statistic: it needs no
+synchronisation with whatever is generating the traffic, because a link that can reach its rated
+speed will be caught there at least once, while one that cannot never will.
+
+Results are reported per *link*, not per device, because both ends of a link report it. These
+cards carry their own PCIe switch, so a GPU's chain is root port, switch upstream port, switch
+downstream port, endpoint - four devices but only two links, and reporting per device names one
+fault twice and invents a second failing hop that does not exist. A chain is always a root port
+followed by (upstream port, downstream port) pairs and then the endpoint, so the links are the
+index pairs (0,1), (2,3) and so on; link 0 is the one that leaves the motherboard.
+
+That distinction is what makes the output actionable: link 0 failing points at the slot, riser
+or seating, while a later link failing is inside the card. Each link is compared against its own
+ends' `max_link_speed`/`max_link_width`, so there is nothing hardware-specific to configure.
+
+Exit status: 0 all links at rated speed, 1 at least one downtrained, 2 inconclusive (no load
+seen, so nothing was proven).
+"""
+import argparse
+import os
+import re
+import subprocess
+import sys
+import time
+
+SYS_DEV = "/sys/bus/pci/devices"
+DRM_ROOT = "/sys/class/drm"
+DEFAULT_IMAGE = "docker.io/vllm/vllm-openai-rocm:v0.26.0"
+
+# Keep copies in flight on every visible device so all chains are loaded at once. Doing every
+# GPU together also avoids having to map HIP device indices onto PCI addresses, which do not
+# agree on all hosts.
+LOAD_PROGRAM = """
+import time, torch
+n = torch.cuda.device_count()
+bufs = []
+for d in range(n):
+    torch.cuda.set_device(d)
+    host = torch.empty(64 * 1024 * 1024, dtype=torch.float32).pin_memory()
+    bufs.append((d, host, torch.empty(64 * 1024 * 1024, dtype=torch.float32, device='cuda')))
+end = time.time() + float(__import__('os').environ['SECONDS'])
+while time.time() < end:
+    for d, host, gpu in bufs:
+        torch.cuda.set_device(d)
+        for _ in range(4):
+            gpu.copy_(host, non_blocking=True)
+            host.copy_(gpu, non_blocking=True)
+    for d, _, _ in bufs:
+        torch.cuda.set_device(d)
+        torch.cuda.synchronize()
+print('load done on %d device(s)' % n)
+"""
+
+
+def read(path):
+    try:
+        with open(path) as fh:
+            return fh.read().strip()
+    except OSError:
+        return None
+
+
+def speed_gts(text):
+    """'32.0 GT/s PCIe' -> 32.0. None if unreadable or 'Unknown'."""
+    if not text:
+        return None
+    m = re.match(r"([\d.]+)\s*GT/s", text)
+    return float(m.group(1)) if m else None
+
+
+def gpu_endpoints():
+    """Every AMD display-class PCI function that has a drm card, as (bdf, label)."""
+    out = []
+    for card in sorted(os.listdir(DRM_ROOT)):
+        if not re.fullmatch(r"card\d+", card):
+            continue
+        dev = os.path.realpath("%s/%s/device" % (DRM_ROOT, card))
+        bdf = os.path.basename(dev)
+        if read("%s/vendor" % dev) != "0x1002":
+            continue
+        out.append((bdf, card))
+    return out
+
+
+def chain_for(bdf):
+    """The PCI devices from root port down to the endpoint, in that order.
+
+    The realpath of a device encodes its ancestry, so the chain is just the path components
+    that look like PCI addresses. The host bridge itself has no link, and is dropped later
+    because it exposes no current_link_speed.
+    """
+    real = os.path.realpath("%s/%s" % (SYS_DEV, bdf))
+    parts = [p for p in real.split("/") if re.fullmatch(r"[0-9a-f]{4}:[0-9a-f]{2}:[0-9a-f]{2}\.\d", p)]
+    return [p for p in parts if read("%s/%s/current_link_speed" % (SYS_DEV, p)) is not None]
+
+
+def links_in(chain):
+    """Group a chain into physical links: [(a, b), ...], or [(a,)] for an unpaired tail.
+
+    Both ends of a PCIe link expose it, so devices pair up (root port + switch upstream port,
+    switch downstream port + endpoint). An odd chain means the topology is not what we expect,
+    so the leftover device is returned alone rather than silently merged into another link.
+    """
+    out = []
+    for i in range(0, len(chain), 2):
+        out.append(tuple(chain[i:i + 2]))
+    return out
+
+
+def rated_for(dev):
+    """(speed GT/s, width) this device says its link is capable of."""
+    rs = speed_gts(read("%s/%s/max_link_speed" % (SYS_DEV, dev)))
+    rw = read("%s/%s/max_link_width" % (SYS_DEV, dev))
+    return rs, int(rw) if rw and rw.isdigit() else 0
+
+
+def sample(chains, seconds, interval):
+    """Poll every device in every chain, keeping the peak speed and width seen."""
+    peak = {d: (0.0, 0) for devs in chains.values() for d in devs}
+    end = time.time() + seconds
+    while time.time() < end:
+        for dev in peak:
+            s = speed_gts(read("%s/%s/current_link_speed" % (SYS_DEV, dev)))
+            w = read("%s/%s/current_link_width" % (SYS_DEV, dev))
+            w = int(w) if w and w.isdigit() else 0
+            ps, pw = peak[dev]
+            peak[dev] = (max(ps, s or 0.0), max(pw, w))
+        time.sleep(interval)
+    return peak
+
+
+def start_load(image, seconds):
+    cmd = [
+        "podman", "run", "--rm",
+        "--device=/dev/kfd", "--device=/dev/dri", "--group-add", "keep-groups",
+        "--security-opt", "seccomp=unconfined", "--ipc=private", "--shm-size=2g",
+        "-e", "SECONDS=%d" % seconds,
+        "--entrypoint=", image,
+        "python3", "-c", LOAD_PROGRAM,
+    ]
+    return subprocess.Popen(cmd, stdout=subprocess.DEVNULL, stderr=subprocess.STDOUT)
+
+
+def main():
+    ap = argparse.ArgumentParser(description=__doc__.splitlines()[0])
+    ap.add_argument("--seconds", type=float, default=20.0, help="how long to sample (default 20)")
+    ap.add_argument("--interval", type=float, default=0.1, help="seconds between samples")
+    ap.add_argument("--load", action="store_true",
+                    help="also generate the traffic, in a container; needs the GPUs free")
+    ap.add_argument("--image", default=DEFAULT_IMAGE, help="image used by --load")
+    args = ap.parse_args()
+
+    gpus = gpu_endpoints()
+    if not gpus:
+        print("no AMD GPUs found under /sys/class/drm", file=sys.stderr)
+        return 2
+    chains = {bdf: chain_for(bdf) for bdf, _ in gpus}
+
+    load = None
+    if args.load:
+        print("driving %.0fs of host<->device traffic on all GPUs (%s)" % (args.seconds, args.image))
+        load = start_load(args.image, int(args.seconds) + 10)
+        time.sleep(8)  # container start; sampling below outlasts it
+    else:
+        print("sampling for %.0fs - drive the GPUs now (a serving model is fine), or use --load"
+              % args.seconds)
+
+    peak = sample(chains, args.seconds, args.interval)
+    if load:
+        load.terminate()
+
+    downtrained, unexercised = [], []
+    for bdf, label in gpus:
+        devs = chains[bdf]
+        # Only the link that leaves the motherboard drops to 2.5 GT/s at idle; the card's
+        # internal link stays at full speed even on an idle card. So that link, and only that
+        # link, says whether this GPU actually saw traffic during the sampling window.
+        exercised = peak[devs[0]][0] > 2.5
+        print("\n%s (%s)%s" % (bdf, label, "" if exercised else "   [no traffic seen]"))
+        for i, ends in enumerate(links_in(devs)):
+            # Both ends report the same link; take the better reading of each so a stale or
+            # unreadable end cannot invent a fault, and the stricter rating.
+            ps = max(peak[e][0] for e in ends)
+            pw = max(peak[e][1] for e in ends)
+            rated = [rated_for(e) for e in ends]
+            rs = min((r[0] for r in rated if r[0]), default=None)
+            rw = min((r[1] for r in rated if r[1]), default=0)
+            where = "slot/riser" if i == 0 else "on-card"
+            bad = exercised and rs and ps and (ps < rs or (rw and pw < rw))
+            verdict = "DOWNTRAINED" if bad else ("ok" if exercised else "-")
+            print("  link %d  %-29s peak %5.1f GT/s x%-3d rated %5.1f GT/s x%-3d  %-10s %s"
+                  % (i, " <-> ".join(ends), ps, pw, rs or 0, rw, where, verdict))
+            if bad:
+                downtrained.append((bdf, " <-> ".join(ends), ps, rs, where))
+        if not exercised:
+            unexercised.append(bdf)
+
+    if unexercised:
+        print("\nINCONCLUSIVE for %s: those links stayed at their idle speed, so nothing was"
+              % ", ".join(unexercised))
+        print("driving them and nothing was proven. Re-run with --load, or while a model is")
+        print("serving requests on every GPU. Idle readings cannot distinguish a healthy link")
+        print("from a downtrained one.")
+        if not downtrained:
+            return 2
+
+    if not downtrained:
+        print("\nOK: every link reached its rated speed and width under load.")
+        return 0
+
+    print("\nDOWNTRAINED: %d link(s) never reached their rated speed under load." % len(downtrained))
+    for bdf, ends, ps, rs, where in downtrained:
+        print("  %s: link %s peaked at %.1f GT/s, rated %.1f GT/s (%s)" % (bdf, ends, ps, rs, where))
+    print("\nA downtrain on the slot/riser link is physical: try a full cold power-off (a warm")
+    print("reboot may not power-cycle the slot), then reseat the card and any riser at both")
+    print("ends, then swap the card into a known-good slot to tell a bad card from a bad slot.")
+    print("Check max_link_speed too - if it is also low, something is capping the slot in BIOS.")
+    print("Treat every tensor-parallel benchmark taken in this state as invalid.")
+    return 1
+
+
+if __name__ == "__main__":
+    sys.exit(main())

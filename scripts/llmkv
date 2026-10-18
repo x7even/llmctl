@@ -1,0 +1,367 @@
+#!/usr/bin/env python3
+"""llmkv - what does a profile's KV cache actually buy you, in context x concurrency?
+
+    llmkv qwen3.8-27b-code
+    llmkv qwen3.8-27b-code --set gpu-memory-utilization=0.92 --set max-num-batched-tokens=16384
+    llmkv qwen3.8-27b-code --env PYTORCH_HIP_ALLOC_CONF=expandable_segments:True
+
+Boots the profile from config/models.yaml under a throwaway container name, reads the KV cache
+size vLLM reports at startup, prints how many concurrent streams that allows at a range of
+context lengths, and stops the container again. No benchmark, no requests: about the length of
+one warm start.
+
+The point is that "how much context" and "how many users" are the same budget. A profile that
+advertises --max-model-len 131072 and --max-num-seqs 32 can be unable to serve even two
+requests at 131072, and the only number that says so is the KV total. Changing
+--gpu-memory-utilization, --max-num-batched-tokens, --kv-cache-dtype or --max-model-len all move
+it, sometimes in the opposite direction to the obvious guess, so measure instead of predicting.
+
+Overrides apply to the vllm flags only, never to the podman arguments, and the container is
+always renamed, so this cannot disturb a running production container. It does need the GPUs:
+run it when nothing else is using them.
+"""
+import argparse
+import json
+import re
+import shlex
+import subprocess
+import sys
+import time
+from pathlib import Path
+
+REPO = Path(__file__).resolve().parent.parent
+MODELS_YAML = REPO / "config" / "models.yaml"
+
+# What a reader actually wants to know: at this context length, how many streams fit at once?
+CONTEXT_POINTS = [8192, 16384, 32768, 65536, 131072, 262144]
+
+KV_RE = re.compile(r"GPU KV cache size:\s*([\d,]+)\s*tokens")
+CONC_RE = re.compile(r"Maximum concurrency for ([\d,]+) tokens per request:\s*([\d.]+)x")
+AVAIL_RE = re.compile(r"Available KV cache memory:\s*([\d.]+)\s*GiB")
+# Enough to read the KV numbers off. Note this is satisfied by the KV line itself, which is
+# deliberate: the default job is done as soon as the budget is known, well before the API binds.
+READY_RE = re.compile(r"Application startup complete|GPU KV cache size")
+# Actually serving. KV is reported before graph capture, so a --keep caller that stopped at
+# READY_RE would hand back a container that refuses connections for another minute or two.
+SERVING_RE = re.compile(r"Application startup complete")
+# How many FULL decode graphs were actually captured, read off the progress bar's own total.
+# This is the post-rounding count, which is the only one that matters: with speculative
+# decoding vLLM rounds every requested size up to num_speculative_tokens+1 and drops any that
+# then exceeds the largest requested size, so a profile asking for six sizes can get four.
+GRAPHS_RE = re.compile(r"Capturing CUDA graphs \(FULL\):\s*100%\|[^|]*\|\s*(\d+)/(\d+)")
+# The tqdm capture bar does not survive into `podman logs`, but vLLM also states the cost
+# outright, and that is the number the capture-size lever has to be judged on: graph memory
+# is taken before the KV cache is sized, so every GiB here is a GiB not spent on context.
+GRAPH_COST_RE = re.compile(r"Graph capturing finished in (\d+) secs, took ([\d.]+) GiB")
+# gpu_worker.py's memory breakdown, per rank. "requested" is what --gpu-memory-utilization
+# asked for; the rest is where it went.
+MEM_SPLIT_RE = re.compile(
+    r"Actual usage is ([\d.]+) GiB for weight, ([\d.]+) GiB for peak activation, "
+    r"([\d.]+) GiB for non-torch memory, and ([\d.]+) GiB for CUDAGraph memory")
+REQUESTED_CAPTURE_RE = re.compile(r"cudagraph_capture_sizes': \[([^]]*)\]")
+# vLLM's own note that cudagraph memory profiling has eaten into the KV budget.
+EFFECTIVE_UTIL_RE = re.compile(
+    r"--gpu-memory-utilization=([\d.]+) is equivalent to --gpu-memory-utilization=([\d.]+)")
+FAIL_RE = re.compile(r"Traceback \(most recent call last\)|EngineCore failed|"
+                     r"ValueError|torch\.OutOfMemoryError|Engine core initialization failed")
+
+
+def extract_cmd(yaml_text, profile):
+    """Pull one profile's `cmd:` literal block out of models.yaml.
+
+    Deliberately a line-oriented read rather than a YAML parse: the repo's own format rules keep
+    this file parseable by a regex reader, a Go yaml.v3 reader and llama-swap alike, and adding a
+    PyYAML dependency to a diagnostic script would be the only thing here that needs one.
+    """
+    lines = yaml_text.splitlines()
+    start = None
+    for i, ln in enumerate(lines):
+        if re.match(rf"^\s{{2}}{re.escape(profile)}:\s*$", ln):
+            start = i
+            break
+    if start is None:
+        raise SystemExit(f"llmkv: no profile {profile!r} in {MODELS_YAML}")
+
+    cmd_at = None
+    for i in range(start + 1, len(lines)):
+        if re.match(r"^\s{2}\S", lines[i]):          # next profile began
+            break
+        if re.match(r"^\s{4}cmd:\s*\|\s*$", lines[i]):
+            cmd_at = i
+            break
+    if cmd_at is None:
+        raise SystemExit(f"llmkv: profile {profile!r} has no block-style cmd:")
+
+    body = []
+    for ln in lines[cmd_at + 1:]:
+        if ln.strip() and not ln.startswith("      "):   # block ended
+            break
+        part = ln.strip()
+        # llama-swap runs cmd without a shell, so a trailing backslash would be a literal
+        # argument and the live profiles have none. config/CLAUDE.md's templates do show
+        # them, though, and left in place shlex reads "\ --flag" as one token with a
+        # leading space, which silently defeats every flag lookup below. Drop them.
+        if part.endswith("\\"):
+            part = part[:-1].rstrip()
+        body.append(part)
+    return " ".join(p for p in body if p)
+
+
+def split_argv(cmd, profile, port, repo=None):
+    """Substitute what llama-swap substitutes, then split respecting quotes.
+
+    __LLMSTACK_DIR__ is substituted too. llama-swap never sees that placeholder - the repo
+    rule is that scripts/configure replaces it at setup time and the real path is what sits
+    in the working copy - but a checkout that has not been configured, or one where the path
+    has been put back for publication, would otherwise mount a literal "__LLMSTACK_DIR__"
+    directory and miss the compile cache, turning a 3-minute boot into an 18-minute one.
+    """
+    cmd = (cmd.replace("${MODEL_ID}", profile)
+              .replace("${PORT}", str(port))
+              .replace("__LLMSTACK_DIR__", str(repo or REPO)))
+    return shlex.split(cmd)
+
+
+def find_serve_split(argv):
+    """Index of the first vllm flag: everything before it is podman's and is left alone."""
+    for i, a in enumerate(argv):
+        if a == "serve" and i + 1 < len(argv):
+            return i + 2          # skip "serve" and the model path
+    raise SystemExit("llmkv: could not find 'vllm serve <model>' in the profile cmd")
+
+
+def apply_overrides(argv, split_at, sets):
+    """Replace or append `--flag value...` in the vllm portion only.
+
+    A flag already present is replaced in place so its position (and any neighbours that care)
+    is preserved; one that is absent is appended.
+
+    A flag's value is every consecutive argument after it that is not itself a flag, because
+    some vllm flags take a list: --cudagraph-capture-sizes 1 2 4 8 16 32 is one flag with six
+    values. Replacing only the first would leave the rest behind as stray positionals, so the
+    whole run is replaced. `sets` values are lists of arguments; a single-element list is the
+    ordinary one-value case and is passed through unquoted and unparsed.
+    """
+    out, applied = list(argv), {}
+    for key, vals in sets.items():
+        flag = f"--{key.lstrip('-')}"
+        vals = [vals] if isinstance(vals, str) else list(vals)
+        try:
+            i = out.index(flag, split_at)
+        except ValueError:
+            out.extend([flag, *vals])
+            applied[flag] = (None, " ".join(vals))
+            continue
+        j = i + 1
+        while j < len(out) and not out[j].startswith("--"):
+            j += 1
+        applied[flag] = (" ".join(out[i + 1:j]) or None, " ".join(vals))
+        out[i + 1:j] = vals
+    return out, applied
+
+
+LIST_VALUE_RE = re.compile(r"^[\w.:+-]+(,[\w.:+-]+)+$")
+
+
+def split_values(val):
+    """A comma-separated run of bare tokens is a list of arguments; anything else is one.
+
+    Deliberately narrow. --speculative-config '{"method": "mtp", "num_speculative_tokens": 2}'
+    has commas in it and must stay a single argument, so only values made entirely of bare
+    word-ish tokens separated by commas are split.
+    """
+    return val.split(",") if LIST_VALUE_RE.match(val) else [val]
+
+
+def rename_and_isolate(argv, name):
+    """Force a throwaway container name and detached mode so production is never touched."""
+    out = list(argv)
+    try:
+        i = out.index("--name")
+        out[i + 1] = name
+    except ValueError:
+        out[1:1] = ["--name", name]
+    if "-d" not in out and "--detach" not in out:
+        out.insert(out.index("run") + 1, "-d")
+    return out
+
+
+def concurrency_table(kv_tokens, max_model_len, points=CONTEXT_POINTS):
+    """Streams that fit at each context length, capped at what the profile will admit."""
+    rows = []
+    for ctx in points:
+        if max_model_len and ctx > max_model_len:
+            continue
+        rows.append({"context": ctx, "streams": round(kv_tokens / ctx, 2)})
+    return rows
+
+
+def parse_startup(log):
+    kv = KV_RE.search(log)
+    avail = AVAIL_RE.search(log)
+    conc = CONC_RE.search(log)
+    graphs = GRAPHS_RE.findall(log)
+    cost = GRAPH_COST_RE.search(log)
+    split = MEM_SPLIT_RE.search(log)
+    req_sizes = REQUESTED_CAPTURE_RE.search(log)
+    util = EFFECTIVE_UTIL_RE.search(log)
+    return {
+        "kv_cache_tokens": int(kv.group(1).replace(",", "")) if kv else None,
+        "available_kv_gib_per_gpu": float(avail.group(1)) if avail else None,
+        "vllm_reported_concurrency": (
+            {"at_tokens": int(conc.group(1).replace(",", "")), "streams": float(conc.group(2))}
+            if conc else None),
+        # max over the per-rank bars: every TP rank captures the same set.
+        "full_cudagraphs_captured": max((int(t) for _, t in graphs), default=None),
+        "requested_capture_sizes": (
+            [int(x) for x in req_sizes.group(1).replace(" ", "").split(",") if x]
+            if req_sizes else None),
+        "graph_capture_s": int(cost.group(1)) if cost else None,
+        "graph_mem_gib": float(cost.group(2)) if cost else None,
+        "mem_split_gib": (
+            dict(zip(("weight", "peak_activation", "non_torch", "cudagraph"),
+                     (float(x) for x in split.groups())))
+            if split else None),
+        "requested_util": float(util.group(1)) if util else None,
+        "effective_util": float(util.group(2)) if util else None,
+    }
+
+
+def container_log(name):
+    """Both streams. vLLM's own logger writes to stdout, but the line that says the server is
+    actually accepting requests - uvicorn's "Application startup complete." - goes to stderr,
+    so reading only stdout can see the KV numbers and never see readiness."""
+    p = subprocess.run(["podman", "logs", name], capture_output=True, text=True)
+    return (p.stdout or "") + (p.stderr or "")
+
+
+def boot_and_read(argv, name, timeout, poll=5.0, log_path=None, keep=False):
+    subprocess.run(["podman", "rm", "-f", name], capture_output=True)
+    # argv is the whole command line out of models.yaml, podman included - don't add a second one.
+    run = subprocess.run(list(argv), capture_output=True, text=True)
+    if run.returncode != 0:
+        raise SystemExit(f"llmkv: podman run failed:\n{run.stderr.strip()}")
+
+    deadline = time.monotonic() + timeout
+    log = ""
+    # --keep exists so a caller can go on to send requests, so it has to wait for the API, not
+    # just for the KV numbers. Without this the container is handed over mid graph-capture and
+    # every request is refused.
+    ready = SERVING_RE if keep else READY_RE
+    try:
+        while time.monotonic() < deadline:
+            log = container_log(name)
+            if KV_RE.search(log) and ready.search(log):
+                break
+            if FAIL_RE.search(log):
+                break
+            alive = subprocess.run(["podman", "inspect", "-f", "{{.State.Running}}", name],
+                                   capture_output=True, text=True).stdout.strip()
+            if alive != "true":
+                break
+            time.sleep(poll)
+        else:
+            log += f"\n[llmkv] timed out after {timeout}s\n"
+    finally:
+        if log_path:
+            Path(log_path).write_text(log)
+        if not keep:
+            subprocess.run(["podman", "stop", "-t", "20", name], capture_output=True)
+            subprocess.run(["podman", "rm", "-f", name], capture_output=True)
+    return log
+
+
+def main(argv=None):
+    ap = argparse.ArgumentParser(prog="llmkv", description=__doc__,
+                                 formatter_class=argparse.RawDescriptionHelpFormatter)
+    ap.add_argument("profile")
+    ap.add_argument("--set", action="append", default=[], metavar="FLAG=VALUE",
+                    help="override a vllm flag, without the leading dashes; repeatable. "
+                         "A list-valued flag takes commas: cudagraph-capture-sizes=1,2,4,8")
+    ap.add_argument("--env", action="append", default=[], metavar="K=V",
+                    help="add a container environment variable; repeatable")
+    ap.add_argument("--port", type=int, default=9711, help="must be free (profile uses host net)")
+    ap.add_argument("--name", default=None, help="throwaway container name")
+    ap.add_argument("--timeout", type=float, default=900.0)
+    ap.add_argument("--label", default=None, help="recorded in the json output")
+    ap.add_argument("--out", default=None, help="write json here (and the startup log beside it)")
+    ap.add_argument("--json", action="store_true")
+    ap.add_argument("--dry-run", action="store_true", help="print the podman argv and stop")
+    ap.add_argument("--keep", action="store_true",
+                    help="leave the container running so a benchmark can use the same boot; "
+                         "stop it yourself with podman stop")
+    a = ap.parse_args(argv)
+
+    sets = {}
+    for s in a.set:
+        if "=" not in s:
+            raise SystemExit(f"llmkv: --set wants FLAG=VALUE, got {s!r}")
+        k, v = s.split("=", 1)
+        sets[k] = split_values(v)
+
+    cmd = extract_cmd(MODELS_YAML.read_text(), a.profile)
+    argv_full = split_argv(cmd, a.profile, a.port)
+    split_at = find_serve_split(argv_full)
+    argv_full, applied = apply_overrides(argv_full, split_at, sets)
+    # -e goes among podman's own options, which must all precede the image name
+    at = argv_full.index("run") + 1
+    for e in a.env:
+        argv_full[at:at] = ["-e", e]
+        at += 2
+    name = a.name or f"llmkv-{a.profile}"
+    argv_full = rename_and_isolate(argv_full, name)
+
+    if a.dry_run:
+        print(" ".join(shlex.quote(x) for x in argv_full))
+        return 0
+
+    log_path = (Path(a.out).with_suffix(".log")) if a.out else None
+    log = boot_and_read(argv_full, name, a.timeout, log_path=log_path, keep=a.keep)
+    parsed = parse_startup(log)
+
+    mml = None
+    try:
+        mml = int(argv_full[argv_full.index("--max-model-len") + 1])
+    except (ValueError, IndexError):
+        pass
+
+    result = {"profile": a.profile, "label": a.label,
+              "overrides": {k: {"was": w, "now": n} for k, (w, n) in applied.items()},
+              "env_added": a.env, "max_model_len": mml, **parsed}
+    if parsed["kv_cache_tokens"]:
+        result["concurrency"] = concurrency_table(parsed["kv_cache_tokens"], mml)
+
+    if a.out:
+        Path(a.out).write_text(json.dumps(result, indent=2))
+
+    if a.json:
+        print(json.dumps(result, indent=2))
+    elif not parsed["kv_cache_tokens"]:
+        tail = "\n".join(log.splitlines()[-25:])
+        print(f"llmkv: {a.profile} did not report a KV cache size. Last lines:\n{tail}",
+              file=sys.stderr)
+    else:
+        print(f"llmkv: {a.profile}" + (f"  [{a.label}]" if a.label else ""))
+        for flag, (was, now) in applied.items():
+            print(f"  override {flag}: {was} -> {now}")
+        for e in a.env:
+            print(f"  env {e}")
+        print(f"  KV cache: {parsed['kv_cache_tokens']:,} tokens"
+              f"  ({parsed['available_kv_gib_per_gpu']} GiB per GPU)")
+        if parsed["effective_util"]:
+            print(f"  gpu-memory-utilization: {parsed['requested_util']} requested, "
+                  f"{parsed['effective_util']} effective after cudagraph profiling")
+        if parsed["full_cudagraphs_captured"]:
+            print(f"  full decode graphs captured: {parsed['full_cudagraphs_captured']}")
+        if parsed["graph_mem_gib"] is not None:
+            print(f"  graph capture: {parsed['graph_mem_gib']} GiB per GPU"
+                  f" in {parsed['graph_capture_s']}s"
+                  f"  (requested sizes {parsed['requested_capture_sizes']})")
+        print(f"  {'context':>9}  {'streams':>8}")
+        for row in result["concurrency"]:
+            print(f"  {row['context']:>9,}  {row['streams']:>8.2f}")
+    return 0 if parsed["kv_cache_tokens"] else 1
+
+
+if __name__ == "__main__":
+    sys.exit(main())

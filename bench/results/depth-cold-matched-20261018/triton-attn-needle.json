@@ -1,0 +1,91 @@
+{
+  "model": "qwen3.8-27b-think",
+  "url": "http://127.0.0.1:8080/v1/chat/completions",
+  "label": "",
+  "words_per_token": 1.0002463661000247,
+  "retrieved": 9,
+  "total": 9,
+  "rows": [
+    {
+      "depth": 16384,
+      "depth_actual": 16388,
+      "position": 0.05,
+      "vault": "Borealis",
+      "code": "CCM-3770-ZXK",
+      "response": "CCM-3770-ZXK",
+      "hit": true
+    },
+    {
+      "depth": 16384,
+      "depth_actual": 16386,
+      "position": 0.5,
+      "vault": "Harrow",
+      "code": "UTE-7061-VRW",
+      "response": "UTE-7061-VRW",
+      "hit": true
+    },
+    {
+      "depth": 16384,
+      "depth_actual": 16385,
+      "position": 0.95,
+      "vault": "Harrow",
+      "code": "KDZ-7489-REC",
+      "response": "KDZ-7489-REC",
+      "hit": true
+    },
+    {
+      "depth": 65536,
+      "depth_actual": 65550,
+      "position": 0.05,
+      "vault": "Tanager",
+      "code": "JZM-9684-AQH",
+      "response": "JZM-9684-AQH",
+      "hit": true
+    },
+    {
+      "depth": 65536,
+      "depth_actual": 65552,
+      "position": 0.5,
+      "vault": "Zephyr",
+      "code": "UCR-5286-BAE",
+      "response": "UCR-5286-BAE",
+      "hit": true
+    },
+    {
+      "depth": 65536,
+      "depth_actual": 65552,
+      "position": 0.95,
+      "vault": "Kestrel",
+      "code": "ENW-1791-CTD",
+      "response": "ENW-1791-CTD",
+      "hit": true
+    },
+    {
+      "depth": 130752,
+      "depth_actual": 130781,
+      "position": 0.05,
+      "vault": "Harrow",
+      "code": "MNE-4164-YBC",
+      "response": "MNE-4164-YBC",
+      "hit": true
+    },
+    {
+      "depth": 130752,
+      "depth_actual": 130781,
+      "position": 0.5,
+      "vault": "Obsidian",
+      "code": "VMJ-3269-FXA",
+      "response": "VMJ-3269-FXA",
+      "hit": true
+    },
+    {
+      "depth": 130752,
+      "depth_actual": 130781,
+      "position": 0.95,
+      "vault": "Solstice",
+      "code": "BPR-1243-GQR",
+      "response": "BPR-1243-GQR",
+      "hit": true
+    }
+  ]
+}

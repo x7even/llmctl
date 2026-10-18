@@ -1,0 +1,143 @@
+{
+ "model": "a3-nomtp-triton",
+ "rows": [
+  {
+   "task": "date_math",
+   "mode": "think",
+   "sample": 0,
+   "passed": 3,
+   "total": 14,
+   "full_pass": false,
+   "fatal": null,
+   "finish": "stop",
+   "early_stop": "cut",
+   "completion_tokens": 24813,
+   "wall_s": 655.3,
+   "reasoning_chars": 48176,
+   "failed_tests": [
+    "test_ordinal_weekday",
+    "test_iso_week_vs_stdlib",
+    "test_from_iso_week_rules",
+    "test_add_days",
+    "test_parse_accepts",
+    "test_parse_rejects",
+    "test_format_date",
+    "test_diff_rule",
+    "test_diff_oracle_and_identity",
+    "test_validation_and_types",
+    "test_scale"
+   ]
+  },
+  {
+   "task": "date_math",
+   "mode": "think",
+   "sample": 1,
+   "passed": 14,
+   "total": 14,
+   "full_pass": true,
+   "fatal": null,
+   "finish": "stop",
+   "early_stop": "cut",
+   "completion_tokens": 36810,
+   "wall_s": 988.6,
+   "reasoning_chars": 77521,
+   "failed_tests": []
+  },
+  {
+   "task": "date_math",
+   "mode": "think",
+   "sample": 2,
+   "passed": 14,
+   "total": 14,
+   "full_pass": true,
+   "fatal": null,
+   "finish": "stop",
+   "early_stop": null,
+   "completion_tokens": 35079,
+   "wall_s": 940.3,
+   "reasoning_chars": 70556,
+   "failed_tests": []
+  },
+  {
+   "task": "date_math",
+   "mode": "think",
+   "sample": 3,
+   "passed": 14,
+   "total": 14,
+   "full_pass": true,
+   "fatal": null,
+   "finish": "stop",
+   "early_stop": null,
+   "completion_tokens": 27675,
+   "wall_s": 734.5,
+   "reasoning_chars": 60071,
+   "failed_tests": []
+  },
+  {
+   "task": "json_strict",
+   "mode": "think",
+   "sample": 0,
+   "passed": 14,
+   "total": 14,
+   "full_pass": true,
+   "fatal": null,
+   "finish": "stop",
+   "early_stop": null,
+   "completion_tokens": 25939,
+   "wall_s": 705.2,
+   "reasoning_chars": 70598,
+   "failed_tests": []
+  },
+  {
+   "task": "json_strict",
+   "mode": "think",
+   "sample": 1,
+   "passed": 12,
+   "total": 14,
+   "full_pass": false,
+   "fatal": null,
+   "finish": "stop",
+   "early_stop": "cut",
+   "completion_tokens": 33266,
+   "wall_s": 907.4,
+   "reasoning_chars": 106626,
+   "failed_tests": [
+    "test_string_errors_pos",
+    "test_differential_mutations"
+   ]
+  },
+  {
+   "task": "json_strict",
+   "mode": "think",
+   "sample": 2,
+   "passed": 14,
+   "total": 14,
+   "full_pass": true,
+   "fatal": null,
+   "finish": "stop",
+   "early_stop": null,
+   "completion_tokens": 29446,
+   "wall_s": 799.5,
+   "reasoning_chars": 88368,
+   "failed_tests": []
+  },
+  {
+   "task": "json_strict",
+   "mode": "think",
+   "sample": 3,
+   "passed": 12,
+   "total": 14,
+   "full_pass": false,
+   "fatal": null,
+   "finish": "stop",
+   "early_stop": "cut",
+   "completion_tokens": 25692,
+   "wall_s": 696.1,
+   "reasoning_chars": 76052,
+   "failed_tests": [
+    "test_string_errors_pos",
+    "test_differential_mutations"
+   ]
+  }
+ ]
+}

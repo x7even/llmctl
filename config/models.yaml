@@ -68,6 +68,18 @@ models:
       - qwen3.8
       - 27b-3.8
       - qwen3.8-27b
+    # llama-swap forwards the client's model string upstream; vLLM only
+    # answers to --served-model-name, so without this every alias 404s.
+    useModelName: qwen3.8-27b-code
+    # -e GPU_MAX_HW_QUEUES=1 in cmd is load-bearing on gfx1201, not a tuning knob.
+    # Without it this profile can come up in a slow decode band -- same kernels, same
+    # compiled graphs, ~15 us of idle between small kernel launches -- and serve at
+    # roughly half speed for the life of the container. Measured same-day on 4x R9700
+    # TP4, medium-256, --no-thinking, --requests 32: serial 35.6 -> 67.2 tok/s,
+    # conc=8 320.9 -> 357.6, conc=16 460.5 -> 536.8, i.e. within 4% of the stored
+    # baseline at every level. A fixed per-step tax, so it amortises with batch size
+    # (1.89x serial, 1.11x at conc=8) and costs nothing measurable either way.
+    # See docs/rdna4-decode-bands.md.
     cmd: |
       podman run --replace --rm
         --name llmstack-vllm-${MODEL_ID}
@@ -80,9 +92,10 @@ models:
         --shm-size=32g
         --network=host
         -v /mnt/models/llm:/models:ro
-        -v /home/xin/ai/llmstack/.vllm-cache:/root/.cache/vllm
-        -v /home/xin/ai/llmstack/.triton-cache:/root/.triton/cache
+        -v __LLMSTACK_DIR__/.vllm-cache:/root/.cache/vllm
+        -v __LLMSTACK_DIR__/.triton-cache:/root/.triton/cache
         -e HSA_ENABLE_SDMA=0
+        -e GPU_MAX_HW_QUEUES=1
         -e TORCH_BLAS_PREFER_HIPBLASLT=1
         --entrypoint=""
         docker.io/vllm/vllm-openai-rocm:v0.26.0
@@ -122,6 +135,37 @@ models:
     concurrencyLimit: 64
     aliases:
       - 27b-think
+    # llama-swap forwards the client's model string upstream; vLLM only
+    # answers to --served-model-name, so without this every alias 404s.
+    useModelName: qwen3.8-27b-think
+    # --attention-backend TRITON_ATTN in cmd is load-bearing for long context, not
+    # a preference. Without it vLLM auto-selects ROCM_ATTN, and because this profile
+    # has no MTP, every decode step has query_len=1 and routes to
+    # kernel_paged_attention_2d, whose grid is (num_seqs, num_kv_heads) -- at TP4 this
+    # model has 1 KV head per rank, so a single request decodes in ONE workgroup on a
+    # 64-CU GPU, walking the whole context serially. TRITON_ATTN's 3D path instead
+    # splits the context across NUM_PAR_SOFTMAX_SEGMENTS=16 and reduces, so the serial
+    # loop shortens by 16x. Measured 2026-10-18, TP4, --no-thinking, gen 128, serial
+    # decode tok/s, same image and profile either side, varying only this flag:
+    #   depth    1K    4K    16K    32K    64K    98K   131K
+    #   ROCM   40.0  26.6   11.4    6.4    3.4    2.0    1.4
+    #   TRITON 46.3  47.5   45.6   43.4   39.4   36.1   33.4
+    # i.e. 1.2x at 1K rising to 24x at 131K, and the curve goes flat. Retrieval is
+    # unaffected: bench/needle_check.py scores 15/15 on both, at 5 needle positions
+    # across 16K/64K/131K. See docs/rdna4-long-context.md.
+    #
+    # The 3D path also closes if num_seqs exceeds the threshold derived from
+    # --cudagraph-capture-sizes (here: 32). Do NOT raise --max-num-seqs above 32
+    # without re-measuring -- the path would silently switch off.
+    # -e GPU_MAX_HW_QUEUES=1 in cmd is load-bearing on gfx1201, not a tuning knob.
+    # Without it this profile can come up in a slow decode band -- same kernels, same
+    # compiled graphs, ~15 us of idle between small kernel launches -- and serve at
+    # roughly half speed for the life of the container. Measured same-day on 4x R9700
+    # TP4, medium-256, --no-thinking, --requests 32: serial 35.6 -> 67.2 tok/s,
+    # conc=8 320.9 -> 357.6, conc=16 460.5 -> 536.8, i.e. within 4% of the stored
+    # baseline at every level. A fixed per-step tax, so it amortises with batch size
+    # (1.89x serial, 1.11x at conc=8) and costs nothing measurable either way.
+    # See docs/rdna4-decode-bands.md.
     cmd: |
       podman run --replace --rm
         --name llmstack-vllm-${MODEL_ID}
@@ -134,9 +178,10 @@ models:
         --shm-size=32g
         --network=host
         -v /mnt/models/llm:/models:ro
-        -v /home/xin/ai/llmstack/.vllm-cache:/root/.cache/vllm
-        -v /home/xin/ai/llmstack/.triton-cache:/root/.triton/cache
+        -v __LLMSTACK_DIR__/.vllm-cache:/root/.cache/vllm
+        -v __LLMSTACK_DIR__/.triton-cache:/root/.triton/cache
         -e HSA_ENABLE_SDMA=0
+        -e GPU_MAX_HW_QUEUES=1
         -e TORCH_BLAS_PREFER_HIPBLASLT=1
         --entrypoint=""
         docker.io/vllm/vllm-openai-rocm:v0.26.0
@@ -144,6 +189,7 @@ models:
         --host 127.0.0.1
         --port ${PORT}
         --served-model-name qwen3.8-27b-think
+        --attention-backend TRITON_ATTN
         --dtype auto
         --tensor-parallel-size 4
         --max-model-len 131072
@@ -173,6 +219,18 @@ models:
     aliases:
       - 27b-fast
       - qwen3.8-nothink
+    # llama-swap forwards the client's model string upstream; vLLM only
+    # answers to --served-model-name, so without this every alias 404s.
+    useModelName: qwen3.8-27b-fast
+    # -e GPU_MAX_HW_QUEUES=1 in cmd is load-bearing on gfx1201, not a tuning knob.
+    # Without it this profile can come up in a slow decode band -- same kernels, same
+    # compiled graphs, ~15 us of idle between small kernel launches -- and serve at
+    # roughly half speed for the life of the container. Measured same-day on 4x R9700
+    # TP4, medium-256, --no-thinking, --requests 32: serial 35.6 -> 67.2 tok/s,
+    # conc=8 320.9 -> 357.6, conc=16 460.5 -> 536.8, i.e. within 4% of the stored
+    # baseline at every level. A fixed per-step tax, so it amortises with batch size
+    # (1.89x serial, 1.11x at conc=8) and costs nothing measurable either way.
+    # See docs/rdna4-decode-bands.md.
     cmd: |
       podman run --replace --rm
         --name llmstack-vllm-${MODEL_ID}
@@ -185,9 +243,10 @@ models:
         --shm-size=32g
         --network=host
         -v /mnt/models/llm:/models:ro
-        -v /home/xin/ai/llmstack/.vllm-cache:/root/.cache/vllm
-        -v /home/xin/ai/llmstack/.triton-cache:/root/.triton/cache
+        -v __LLMSTACK_DIR__/.vllm-cache:/root/.cache/vllm
+        -v __LLMSTACK_DIR__/.triton-cache:/root/.triton/cache
         -e HSA_ENABLE_SDMA=0
+        -e GPU_MAX_HW_QUEUES=1
         -e TORCH_BLAS_PREFER_HIPBLASLT=1
         --entrypoint=""
         docker.io/vllm/vllm-openai-rocm:v0.26.0
@@ -235,6 +294,9 @@ models:
       - qwen3.6
       - qwen3.6-35b
       - qwen3.6-35b-fp8
+    # llama-swap forwards the client's model string upstream; vLLM only
+    # answers to --served-model-name, so without this every alias 404s.
+    useModelName: qwen3.6-35b-code
     cmd: |
       podman run --replace --rm
         --name llmstack-vllm-${MODEL_ID}
@@ -247,8 +309,8 @@ models:
         --shm-size=32g
         --network=host
         -v /mnt/models/llm:/models:ro
-        -v /home/xin/ai/llmstack/.vllm-cache:/root/.cache/vllm
-        -v /home/xin/ai/llmstack/.triton-cache:/root/.triton/cache
+        -v __LLMSTACK_DIR__/.vllm-cache:/root/.cache/vllm
+        -v __LLMSTACK_DIR__/.triton-cache:/root/.triton/cache
         -e HSA_ENABLE_SDMA=0
         -e TORCH_BLAS_PREFER_HIPBLASLT=1
         --entrypoint=""
@@ -294,6 +356,9 @@ models:
     concurrencyLimit: 64
     aliases:
       - 35b-nomtp
+    # llama-swap forwards the client's model string upstream; vLLM only
+    # answers to --served-model-name, so without this every alias 404s.
+    useModelName: qwen3.6-35b-128k-nomtp
     cmd: |
       podman run --replace --rm
         --name llmstack-vllm-${MODEL_ID}
@@ -306,8 +371,8 @@ models:
         --shm-size=32g
         --network=host
         -v /mnt/models/llm:/models:ro
-        -v /home/xin/ai/llmstack/.vllm-cache:/root/.cache/vllm
-        -v /home/xin/ai/llmstack/.triton-cache:/root/.triton/cache
+        -v __LLMSTACK_DIR__/.vllm-cache:/root/.cache/vllm
+        -v __LLMSTACK_DIR__/.triton-cache:/root/.triton/cache
         -e HSA_ENABLE_SDMA=0
         -e TORCH_BLAS_PREFER_HIPBLASLT=1
         --entrypoint=""
@@ -352,6 +417,9 @@ models:
     aliases:
       - qwen3.6-fast
       - qwen3.6-nothin
+    # llama-swap forwards the client's model string upstream; vLLM only
+    # answers to --served-model-name, so without this every alias 404s.
+    useModelName: qwen3.6-35b-fast
     cmd: |
       podman run --replace --rm
         --name llmstack-vllm-${MODEL_ID}
@@ -364,9 +432,9 @@ models:
         --shm-size=32g
         --network=host
         -v /mnt/models/llm:/models:ro
-        -v /home/xin/ai/llmstack/config/templates:/templates:ro
-        -v /home/xin/ai/llmstack/.vllm-cache:/root/.cache/vllm
-        -v /home/xin/ai/llmstack/.triton-cache:/root/.triton/cache
+        -v __LLMSTACK_DIR__/config/templates:/templates:ro
+        -v __LLMSTACK_DIR__/.vllm-cache:/root/.cache/vllm
+        -v __LLMSTACK_DIR__/.triton-cache:/root/.triton/cache
         -e HSA_ENABLE_SDMA=0
         -e TORCH_BLAS_PREFER_HIPBLASLT=1
         --entrypoint=""
@@ -491,8 +559,11 @@ models:
     concurrencyLimit: 32
     aliases:
       - flash-next-vllm
+    # llama-swap forwards the client's model string upstream; vLLM only
+    # answers to --served-model-name, so without this every alias 404s.
+    useModelName: qwen3.8-flash-next-vllm
     cmd: |
-      /home/xin/ai/llmstack/scripts/llm-prestart
+      __LLMSTACK_DIR__/scripts/llm-prestart
         --need-free-gib 80
         --keep /mnt/models/llm/albucino/Qwen3.8-Flash-Next-W4A16-FP8PLE
         --
@@ -508,8 +579,8 @@ models:
         --ulimit memlock=-1:-1
         --network=host
         -v /mnt/models/llm:/models:ro
-        -v /home/xin/ai/llmstack/.vllm-cache:/root/.cache/vllm
-        -v /home/xin/ai/llmstack/.triton-cache:/root/.triton/cache
+        -v __LLMSTACK_DIR__/.vllm-cache:/root/.cache/vllm
+        -v __LLMSTACK_DIR__/.triton-cache:/root/.triton/cache
         -e HSA_ENABLE_SDMA=0
         -e TORCH_BLAS_PREFER_HIPBLASLT=1
         -e VLLM_ROCM_USE_AITER=0
@@ -648,6 +719,9 @@ models:
     aliases:
       - gemma4-vllm
       - gemma4-concurrent
+    # llama-swap forwards the client's model string upstream; vLLM only
+    # answers to --served-model-name, so without this every alias 404s.
+    useModelName: gemma4-26b-a4b
     cmd: |
       podman run --replace --rm
         --name llmstack-vllm-${MODEL_ID}
@@ -660,8 +734,8 @@ models:
         --shm-size=32g
         --network=host
         -v /mnt/models/llm:/models:ro
-        -v /home/xin/ai/llmstack/.vllm-cache:/root/.cache/vllm
-        -v /home/xin/ai/llmstack/.triton-cache:/root/.triton/cache
+        -v __LLMSTACK_DIR__/.vllm-cache:/root/.cache/vllm
+        -v __LLMSTACK_DIR__/.triton-cache:/root/.triton/cache
         -e HSA_ENABLE_SDMA=0
         -e TORCH_BLAS_PREFER_HIPBLASLT=1
         --entrypoint=""
@@ -707,6 +781,9 @@ models:
     aliases:
       - gemma4-fp8
       - gemma4-fast-vllm
+    # llama-swap forwards the client's model string upstream; vLLM only
+    # answers to --served-model-name, so without this every alias 404s.
+    useModelName: gemma4-26b-fp8
     cmd: |
       podman run --replace --rm
         --name llmstack-vllm-${MODEL_ID}
@@ -719,8 +796,8 @@ models:
         --shm-size=32g
         --network=host
         -v /mnt/models/llm:/models:ro
-        -v /home/xin/ai/llmstack/.vllm-cache:/root/.cache/vllm
-        -v /home/xin/ai/llmstack/.triton-cache:/root/.triton/cache
+        -v __LLMSTACK_DIR__/.vllm-cache:/root/.cache/vllm
+        -v __LLMSTACK_DIR__/.triton-cache:/root/.triton/cache
         -e HSA_ENABLE_SDMA=0
         -e TORCH_BLAS_PREFER_HIPBLASLT=1
         --entrypoint=""
@@ -746,17 +823,58 @@ models:
 # ── Template for adding new models ──────────────────────────────────────────
 #
 # # vLLM (safetensors / FP8 / AWQ):
+# #
+# # Five things below are mandatory, not style. Omit 1 and startup dies with
+# # "unrecognized arguments"; omit 2 or 3 and the first start takes 18+ minutes;
+# # omit 4 and every alias 404s; omit 5 and the profile looks healthy while serving
+# # at roughly half speed. See the root CLAUDE.md "vLLM profiles: mandatory flags".
+# #
+# # Keep the cmd body to arguments only. It is a YAML block scalar and llama-swap
+# # v223+ runs it without a shell, so a "#" line inside it is argv text, not a
+# # comment. All commentary belongs up here, as on the live profiles above.
+# #
+# #   (1) --entrypoint="" nullifies the AMD image's broken ENTRYPOINT; then invoke
+# #       "vllm serve" explicitly.
+# #   (2) --cudagraph-capture-sizes: without it vLLM enumerates ~2000+ shapes and the
+# #       first start takes 18+ minutes. Never reach for --enforce-eager instead -- it
+# #       costs 10-20% throughput permanently. The listed values are measured; see
+# #       docs/rdna4-decode-bands.md before changing them.
+# #   (3) both compile-cache mounts: without them torch.compile and Triton re-run on
+# #       every start (~14 min). __LLMSTACK_DIR__ is a placeholder -- run
+# #       scripts/configure to write the real path into your working copy, and never
+# #       commit the substituted form (tests/test_configure.py enforces this).
+# #   (4) useModelName must equal --served-model-name, or every alias 404s: llama-swap
+# #       routes by alias but forwards the client's model string to a backend that
+# #       only answers to --served-model-name.
+# #   (5) -e GPU_MAX_HW_QUEUES=1 is load-bearing on gfx1201. Without it a container can
+# #       draw the slow decode band and serve at ~half speed for its whole life with
+# #       nothing in the logs (27B at TP4: serial 35.6 -> 67.2 tok/s). It is not a
+# #       blanket win -- it measured neutral on Flash-Next -- so give a new profile the
+# #       flag from the start, then classify the spawn with scripts/llmband.
+# #       docs/rdna4-decode-bands.md.
+# #
+# # Also: --max-num-seqs above 32 closes TRITON_ATTN's 3D split-KV path
+# # (docs/rdna4-long-context.md). Never combine --quantization awq with
+# # --enable-expert-parallel; it crashes mid-startup with an IndexError. For an MoE
+# # model add the tuned expert configs, or every MoE layer falls back to an untuned
+# # kernel:  -v __LLMSTACK_DIR__/vllm-tuned-configs:/vllm-tuned-configs:ro
+# # and  -e VLLM_TUNED_CONFIG_FOLDER=/vllm-tuned-configs
 # my-new-model:
 #   name: "Human Readable Name"
-#   ttl: 600
+#   # TTL 0 unless measured otherwise: llama-swap starts the TTL clock at container
+#   # launch, not when the model becomes healthy, so any TTL below the ~2-3 min cold
+#   # start unloads the model the moment it finishes loading.
+#   ttl: 0
 #   metadata:                      # required: see config/CLAUDE.md "Profile requirements"
 #     requires:
 #       gpus: [2, 4]               # valid tensor-parallel sizes (list), not min_gpus
 #       estimate: true             # drop once measured on this rig
 #       note: "why these counts"
 #   checkEndpoint: /health
+#   concurrencyLimit: 32           # == --max-num-seqs, or slightly above
 #   aliases:
 #     - shortname
+#   useModelName: my-new-model     # (4) must equal --served-model-name below
 #   cmd: |
 #     podman run --replace --rm
 #       --name llmstack-vllm-${MODEL_ID}
@@ -769,17 +887,26 @@ models:
 #       --shm-size=32g
 #       --network=host
 #       -v /mnt/models/llm:/models:ro
+#       -v __LLMSTACK_DIR__/.vllm-cache:/root/.cache/vllm
+#       -v __LLMSTACK_DIR__/.triton-cache:/root/.triton/cache
 #       -e HSA_ENABLE_SDMA=0
-#       -e VLLM_ROCM_USE_AITER=0
-#       localhost/vllm-rdna4:rocm7.1.1-navi-fixed
-#       serve /models/<local-model-dir>
+#       -e GPU_MAX_HW_QUEUES=1
+#       -e TORCH_BLAS_PREFER_HIPBLASLT=1
+#       --entrypoint=""
+#       docker.io/vllm/vllm-openai-rocm:v0.26.0
+#       vllm serve /models/<local-model-dir>
 #       --host 127.0.0.1
 #       --port ${PORT}
 #       --served-model-name my-new-model
 #       --dtype auto
 #       --tensor-parallel-size 4
-#       --gpu-memory-utilization 0.90
+#       --max-model-len 131072
+#       --max-num-seqs 32
+#       --gpu-memory-utilization 0.95
+#       --enable-prefix-caching
+#       --enable-chunked-prefill
 #       --trust-remote-code
+#       --cudagraph-capture-sizes 1 2 4 8 16 32
 #   cmdStop: podman stop llmstack-vllm-${MODEL_ID}
 #
 # # llama-server (GGUF):

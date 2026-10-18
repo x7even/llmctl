@@ -1,0 +1,9 @@
+{
+  "qwen3.8-flash-next-vllm": {
+    "accepted_per_step": 1.0,
+    "calibrated": "2026-10-18T14:01:10Z",
+    "mem_busy": 32.36764705882353,
+    "steps_s": 58.408313648428255,
+    "tok_s": 58.408313648428255
+  }
+}
