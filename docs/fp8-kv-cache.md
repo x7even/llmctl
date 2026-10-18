@@ -140,6 +140,35 @@ roughly six minutes** — no scheduler progress, no throughput line — then the
 looks for a fleet: a step that long stalls every co-batched stream, not only the long one. The
 flag's whole appeal was concurrency at depth, and a six-minute step is the opposite of that.
 
+### It is steady state, not a one-time cost
+
+The obvious hope was that 455 s was something that happens once — a kernel compile the two
+crashed boots never survived long enough to write, or a per-process autotune. Three full-length
+cells on one FP8 boot, each with a **different `--seed`** so the prompt differs and prefix caching
+cannot hand a later run a free ride:
+
+| cell | needle | time | prefix cache hit rate | result |
+|---|---|---|---|---|
+| seed 1 | `CCM-3770-ZXK` | **458 s** | 0.0% | retrieved |
+| seed 7 | `MNE-4164-YBC` | **457 s** | 2.3% | retrieved |
+| seed 23 | `NUF-4576-FGF` | **457 s** | 2.3% | retrieved |
+
+Three distinct needles, so three genuinely different prompts; no cache help; and all three within
+a second of each other and of the separate boot's 455 s. **Nothing amortises.** Every full-length
+request costs this, so there is no warmup step that would make the flag shippable. The variance
+being this small is itself informative — it is the signature of a fixed per-token cost in the
+kernel, not of contention or scheduling luck.
+
+Two one-time explanations are ruled out from the logs rather than by argument:
+
+- **Nothing was compiled during the stall.** The Triton cache holds 26,865 files and **zero** were
+  written during the six-minute window. (Check this with `find -L` — the cache paths in a worktree
+  are symlinks into the main checkout, and a plain `find` silently reports an empty cache.)
+- **The JIT monitor is identical on both arms.** vLLM's `jit_monitor` warns when a Triton kernel
+  compiles during inference. It fires three times on the FP8 arm — and the bf16 control arm logs
+  exactly the same count — all of them during the short calibration probe, before the deep request
+  starts. Whatever the deep request is doing, it is not compiling.
+
 ### Why the chunk is 31,360 and not 32,768 — and why that is *not* the cause
 
 The chunk size quantizes to the attention block size, and FP8 does change the block size. This is
@@ -187,6 +216,43 @@ Each of these was checked rather than assumed, because each is what the symptom 
   and still did not predict the failure — the gate was never the risk.)
 - **Not a slow decode-band draw.** Both arms carried `GPU_MAX_HW_QUEUES=1`
   (`docs/rdna4-decode-bands.md`), and the failure is in prefill, not decode.
+- **Not a hang.** With the watchdog raised the same request completes and returns the right
+  needle, three times out of three, engine alive.
+- **Not a one-time cost.** Three different-seed cells on one boot: 458 s, 457 s, and a separate
+  boot's 455 s. No compile during the stall, no JIT difference against the control.
+- **Not coarser prefill chunks.** FP8's chunk is *smaller* than bf16's — see above. This was the
+  first draft's stated mechanism and it was backwards.
+
+## Leading hypothesis: it halves the parallelism the 3D path depends on
+
+**Labelled as a hypothesis, because it has not been measured.** It is, however, the first thing
+to test, and it follows from something this repo already documents.
+
+`docs/rdna4-long-context.md` establishes that on gfx1201 **nothing parallelises over context
+length** unless TRITON_ATTN's 3D split-KV path is open — ROCm's custom paged-attention kernel is
+disqualified by `head_dim = 256`, and the 2D fallback launches `(num_seqs, num_kv_heads)`, which
+at TP4 and conc=1 is a single workgroup no matter how deep the prompt is. The whole reason
+`qwen3.8-27b-think` ships `--attention-backend TRITON_ATTN` is to keep that 3D path open, and the
+profile is 24x faster at 131K because of it.
+
+FP8 doubles the attention block size, 784 -> 1568. That **halves the number of KV blocks** over
+which the kernel has the option to split its work. On a path whose entire value is that it has a
+segment dimension to parallelise over, and on a GPU the same document describes as starved for
+work to distribute at depth, halving the splittable units is a credible way to lose a large
+multiple — and it would bite hardest exactly where it is observed: deep, low-concurrency,
+prefill-dominated requests.
+
+This fits the evidence better than the alternatives. It explains why the penalty is in the
+attention kernel rather than in chunk geometry, why it is steady state and amortises away over
+nothing, why it scales with depth rather than appearing at 16K, and why the 2.4% *smaller* FP8
+chunk does not help. It also lines up with vllm#57126 below, which reports the Triton
+paged-attention path software-converting FP8 K/V: a conversion cost and a parallelism loss are
+not exclusive, and both would land on the same kernel.
+
+What would test it: the block size is forced up only by the mamba/attention page-equality
+constraint on this hybrid model, so a non-hybrid FP8 model on the same backend should not show
+the doubling, and should not show this penalty. Failing that, instrument the 3D predicate and
+count the segments actually launched on each arm.
 
 ## A related code fact, which is *not* the cause
 
