@@ -316,6 +316,28 @@ explanation someone will reach for again:
 | `qwen3.8-27b-code` | yes | ROCM_ATTN (auto) | MTP gates the 3D path shut, so the flag would do nothing; keeps its short-context MTP advantage |
 | `qwen3.8-27b-fast` | yes | ROCM_ATTN (auto) | as above |
 
+**What "auto" actually resolves to.** The selector does not simply prefer ROCM_ATTN — it first
+picks a backend that turns out to be unusable, then falls back. On a cold boot of the no-MTP
+profile *without* the flag, all four ranks log:
+
+```
+rocm.py:615] Found incompatible backend(s) [TURBOQUANT] with AttentionType.DECODER.
+             Overriding with ROCM_ATTN out of potential backends: ['ROCM_ATTN', 'TRITON_ATTN'].
+```
+
+TRITON_ATTN is in the candidate list the whole time; it is simply ordered second, and nothing in
+that message hints that the ordering costs 24× at depth. With the flag the line instead reads
+`rocm.py:570] Using TRITON_ATTN backend (selected via --attention-backend)`.
+
+Those two lines are the only reliable way to know which kernel is actually serving. An
+unrecognised `--attention-backend` value falls through to auto-selection **without an error**,
+and `VLLM_ATTENTION_BACKEND` is not read at all in 0.26.0 — so a profile can look correct and
+silently serve on the collapsing path. Check the log, not the config.
+
+One useful control from the same matched pair: the KV pool is **identical** on both arms —
+`GPU KV cache size: 1,126,917 tokens`, `Maximum concurrency for 131,072 tokens per request:
+8.60x`. Whatever the backend changes, it is not how much context fits.
+
 **The flag does nothing on an MTP profile.** Adding `--attention-backend TRITON_ATTN` to
 `27b-code` leaves `max_seqlen_q = 3`, so `use_3d` is still false and decode still goes to a 2D
 grid. Choosing the long-context path means giving up MTP; it is one decision, not two.
