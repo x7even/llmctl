@@ -38,12 +38,17 @@ is the clue that the problem is not arithmetic throughput at all.
 
 ---
 
-## Why: three gates, all keyed on `query_len`
+## Why: four gates, all keyed on `query_len`
 
 Attention decode on this model at TP4 can take one of four code paths. Which one it takes is
 decided by the attention backend and by the number of query tokens per decode step — and
 *every* path that parallelises over the context length is gated off by something this stack
 was doing.
+
+Three of the gates are properties of a profile, and the fix below opens all three. The
+fourth is a property of each individual step, cannot be configured away, and is what
+separates the benchmark numbers from what a mixed-traffic fleet will see; it is documented
+after the first three because it only becomes relevant once they are open.
 
 The model shape matters, so take it from the checkpoint config: 64 layers at
 `full_attention_interval=4` (16 full-attention, 48 gated-delta-net), `head_dim=256`,
@@ -120,6 +125,55 @@ of 16 and each program walks 1/16 of the context. Serial loop iterations at 98K:
 384 against 3072 is the 8× that shows up as A3's flat curve.
 
 ---
+
+## Gate 4 — a prefill chunk in the batch closes the path for the decoders beside it
+
+The three gates above are properties of a profile. This one is a property of each *step*,
+and it is what bounds the win on a real fleet rather than on a benchmark.
+
+`use_3d` is evaluated per batch, from a single batch-wide scalar:
+
+```python
+# vllm/v1/attention/backends/triton_attn.py, TritonAttentionBuilder.build
+max_query_len = common_attn_metadata.max_query_len      # passed straight through
+```
+
+`common_attn_metadata.max_query_len` is `max_num_scheduled_tokens` — the **maximum over all
+requests in the batch** of tokens scheduled for that request (`gpu_model_runner.py`). A
+decoding request contributes 1. A chunked-prefill request contributes its whole chunk.
+
+So with `--enable-chunked-prefill` on, any step that carries a prefill chunk has
+`max_seqlen_q` equal to that chunk length, `use_3d` is false, and **every deep decoder
+sharing that step falls back to the 2D grid** — the same single-workgroup walk the fix was
+meant to avoid. It is not partial: the predicate is one boolean for the whole batch.
+
+TRITON_ATTN has no mitigation for this. Unlike several other backends it defines no
+`reorder_batch` and never calls `split_decodes_and_prefills`, so it cannot build separate
+decode metadata with its own smaller `max_query_len`:
+
+```console
+$ grep -n 'split_decodes\|reorder_batch\|def build' .../triton_attn.py
+185:    def build_for_cudagraph_capture(
+195:    def build(
+```
+
+What this does and does not change:
+
+- **It does not change the profile comparison.** The auto-selected ROCM_ATTN path is on a
+  2D grid in *every* step, mixed or not. TRITON_ATTN is on the 3D path in pure-decode steps
+  and matches ROCM_ATTN otherwise, so it is never worse. The fix stands.
+- **It does bound the magnitude.** The depth × concurrency matrix in this document was
+  measured with `--prewarm`, i.e. on prefix-cache hits, so almost every step was a pure
+  decode and the 3D path was open almost always. A fleet sending *unique* long prompts
+  interleaves real prefill chunks continuously, and in that regime the measured speedups are
+  a ceiling, not an expectation.
+- **The number to quote for a mixed fleet has not been measured yet.** Do not interpolate
+  it: the fraction of steps carrying a prefill depends on arrival rate, prompt length and
+  `--max-num-batched-tokens`, none of which the matrix varied.
+
+This is also the reason a long-context stress test must record **decode rate during the
+run**, not merely that no request timed out. "Everything finished" is compatible with every
+decoder having run on the 2D path the whole time.
 
 ## The threshold that can silently close the path again
 

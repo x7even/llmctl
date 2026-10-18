@@ -104,6 +104,11 @@ with the model's own recipe failing the same way, so it was not adopted.
 3. Run the model card's own recipe verbatim, as a config-vs-model check.
 4. Long-context stress: ~7 concurrent unique ~100K-token prompts (~690K tokens total) must all finish, with
    no timeouts, under the profile's real `--gpu-memory-utilization`. This is what separates 0.95 from 0.97.
+   **Record the decode rate during the run, not just that nothing timed out.** "Everything finished" is
+   compatible with every request having run on the slow kernel path the whole time: `use_3d` is decided per
+   batch from a batch-wide `max_query_len`, so a step carrying a prefill chunk drops the decoders beside it
+   to the 2D grid (`docs/rdna4-long-context.md`, gate 4). Unique prompts mean continuous real prefill, which
+   is exactly the regime a `--prewarm` matrix does not measure.
 5. Keep throwaway routers and containers on a separate port and name, and leave the shipped profile untouched
    until every step passes.
 
