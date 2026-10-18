@@ -3,8 +3,8 @@
 Unit tests for scripts/llmband (slow-decode-band detector for gfx1201 vLLM servers):
 the band decision from step rate against a stored baseline, the refusal to decide without one,
 the gpu_busy guard, mem_busy's corroborating-only role, dropping idle cards and idle samples,
-card discovery, baseline round-tripping, and that errors come back as "undecided" with exit
-status 2 rather than as a crash.
+card discovery, baseline round-tripping, that the warmup decode runs before the measured one,
+and that errors come back as "undecided" with exit status 2 rather than as a crash.
 
 No GPU and no server are needed: the sysfs tree is a temp directory and the counters and
 baselines are supplied directly.
@@ -259,7 +259,64 @@ def test_cli_help_works_without_requests_installed():
     assert "slow decode band" in r.stdout
 
 
+# ─── warmup ──────────────────────────────────────────────────────────────────────────
+
+MEASURED = {"steps_s": 36.0, "mem_busy": 46.0, "gpu_busy": 100.0,
+            "tok_s": 81.0, "accepted_per_step": 2.25}
+
+
+def _main_with_stubs(extra_args, warmup, measure):
+    """Run main() with warmup/measure replaced, restoring them afterwards."""
+    real_w, real_m = band.warmup, band.measure
+    band.warmup, band.measure = warmup, measure
+    try:
+        with tempfile.TemporaryDirectory() as d:
+            base = Path(d) / "b.json"
+            base.write_text(json.dumps({"x": {"steps_s": 36.0, "mem_busy": 46.0}}))
+            return band.main(["--model", "x", "--baselines", str(base), "--json", *extra_args])
+    finally:
+        band.warmup, band.measure = real_w, real_m
+
+
+def test_warmup_runs_before_the_measured_decode_by_default():
+    """The measured run must not be the server's first decode.
+
+    A server's first decode after startup runs ~12% below steady state, which is the same
+    order as the slow-band tolerance, so an unwarmed probe of a healthy cold spawn reads
+    `undecided`. The ordering is the whole point: warm first, then measure.
+    """
+    calls = []
+    rc = _main_with_stubs(
+        [],
+        lambda base, model, tok, timeout: calls.append(("warmup", tok)),
+        lambda *a, **k: (calls.append(("measure", None)), MEASURED)[1])
+    assert rc == 0
+    assert calls == [("warmup", 128), ("measure", None)], calls
+
+
+def test_warmup_tokens_zero_skips_it():
+    """Needed to diagnose the warmup effect itself; nothing else should use it."""
+    calls = []
+    rc = _main_with_stubs(
+        ["--warmup-tokens", "0"],
+        lambda *a, **k: calls.append("warmup"),
+        lambda *a, **k: MEASURED)
+    assert rc == 0
+    assert calls == [], calls
+
+
+def test_a_failing_warmup_does_not_become_a_band_verdict():
+    """A warmup that cannot reach the server must not be reported as slow, or at all.
+
+    The real request is what surfaces an unreachable server, as "undecided"/2.
+    """
+    r = _run(["--model", "nope", "--base", "http://127.0.0.1:1", "--json", "--timeout", "3"])
+    assert r.returncode == 2, r.stderr
+    assert '"verdict": "undecided"' in r.stdout
+
+
 if __name__ == "__main__":
+
     fns = [v for k, v in sorted(globals().items()) if k.startswith("test_") and callable(v)]
     failed = 0
     for fn in fns:

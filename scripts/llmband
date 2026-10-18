@@ -29,6 +29,15 @@ A baseline is required, and there is no universal threshold to fall back on:
     mem_busy is still reported, and compared against the baseline's own mem_busy, but it only
     corroborates; it never decides on its own.
 
+Every run warms up first, with one discarded decode, and this is not optional padding. A
+server's first decode after startup runs ~12% below its steady state - measured 4/4 cold
+first-probes at 31.5-31.7 steps/s against 4/4 warm probes at 36.2 on the same containers, with
+prefill already excluded from both. 12% is the same order as the slow-band tolerance, so an
+unwarmed probe of a healthy cold spawn lands at the floor and reads `undecided`. Since the whole
+point of the tool is to be run on a *just-started* server, an unwarmed baseline is not
+comparable with the runs it is used to judge. `--warmup-tokens 0` disables it, for diagnosing
+the warmup effect itself and nothing else.
+
 Exit status: 0 fast band, 1 slow band, 2 undecided (including any error, and including "no
 baseline yet"). Undecided is never reported as slow: a false "restart the server" is worse than
 no answer.
@@ -158,6 +167,37 @@ def classify(steps_s, baseline, mem_busy=None, gpu_busy=None,
     return by_steps, reasons
 
 
+def warmup(base, model, max_tokens, timeout):
+    """One discarded decode, so the measured run is not the process's first.
+
+    A server's first decode after startup runs ~12% below its steady-state step rate, and the
+    gap is reproducible: four cold first-probes on this hardware read 31.5-31.7 steps/s while
+    four warm probes on the same containers read 36.2. The deficit is in decode itself, not in
+    prefill - measure() already excludes TTFT - so it is in-process lazy work that the first
+    pass pays for (kernel/autotune selection, allocator growth) and later passes do not.
+
+    That 12% matters because it is the same order as the slow-band tolerance, so an unwarmed
+    probe of a perfectly healthy cold spawn lands at the floor and classifies `undecided`,
+    which is the one verdict that carries no information. Warming makes a cold probe and a warm
+    probe comparable, which is what lets one baseline serve both.
+
+    Failures are swallowed: a warmup that does not work must not turn into a band verdict. The
+    real request will surface the problem.
+    """
+    import requests
+
+    try:
+        requests.post(f"{base}/v1/chat/completions",
+                      json={"model": model,
+                            "messages": [{"role": "user", "content": PROMPT}],
+                            "max_tokens": max_tokens, "min_tokens": max_tokens,
+                            "temperature": 0.0, "ignore_eos": True, "stream": False,
+                            "chat_template_kwargs": {"enable_thinking": False}},
+                      timeout=timeout)
+    except Exception:
+        pass
+
+
 def measure(base, model, max_tokens, timeout, ignore_eos=True):
     """One streamed single-stream decode, sampling the busy counters throughout.
 
@@ -261,9 +301,16 @@ def main(argv=None):
     ap.add_argument("--baselines", default=str(BASELINES))
     ap.add_argument("--timeout", type=float, default=600.0)
     ap.add_argument("--json", action="store_true")
+    ap.add_argument("--warmup-tokens", type=int, default=128,
+                    help="length of the discarded warmup decode; 0 skips it. A server's first "
+                         "decode runs ~12%% slow, which is the same order as --tolerance, so "
+                         "skipping the warmup makes a healthy cold spawn read undecided "
+                         "(default 128)")
     a = ap.parse_args(argv)
 
     try:
+        if a.warmup_tokens > 0:
+            warmup(a.base, a.model, a.warmup_tokens, a.timeout)
         m = measure(a.base, a.model, a.max_tokens, a.timeout)
     except Exception as e:                                  # never crash a caller
         if a.json:
