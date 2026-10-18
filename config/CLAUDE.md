@@ -542,9 +542,15 @@ neither of which predicted the failure:
   `--max-num-batched-tokens`, and FP8 doubles that block size, 784 -> 1568 (forced by the
   hybrid model's mamba/attention page-equality constraint). So FP8's chunk is 20 x 1568 =
   31,360 against bf16's 41 x 784 = 32,144 — it does **less** work per step and still takes six
-  times as long. The cost is inside the attention kernel. The leading hypothesis, untested, is
-  that halving the KV block count halves the segments TRITON_ATTN's 3D path can split across,
-  on a GPU `docs/rdna4-long-context.md` already describes as parallelism-starved at depth.
+  times as long. The cost is inside the attention kernel, and it is **proportional to KV
+  tokens**: fitting both arms across the depth ladder separates a linear from a quadratic term
+  and gives prefill's non-attention cost as unchanged (1.03x) against its attention term at
+  **9.03x**, with decode's fixed weight-path cost unchanged to 0.17% (20.868 -> 20.833 ms per
+  token) against **3.96x** per KV token. Nothing that does not scale with the KV cache got
+  slower. The leading candidate is therefore the per-KV-token software FP8 conversion in the
+  Triton paged-attention path (vllm#57126), not a parallelism loss — TRITON_ATTN's 3D split-KV
+  path is gated off on any step carrying a prefill chunk, so it cannot account for the prefill
+  term at all.
 - **The precedent that it can go wrong is image-level, not flag-level.** On the 2026-10-15
   Radiance canary, FP8 KV fell back to Triton paged attention and cost 35-46% of decode at 8K+
   with 2x TTFT. That was measured on a different image and does not transfer to v0.26.0 — but
