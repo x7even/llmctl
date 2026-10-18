@@ -240,8 +240,16 @@ def run_cell(url, model, depth_words, conc, gen, timeout, no_thinking, headers,
         "ttft_s_p90": ttfts[min(len(ttfts) - 1, int(0.9 * len(ttfts)))],
         "e2e_s_max": max(r["wall_s"] for r in ok),
         "accepted_per_step": statistics.fmean(r["accepted_per_step"] for r in ok),
+        # Aggregate prefill throughput: all the prompt tokens in the batch, over the window
+        # in which the batch's prefills actually finished -- which ends at the LAST TTFT, not
+        # the mean one. Dividing a sum by a mean is not a rate: it silently rewards a
+        # scheduler that front-loads a few streams, and inflates with concurrency even when
+        # the batch took longer in total.
         "prefill_tok_s": (sum(r["prompt_tokens"] for r in ok)
-                          / max(statistics.fmean(ttfts), 1e-9)),
+                          / max(max(ttfts), 1e-9)),
+        # Per-stream view of the same thing, for comparison against the serial cell.
+        "prefill_tok_s_per_stream_mean": statistics.fmean(
+            r["prompt_tokens"] / max(r["ttft_s"], 1e-9) for r in ok),
     }
 
 

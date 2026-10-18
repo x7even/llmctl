@@ -1,0 +1,46 @@
+{
+  "model": "a4b-nomtp-rocm",
+  "url": "http://127.0.0.1:9199/v1/chat/completions",
+  "label": "A4 no-MTP default backend, COLD (real prefill)",
+  "gen": 256,
+  "no_thinking": true,
+  "shared_prefix": false,
+  "words_per_token": 1.0002463661000247,
+  "timestamp": "2026-10-18T13:50:59",
+  "rows": [
+    {
+      "ok": 1,
+      "requested": 1,
+      "errors": [],
+      "prompt_tokens": 98327,
+      "completion_tokens": 256,
+      "agg_decode_tok_s": 1.9629913538246277,
+      "per_stream_tok_s_mean": 1.9629913538246277,
+      "per_stream_tok_s_min": 1.9629913538246277,
+      "ttft_s_mean": 50.4551040639999,
+      "ttft_s_p90": 50.4551040639999,
+      "e2e_s_max": 180.3588856080023,
+      "accepted_per_step": 1.0,
+      "prefill_tok_s": 1948.8018471882822,
+      "depth_requested": 98304,
+      "concurrency": 1
+    },
+    {
+      "ok": 4,
+      "requested": 4,
+      "errors": [],
+      "prompt_tokens": 98327,
+      "completion_tokens": 256,
+      "agg_decode_tok_s": 2.5113573768999875,
+      "per_stream_tok_s_mean": 1.3336967726739974,
+      "per_stream_tok_s_min": 0.6366262372121992,
+      "ttft_s_mean": 166.31084034349988,
+      "ttft_s_p90": 292.0995698309998,
+      "e2e_s_max": 406.7926524640061,
+      "accepted_per_step": 1.0,
+      "prefill_tok_s": 2364.896955530128,
+      "depth_requested": 98304,
+      "concurrency": 4
+    }
+  ]
+}

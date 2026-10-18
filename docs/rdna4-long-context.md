@@ -163,22 +163,41 @@ What this does and does not change:
   is on a 2D grid in *every* step, mixed or not. TRITON_ATTN is on the 3D path in pure-decode
   steps and falls back to the same 2D grid otherwise, so on the decode side it is never worse.
   The fix stands.
-- **That argument covers decode only, and the backend flag also changes prefill.** Selecting
-  TRITON_ATTN swaps the prefill kernel as well: its unified kernel replaces ROCM_ATTN's
-  `context_attention_fwd`. Nothing here measures that, because every depth × concurrency cell
-  in this document is `--prewarm`, i.e. a prefix-cache hit with almost no real prefill in it.
-  A 24× decode win dominates any plausible prefill delta on a long reply, so this does not
-  put the fix in doubt — but a long-prompt / short-reply workload (one big context, a few
-  tokens back) is **not characterised**, and that is exactly the shape of some agent traffic.
-  Measure it before recommending the flag for that regime.
-- **It does bound the magnitude.** The depth × concurrency matrix in this document was
-  measured with `--prewarm`, i.e. on prefix-cache hits, so almost every step was a pure
-  decode and the 3D path was open almost always. A fleet sending *unique* long prompts
-  interleaves real prefill chunks continuously, and in that regime the measured speedups are
-  a ceiling, not an expectation.
-- **The number to quote for a mixed fleet has not been measured yet.** Do not interpolate
-  it: the fraction of steps carrying a prefill depends on arrival rate, prompt length and
-  `--max-num-batched-tokens`, none of which the matrix varied.
+- **The backend flag also changes the prefill kernel — and that has now been measured.**
+  Selecting TRITON_ATTN swaps the prefill path too: its unified kernel replaces ROCM_ATTN's
+  `context_attention_fwd`. Every `--prewarm` cell in this document is a prefix-cache hit with
+  almost no real prefill in it, so none of them say anything about it. A matched cold pair does:
+  same checkpoint, same flags, no MTP on either arm, `GPU_MAX_HW_QUEUES=1` on both, unique
+  prompts, no prefix cache, 98,304-token prompts and a 256-token reply.
+
+  | conc | backend | per-stream decode | mean TTFT | max TTFT | agg prefill | e2e max |
+  |---|---|---|---|---|---|---|
+  | 1 | TRITON_ATTN | **35.9** tok/s | **46.8 s** | 46.8 s | 2,099 tok/s | **53.9 s** |
+  | 1 | ROCM_ATTN (auto) | 2.0 tok/s | 50.5 s | 50.5 s | 1,949 tok/s | 180.4 s |
+  | 4 | TRITON_ATTN | **10.6** tok/s | **82.2 s** | 140.7 s | 2,794 tok/s | **149.4 s** |
+  | 4 | ROCM_ATTN (auto) | 1.3 tok/s | 166.3 s | 292.1 s | 1,346 tok/s | 406.8 s |
+
+  **The clean prefill comparison is the `conc=1` row.** With one request in flight nothing
+  interleaves, so TTFT there is pure prefill: **46.8 s against 50.5 s, TRITON 7.7% faster.**
+  The prefill kernel is not a regression, and the long-prompt / short-reply regime that this
+  document previously listed as uncharacterised is no longer a reason to avoid the flag.
+
+  Do *not* read the `conc=4` TTFT gap (2.02×) as a prefill-kernel result. It is confounded in
+  TRITON's favour: ROCM_ATTN's decode is 8-18× slower, so its decode steps hold the GPU longer
+  and push the queued prefill chunks out behind them. Decode speed inflates TTFT at concurrency.
+  Aggregate prefill is reported as `sum(prompt_tokens) / max(TTFT)` for the same reason the
+  per-stream decode column is given: dividing a batch total by a *mean* TTFT is not a rate, and
+  rewards a scheduler that front-loads a few streams.
+- **Gate 4 is expensive but not decisive.** The same table is also the gate-4 measurement, and
+  it costs TRITON most of its serial margin: per-stream decode falls 35.9 → 10.6 tok/s going
+  from one stream to four unique 98K streams, because continuous real prefill keeps dropping the
+  co-batched decoders to the 2D grid. It still wins that cell **8.0×**, and end-to-end 2.7×.
+  What the gate does *not* do is reverse the decision.
+- **It still bounds the magnitude of the headline numbers.** The depth × concurrency matrix in
+  this document was measured with `--prewarm`, so almost every step was a pure decode and the 3D
+  path was open almost always. The 24× figure is a ceiling; 8× is what one measured mixed-traffic
+  cell gave. A fleet's real number depends on arrival rate, prompt length and
+  `--max-num-batched-tokens`, none of which was varied — so quote the cell, not an interpolation.
 
 This is also the reason a long-context stress test must record **decode rate during the
 run**, not merely that no request timed out. "Everything finished" is compatible with every
@@ -316,17 +335,21 @@ explanation someone will reach for again:
 | `qwen3.8-27b-code` | yes | ROCM_ATTN (auto) | MTP gates the 3D path shut, so the flag would do nothing; keeps its short-context MTP advantage |
 | `qwen3.8-27b-fast` | yes | ROCM_ATTN (auto) | as above |
 
-**What "auto" actually resolves to.** The selector does not simply prefer ROCM_ATTN — it first
-picks a backend that turns out to be unusable, then falls back. On a cold boot of the no-MTP
-profile *without* the flag, all four ranks log:
+**What "auto" actually resolves to.** On a cold boot of the no-MTP profile *without* the flag,
+all four ranks log:
 
 ```
 rocm.py:615] Found incompatible backend(s) [TURBOQUANT] with AttentionType.DECODER.
              Overriding with ROCM_ATTN out of potential backends: ['ROCM_ATTN', 'TRITON_ATTN'].
 ```
 
-TRITON_ATTN is in the candidate list the whole time; it is simply ordered second, and nothing in
-that message hints that the ordering costs 24× at depth. With the flag the line instead reads
+Read against the selector in `vllm/platforms/rocm.py`, that message decomposes into two separate
+facts. TURBOQUANT is *rejected* — it lands in `invalid_reasons` as incompatible with
+`AttentionType.DECODER`, and is never a candidate. The choice between the two survivors is then
+a priority sort (`sorted(..., key=lambda i: valid_backends_priorities[i][1])`, first element
+wins), and **ROCM_ATTN simply outranks TRITON_ATTN**. TRITON_ATTN was valid and available the
+whole time; it lost on a static priority, and nothing in that message hints the ordering costs
+24× at depth. With the flag the line instead reads
 `rocm.py:570] Using TRITON_ATTN backend (selected via --attention-backend)`.
 
 Those two lines are the only reliable way to know which kernel is actually serving. An
