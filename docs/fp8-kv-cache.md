@@ -194,8 +194,12 @@ name, one flag apart, `depth_bench.py --concurrency 1 --gen 32`:
 | 98,327 | 46.79 s | 261.05 s | **5.58x** | 36.6 | 21.5 | 1.70x |
 | 131,007 | 74.28 s | 455.51 s | **6.13x** | 33.9 | 18.2 | 1.86x |
 
-Every cell retrieved, `acc/step` 1.00 throughout, both engines alive at the end. Three readings
-come out of this table:
+Every cell completed and both engines were alive at the end. **This table says nothing about
+retrieval** — `depth_bench.py` sends filler with `ignore_eos` and never reads the reply, so it
+cannot see a wrong answer. Retrieval was checked separately, by `needle_check.py`, and was correct
+on both arms. (The harness also prints `acc/step 1.00` for every cell, which is a tautology on a
+profile with no speculative decoding and is evidence of nothing.) Three readings come out of this
+table:
 
 - **The penalty never goes away.** 1.85x at the shallowest depth measured. There is no crossover
   anywhere on the curve, so no cap makes this flag worth setting.
@@ -243,21 +247,74 @@ A free control fell out of this: the bf16 arm reads **33.9 tok/s at 131,007 toke
 arm is the shipped profile, confirmed rather than assumed, which is what licenses reading the
 other column as the flag's cost and nothing else.
 
-### And it is worse under concurrency, which was the entire point
+### Under light batching it still loses
 
-The flag's only argument was concurrency at depth. One modest fleet cell, 32,768 tokens x 4
-concurrent requests, `--gen 64`:
+One fleet cell, 32,768 tokens x 4 concurrent requests, `--gen 64`:
 
 | | mean TTFT | p90 TTFT | e2e | decode per stream |
 |---|---|---|---|---|
 | bf16 KV | 29.18 s | 39.19 s | 40.9 s | 19.3 tok/s |
 | FP8 KV | 102.00 s | 138.75 s | 140.9 s | 11.3 tok/s |
 
-**3.5x on TTFT, 3.5x on p90, 1.7x on per-stream decode** — and at 32,768 tokens the bigger pool
-is contributing nothing, because `--max-num-seqs 32` is the binding limit at that depth, not KV
-bytes. Go deeper, to where the pool does bind (above ~35K for bf16), and the extra capacity is
-real but the prefill penalty is 4.75x at 65K and 6.13x at 131K. Either way the trade is the same
-shape: at most 1.93x capacity against a 3.5-6x latency increase, which is not a trade.
+**3.5x on mean TTFT, 3.5x on p90, 1.7x on per-stream decode.** Be clear about what this cell is
+and is not: 4 x 32,775 = 131,100 tokens is **11.6% of the bf16 pool and 6.0% of the FP8 one**, and
+`--max-num-seqs 32` is nowhere near binding at 4. It is a light-load latency cell, not a test of
+the capacity claim. It shows the penalty survives batching; it does not address whether the extra
+capacity is worth anything.
+
+### The capacity claim, answered from the fit
+
+The flag's whole argument was concurrency at depth, and the right way to settle that is not one
+cell but the decomposition. Per decode step, the weight path is paid once and the attention work
+is paid per sequence, so step time is `c + B*d*n` for batch `B` at depth `n` (thousands of
+tokens), and aggregate decode is `B * 1000 / (c + B*d*n)`.
+
+Fit `c` and `d` on the conc=1 ladder **only**, then check the model against the prewarmed
+depth x concurrency matrix in `docs/rdna4-long-context.md` — a different run, prefix-cache hit,
+`gen 128`, aggregate tok/s:
+
+| depth | conc | measured | model | error | attention share of step |
+|---|---|---|---|---|---|
+| 4,096 | 1 | 47.7 | 47.3 | -0.8% | 1% |
+| 16,387 | 1 | 45.6 | 45.6 | -0.1% | 5% |
+| 65,536 | 1 | 39.4 | 39.7 | +0.8% | 17% |
+| 65,536 | 4 | 107.8 | 104.9 | -2.7% | 45% |
+| 65,536 | 8 | **143.4** | **144.5** | **+0.7%** | 62% |
+| 16,387 | 4 | 128.8 | 158.8 | +23.3% | 17% |
+| 16,387 | 8 | 192.3 | 271.2 | +41.0% | 29% |
+| 4,096 | 4 | 140.0 | 182.3 | +30.2% | 5% |
+| 4,096 | 8 | 269.6 | 347.4 | +28.9% | 9% |
+
+**The model is accurate to within 3% wherever attention is 45% or more of the step, and
+optimistic by 23-41% where the weight path dominates.** That is the expected failure: real `c`
+grows with batch size as the weight GEMMs become compute-bound, and the fit holds it constant.
+Every FP8 cell below is attention-dominated — 77% of the step at 65K x conc=4, 87% at conc=8 — so
+it is in the model's accurate regime, and the errors there are overestimates, which makes the FP8
+figures generous rather than unfair.
+
+Aggregate decode at 65,536 tokens:
+
+| conc | bf16 | FP8 | FP8/bf16 |
+|---|---|---|---|
+| 1 | 39.7 | 26.4 | 0.66x |
+| 4 | 104.9 | 44.8 | 0.43x |
+| 8 | 144.5 | 50.8 | 0.35x |
+| 16 | 178.0 | 54.4 | 0.31x |
+| 32 | 201.4 | 56.3 | 0.28x |
+
+And the comparison that actually matters — each arm at **its own** slot ceiling, `min(pool/depth,
+--max-num-seqs)`, which is the concurrency the flag was supposed to buy:
+
+| depth | bf16 slots | bf16 aggregate | FP8 slots | FP8 aggregate |
+|---|---|---|---|---|
+| 65,536 | 17 | **180.4 tok/s** | 32 | **56.3 tok/s** |
+| 131,072 | 8 | **89.0 tok/s** | 16 | **28.2 tok/s** |
+
+**Twice the slots, a third of the throughput.** This is the point the earlier drafts kept
+circling without stating: the per-KV-token penalty **multiplies by batch size** while the capacity
+only adds, so spending the extra slots makes aggregate throughput worse, not better. There is no
+operating point at which the bigger pool pays for itself. Labelled as a model — it is validated
+against bf16 measurements only, and the FP8 column has not been run.
 
 ### Why the chunk is 31,360 and not 32,768 — and why that is *not* the cause
 
@@ -321,18 +378,27 @@ Each of these was checked rather than assumed, because each is what the symptom 
 
 ## Mechanism: a per-KV-token cost in the attention kernel, and one secondary candidate
 
-Nothing here instruments the kernel, so this section ranks candidates rather than concluding.
-What the measurement constrains is narrow and useful: the cost is **proportional to KV tokens**,
-it is **inside attention** (the weight path is unchanged to 0.17%), and it is **larger in prefill
-(9.0x) than in decode (4.0x)**.
+Nothing here instruments the kernel. **Both candidates below are open**, and the honest summary
+is that the measurement constrains the shape of the cost without identifying it. What it does
+constrain: the cost is **proportional to KV tokens**, it is **inside attention** (the weight path
+is unchanged to 0.17%), and it is **larger in prefill (9.0x) than in decode (4.0x)**.
 
-**The leading candidate is the plain one.** vllm#57126 reports the Triton paged-attention path
-**software-converting** FP8 K/V on RDNA-class hardware rather than using a native FP8 load. A
-per-element conversion on every K and V element the kernel touches is exactly a KV-proportional
-attention cost, it lands on prefill and decode alike, it is steady state, and it needs no further
-assumptions. Read that issue before anything else here.
+**That asymmetry is the unexplained part, and it is the fact most likely to settle this.** Neither
+candidate has been shown to predict 9.0x prefill against 4.0x decode, and two considerations pull
+opposite ways. A per-element conversion is naturally amortised in prefill — a loaded K/V tile is
+converted once and reused across a whole query tile — which argues prefill should be hit *less*
+than decode, not more. Against that, decode touches half the bytes bf16 does and is still 4x
+slower, which says the decode path is not bandwidth-bound and so is not simply paying for data
+movement. Work out which way each candidate predicts the ratio before believing either.
 
-**The secondary candidate is a parallelism loss, and it can only apply to decode.**
+**Candidate 1: a per-KV-token software conversion.** vllm#57126 reports the Triton
+paged-attention path **software-converting** FP8 K/V on RDNA-class hardware rather than using a
+native FP8 load. A per-element conversion on every K and V element the kernel touches is
+KV-proportional attention cost by construction, it reaches both prefill and decode, and it is
+steady state. It needs no further assumptions about the grid. Read that issue first. It does not,
+on its own, explain the asymmetry.
+
+**Candidate 2: a parallelism loss, which can only apply to decode.**
 
 The reasoning, and the reason it is secondary rather than dead:
 `docs/rdna4-long-context.md` establishes that on gfx1201 **nothing parallelises over context

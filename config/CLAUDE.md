@@ -511,9 +511,20 @@ still cannot serve:
   shallower and take the pool anyway. A matched ladder against a bf16 control says no: the
   prefill penalty is already **1.85x at 8,193 tokens** and climbs monotonically — 2.50x at 16K,
   3.44x at 32K, 4.75x at 65K, 6.13x at 131K — with per-stream decode slower at every depth too
-  (1.86x at 131K). One fleet cell at 32,768 x conc=4, which is where the flag's concurrency
-  argument should have shown up, is **3.5x worse on TTFT and p90**. There is no crossover, so no
-  cap makes this worth setting.
+  (1.86x at 131K). One light-load fleet cell at 32,768 x conc=4 is **3.5x worse on TTFT and
+  p90** — that cell uses only ~12% of either pool, so it shows the penalty survives batching
+  rather than testing the capacity claim. There is no crossover, so no cap makes this worth
+  setting.
+
+- **And the extra capacity is worth less than nothing.** Per decode step the weight path is
+  paid once and attention per sequence, so step time is `c + B*d*n` and the penalty
+  **multiplies by batch size** while the pool only adds slots. Fitted on the conc=1 ladder
+  alone, that model reproduces the independent prewarmed matrix in `docs/rdna4-long-context.md`
+  to within 1% wherever attention dominates the step (65,536 x conc=8: 144.5 predicted against
+  143.4 measured), and overestimates by 23-41% on shallow cells where the weight path does. At
+  each arm's **own** slot ceiling at 65,536 tokens it gives bf16 17 slots at ~180 tok/s
+  aggregate against FP8's 32 slots at ~56 — twice the slots, a third of the throughput. (A
+  model, validated on bf16 cells only.)
 
 So the 1.89x is pool headroom you cannot spend, because filling it costs six times the latency.
 The cost is steady state — three different-seed full-length cells on one boot came in at 455,
@@ -547,10 +558,14 @@ neither of which predicted the failure:
   and gives prefill's non-attention cost as unchanged (1.03x) against its attention term at
   **9.03x**, with decode's fixed weight-path cost unchanged to 0.17% (20.868 -> 20.833 ms per
   token) against **3.96x** per KV token. Nothing that does not scale with the KV cache got
-  slower. The leading candidate is therefore the per-KV-token software FP8 conversion in the
-  Triton paged-attention path (vllm#57126), not a parallelism loss — TRITON_ATTN's 3D split-KV
-  path is gated off on any step carrying a prefill chunk, so it cannot account for the prefill
-  term at all.
+  slower. **The mechanism is open.** The candidates are a per-KV-token software FP8 conversion
+  in the Triton paged-attention path (vllm#57126) and a parallelism loss from the doubled block
+  size; the second cannot account for the prefill term at all, since TRITON_ATTN's 3D split-KV
+  path is gated off on any step carrying a prefill chunk. Neither has been shown to predict the
+  **9.03x prefill against 3.96x decode** asymmetry, which is the fact most likely to settle it —
+  a conversion is amortised across a query tile in prefill, which argues prefill should be hit
+  *less*, while decode touches half the bytes bf16 does and is still 4x slower, which says that
+  path is not bandwidth-bound. Do not quote a mechanism here as settled.
 - **The precedent that it can go wrong is image-level, not flag-level.** On the 2026-10-15
   Radiance canary, FP8 KV fell back to Triton paged attention and cost 35-46% of decode at 8K+
   with 2x TTFT. That was measured on a different image and does not transfer to v0.26.0 — but
