@@ -307,6 +307,54 @@ Baselines for removed profiles remain in `docs/models.md` and `bench/baselines/`
   profile's `cmd` therefore starts with `scripts/llm-prestart`, which drops cached model files first.
   Keep the wrapper in front of podman. Details: `docs/flash-next-half-speed.md`.
 
+### Check the PCIe links before trusting any TP benchmark
+
+**A single GPU whose PCIe link trains one generation low halves decode throughput for the whole
+server.** gfx1201 has no fast all-reduce backend (QuickReduce is gfx94/gfx95 only,
+CustomAllreduce disables above two PCIe-only GPUs, AITER unsupported), so vLLM TP falls back to
+`PYNCCL` over PCIe. Every decode step ends in an all-reduce, and a collective completes no
+faster than its slowest participant, so one slow card taxes every step.
+
+This has happened on this stack: one card's slot link dropped from Gen5 (32 GT/s) to Gen4
+(16 GT/s) at x16. Measured cost, same profile and image either side: decode step rate roughly
+halved (36.4 -> 19.1 steps/s serial, two spawns apart on one unchanged host). Against the
+stored baselines the full sweep came out serial −47%, conc=8 −38%, conc=16 −19% — a fixed
+per-step tax, so it amortises with batch size, and the conc=16 figure is why a degraded TP4 can
+still beat a healthy TP2. A warm reboot did not clear it (a warm reboot need not power-cycle the
+slot) and no profile flag worked around it.
+
+It is dangerously easy to misdiagnose, because it is indistinguishable from a slow decode-band
+draw on every metric people reach for: ~2x step-rate loss, `gpu_busy` pinned at 100%, low
+`mem_busy`, unchanged MTP acceptance, clean logs. Two things tell them apart — a band is drawn
+per process so it changes across restarts, while a link fault never recovers; and only the link
+fault shows in a bandwidth probe.
+
+**Every GPU-level PCIe readout is blind to this.** `roctop`, `amd-smi metric` (`PCIE: SPEED`)
+and anything else reporting "the GPU's PCIe speed" read the *endpoint's* link. These cards carry
+their own PCIe switch, so the endpoint's link is the on-card one — GPU to its own switch — and
+that stays Gen5 even when the slot link below it is Gen4. During the incident above, all four
+cards showed x16 32 GT/s in `roctop` while one card's slot link was at 16 GT/s, and the two
+bridges upstream of that GPU were the only devices reporting it. Confirm with a host-to-device
+bandwidth probe, which has to cross the slot link: the bad card read 26 GB/s against 56 GB/s on
+the other three.
+
+**And the naive sysfs check gives a false pass too.** These links idle at 2.5 GT/s, so reading
+`current_link_speed` at rest reports 2.5 on a healthy card. Only the speed reached *under load*
+means anything:
+
+```bash
+scripts/pcie-link-check --load     # needs the GPUs free; exit 0 ok / 1 downtrained / 2 inconclusive
+scripts/pcie-link-check            # passive: sample while a model is actually serving
+```
+
+Run it before any TP benchmark you intend to trust, and first whenever throughput drops without
+a config change. It reports per *link*, not per device — these cards carry their own PCIe
+switch, so each GPU's chain is four devices but only two links, and link 0 is the one that
+leaves the motherboard. A downtrain on link 0 is physical: cold power-off (PSU off ~30 s), then
+reseat the card and riser, then swap slots to tell a bad card from a bad slot. A downtrain on a
+later link is inside the card. Also check `max_link_speed` — if that is low too, something is
+capping the slot in BIOS.
+
 **Note:** R9700-tuned MoE configs (-33% at conc=8) were reverted; all 35b profiles use MI300X
 defaults, which outperform at concurrent load.
 
@@ -334,6 +382,7 @@ docs/flash-next-half-speed.md  Half-speed Flash-Next starts: cause (full page ca
 docs/hard-code-tasks.md        Harder code tests: caps vs 4-bit weights, 27B early stops, ceiling check
 docs/upgrade-plan-2026-*.md    Image/ROCm upgrade canaries and their gates
 scripts/llm-prestart  exec wrapper in front of Flash-Next's podman run (drops page cache first)
+scripts/pcie-link-check  Checks every GPU's PCIe link reaches its rated speed UNDER LOAD
 scripts/llmhw.py     Hardware/requirements checker used by configure, llmctl and llmpanel
 bench/codetests/     Code-correctness suite (11 tasks, 5 of them the harder set) run by run_codetests.py
 .vllm-cache/         Persistent Inductor compilation cache (gitignored)

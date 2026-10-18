@@ -77,12 +77,21 @@ order, slow → fast → slow → slow, and never recovered. Because the slow bl
 of the fast one, no property of the payload orders that sequence: something changed underneath a
 single server process, mid-run. That is the band behaviour, from one harness against one process.
 
-### First local measurement of a band draw
+### A local 1.905x slow spawn — re-attributed to a hardware fault, not a band draw
 
-On 2026-10-17 a cold 27B TP4 spawn was caught in the slow band by `llmband`, against a baseline
-calibrated two spawns earlier on the same profile and the same image:
+> **Correction.** This section originally presented the measurement below as the first confirmed
+> band draw on this rig. It is not one. Between the baseline calibration and the slow spawn, one
+> GPU's PCIe slot link downtrained from Gen5 to Gen4 — halving that card's bandwidth and,
+> because every TP4 decode step does an all-reduce that runs at its slowest participant's speed,
+> halving the step rate. The 1.905 ratio is that hardware fault. No band draw has been cleanly
+> isolated on this rig yet. The measurement is kept because what it says about *detector design*
+> holds regardless of which mechanism produced the slowdown — see the bullets below, which is
+> why they are worth reading even though the attribution was wrong.
 
-| | healthy spawn | slow spawn | ratio |
+A cold 27B TP4 spawn was caught in the slow band by `llmband`, against a baseline calibrated
+two spawns earlier on the same profile and the same image:
+
+| | fast (link Gen5) | slow (link Gen4) | ratio |
 |---|---|---|---|
 | decode steps/s (serial, 256 tok) | 36.42 | 19.12 | **1.905** |
 | tok/s | 81.77 | 42.93 | 1.905 |
@@ -94,21 +103,33 @@ Three things in that table matter more than the ratio:
 
 - **Acceptance is identical to three decimal places.** The slow spawn is not drafting worse; it
   is executing the same accepted tokens per step at half the step rate. This is what the
-  step-rate-primary design was built to separate, and it settles that the band is not a
+  step-rate-primary design was built to separate, and it settles that the slowdown is not a
   speculative-decoding artifact. It also means token/s and step/s agree here, so either would
-  have detected *this* draw — but only step rate is guaranteed to.
-- **`gpu_busy` is pinned at 100% in both bands**, so the GPUs are not idle-waiting. Whatever the
-  mechanism is, it keeps the queues full while doing half the work per unit time.
-- **`mem_busy` moves in the direction upstream reports** (slow band lower: 26% here against
-  upstream's 24–27% cluster) even though the healthy value does not match upstream's upper
-  cluster at all (46% here against 62–67%). So the *sign* of the `mem_busy` shift transfers
-  across rigs and the *level* does not, which is exactly why `llmband` treats it as
-  corroborating-only and decides on step rate against a locally calibrated baseline.
+  have detected *this* case — but only step rate is guaranteed to.
+- **`gpu_busy` is pinned at 100% in both rows**, so the GPUs are not idle-waiting. A halved
+  interconnect keeps the queues full while doing half the work per unit time, and so does a
+  band draw; neither can be told from `gpu_busy`.
+- **`mem_busy` dropping to 26% is not band evidence.** It happens to fall inside upstream's
+  24–27% slow-band cluster, and before the re-attribution that looked like the *sign* of the
+  shift transferring across rigs. It does not: this row is a PCIe fault, so a low `mem_busy`
+  is now known to be producible by at least two different mechanisms. That makes the
+  corroborating-only treatment in `llmband` more clearly right, not less — but it also means
+  **a low `mem_busy` must never be read as "band draw" on its own.**
 
-The 1.905 ratio sits close to upstream's 1.73 hybrid/MoE figure and well above the 1.21–1.28
-dense range. One draw is not a distribution: the ratios in the table above are still upstream's.
-But the band is now confirmed to exist on this rig, at roughly 2x, with a detector that catches
-it — the draw above was rejected before it could be benchmarked as an A/B arm.
+What survives, then, is a detector result and not a band characterisation: `llmband` correctly
+flagged a real ~2x regression from a locally calibrated baseline, and rejected the spawn before
+it could be benchmarked as an A/B arm. That is the job it exists to do, and it did it for a
+cause nobody had hypothesised. The upstream ratios (1.21–1.28 dense, 1.73 MoE, 2.00–2.2 GDN
+hybrid) remain upstream's; **no band draw has yet been isolated on this rig.** Isolating one
+requires a host with all four links at Gen5 — see the warning below.
+
+> **Before trusting any band measurement on this rig**, confirm every GPU's PCIe link trains to
+> its rated speed *under load*. An idle read is useless: these links sit at 2.5 GT/s when idle.
+> `scripts/pcie-link-check` does this. A single downtrained link mimics a permanent slow band
+> perfectly — same ~2x step-rate loss, same 100% `gpu_busy`, same low `mem_busy`, same
+> unchanged MTP acceptance — except that it never draws fast, no matter how many times you
+> restart the container. **If `llmband` reports slow on every spawn across a reboot, suspect
+> the interconnect before the band.**
 
 ### A regression that is *not* a band draw, and how its shape says so
 
@@ -123,13 +144,42 @@ That shape rules out a band draw. A band is a whole-process property: it would t
 down with everything else, at every concurrency. A deficit that disappears exactly where each
 step does the most compute is instead the signature of a **fixed per-step overhead increase**,
 amortised away once the step is long enough to hide it. That points at the per-step collective
-path rather than at anything payload-shaped, which is what promotes the TP4 all-reduce
-candidate below from "leading remaining" to directly indicated — and it is also why a
-single-boot A/B on any throughput lever is still uninterpretable: the two mechanisms coexist.
+path rather than at anything payload-shaped, which promoted the TP4 all-reduce candidate below
+from "leading remaining" to directly indicated.
 
-The practical consequence is that `llmband` cannot be used to accept or reject arms whose lever
-plausibly changes serial step rate; it can only be used where the arm provably leaves batch 1
-alone (the capture-size lever is one such case: batch 1 lands on captured size 3 either way).
+**That reasoning was vindicated as a method, but it does not explain this measurement.** A
+downtrained PCIe link was later found on this rig and it produces exactly this shape, for
+exactly the reason argued above: every decode step does an all-reduce, a collective completes
+no faster than its slowest participant, and the resulting per-step tax amortises with batch
+size. So "fixed per-step overhead on the collective path" was the right class of cause.
+
+It is the wrong *instance*, and the sizes say so. The link fault costs roughly **−46% serial**
+and −29% at conc 8. This comparison measured −14.9% and −8.1% — a third of that. A fault that
+halves one card's bandwidth cannot show up as 15%, so this comparison was almost certainly
+taken while all four links were still training at Gen5, and **the ~15% it found is a separate
+per-step overhead that is still unexplained.** The driver/firmware change that preceded it is
+the obvious suspect and has not been tested. Re-running the comparison needs a host with every
+link at Gen5 first; until then there is no trustworthy baseline to re-run it against.
+
+Three durable lessons:
+
+- **Reason from the shape of a loss, not its size.** "Flat at concurrency, down at serial"
+  identified a per-step cost and excluded a whole-process one, which is what sent the
+  investigation to the interconnect instead of to the engine. Record the per-concurrency curve
+  on every regression, not just the headline figure.
+- **Then check the size before claiming a cause.** Shape narrows the class; only magnitude
+  picks the instance. Two independent per-step costs can produce the same curve, and attributing
+  a 15% loss to a 46% fault would have closed an open question that is still open.
+- **A per-step collective tax and a slow band are not distinguishable by throughput alone.**
+  Both halve step rate at 100% `gpu_busy` with unchanged acceptance. The discriminators are
+  that a band is drawn per process (so it changes across restarts) while a link fault does not,
+  and that only the link fault shows up in a bandwidth probe. Check the hardware first: it is a
+  five-minute test and it is falsifiable.
+
+The practical consequence for A/B work is unchanged: `llmband` cannot accept or reject arms
+whose lever plausibly changes serial step rate; it can only be used where the arm provably
+leaves batch 1 alone (the capture-size lever is one such case: batch 1 lands on captured
+size 3 either way).
 
 ## Ruled out as the mechanism
 
