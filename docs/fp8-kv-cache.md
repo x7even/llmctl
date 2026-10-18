@@ -376,7 +376,7 @@ Each of these was checked rather than assumed, because each is what the symptom 
 - **Not coarser prefill chunks.** FP8's chunk is *smaller* than bf16's — see above. This was the
   first draft's stated mechanism and it was backwards.
 
-## Mechanism: a per-KV-token cost in the attention kernel, and one secondary candidate
+## Mechanism: a KV-proportional cost inside attention, with two open candidates
 
 Nothing here instruments the kernel. **Both candidates below are open**, and the honest summary
 is that the measurement constrains the shape of the cost without identifying it. What it does
