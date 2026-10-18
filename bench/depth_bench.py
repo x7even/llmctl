@@ -78,6 +78,19 @@ def filler(n_words, seed):
     return " ".join(rng.choice(VOCAB) for _ in range(n_words))
 
 
+def seed_for(seed, run_nonce, depth, conc):
+    """Base seed for one (depth, conc) cell.
+
+    `conc` has to be in here. Without it, a cell's requests take seeds
+    base+0..conc-1, so at one depth conc=1 draws base+0, conc=8 draws base+0..7
+    and conc=32 draws base+0..31 -- every cell after the first re-sends prompts
+    the engine has already cached. Measured on a 32K pass: the prefix-cache hit
+    rate climbed from 0% to 30.5%, which flatters exactly the high-concurrency
+    cells worth publishing.
+    """
+    return seed + depth * 1000 + conc * 1_000_003 + run_nonce * 7_000_001
+
+
 def build_messages(depth_words, seed):
     body = filler(depth_words, seed)
     user = (
@@ -276,6 +289,14 @@ def main(argv=None):
                     help="send the SAME long prompt to every stream in a cell "
                          "(measures the prefix-cache-hit regime instead)")
     ap.add_argument("--seed", type=int, default=1234)
+    ap.add_argument("--run-nonce", type=int, default=0,
+                    help="shifts every prompt so a re-run against a server that "
+                         "is already live is COLD again. Prompts are a pure "
+                         "function of the seed, so without a fresh nonce a "
+                         "second run re-sends text the engine still has cached "
+                         "and the cells read far faster than they are. Measured: "
+                         "a 32K cell re-run warm reported 41,463 prompt tok/s "
+                         "against a true rate near 4,300.")
     ap.add_argument("--save", help="write results JSON here")
     ap.add_argument("--label", default="", help="free-text tag stored in the JSON")
     args = ap.parse_args(argv)
@@ -338,7 +359,8 @@ def main(argv=None):
         for conc in concs:
             row = run_cell(args.url, args.model, depth_words, conc, args.gen,
                            args.timeout, args.no_thinking, headers,
-                           args.shared_prefix, args.seed + depth * 1000,
+                           args.shared_prefix,
+                           seed_for(args.seed, args.run_nonce, depth, conc),
                            prewarm=args.prewarm)
             row["depth_requested"] = depth
             row["concurrency"] = conc
@@ -371,6 +393,12 @@ def main(argv=None):
             # be compared against anything.
             "prewarm": args.prewarm,
             "shared_prefix": args.shared_prefix,
+            # Recorded so a saved file can be checked for freshness later.
+            # Prompts are a pure function of these two, so two runs sharing
+            # them re-send text the engine may still have cached: the second
+            # run's prefill rate reads far above the hardware's real one.
+            "seed": args.seed,
+            "run_nonce": args.run_nonce,
             "words_per_token": wpt,
             "timestamp": time.strftime("%Y-%m-%dT%H:%M:%S"),
             "rows": rows,
