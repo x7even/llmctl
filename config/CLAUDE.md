@@ -494,18 +494,24 @@ It has since been **measured on `qwen3.8-27b-think`, and the answer is do not se
 write-up: `docs/fp8-kv-cache.md`. The short version is that the prize is real and the flag
 still cannot serve:
 
-- The pool grows **1.89x** — 1,126,917 -> 2,133,560 tokens, lifting concurrency at 131K from
-  8.60x to 16.28x. `TRITON_ATTN` is retained, the boot is clean, and retrieval is
-  cell-identical to the baseline at 16,384 and 65,536 (6/6 on the same needle codes).
-- Then a **130,752-token request kills the server.** One prefill chunk stays inside the model
-  past the worker-RPC watchdog (`VLLM_EXECUTE_MODEL_TIMEOUT_SECONDS`, default 300), the
-  executor raises `TimeoutError: RPC call to sample_tokens timed out`, `EngineCore` shuts down
-  and every later request gets a 500. Not OOM — `kv_cache_usage` was 6.6% with one request in
-  flight. Reproduced on two cold boots.
+- The pool grows **1.89-1.93x** — 1,126,917 -> 2,133,560-2,178,707 tokens, lifting
+  concurrency at 131K from 8.60x to 16.3-16.6x. `TRITON_ATTN` is retained, the boot is clean,
+  and retrieval is correct at every depth tested. (Not 2x: only the 16 full-attention layers'
+  KV shrinks, the 48 gated-delta-net layers' recurrent state is untouched.)
+- **It is about 6x slower at full length.** Same script, back to back, one flag apart: a
+  130,752-token request takes **75 s** on bf16 and **455 s** on FP8, both returning the right
+  needle. At the default worker-RPC watchdog (`VLLM_EXECUTE_MODEL_TIMEOUT_SECONDS`, 300 s) a
+  single forward step outlives it, the executor raises `TimeoutError: RPC call to
+  sample_tokens timed out`, `EngineCore` shuts down and every later request gets a 500. The
+  dead engine is the watchdog's doing, not a hang — with the watchdog raised to 1800 the same
+  request completes with the engine alive. Not OOM either: `kv_cache_usage` was 6.6% with one
+  request in flight.
 
-So the 1.89x is a paper number: it is pool headroom that cannot be spent, because reaching full
-length is what breaks the engine. Keep the remaining six profiles unmeasured rather than
-assuming either way — but start from "this failed on the profile closest to yours".
+So the 1.89x is pool headroom you cannot spend, because filling it costs six times the latency.
+The cost is steady state — three different-seed full-length cells on one boot came in at 455,
+457 and 458 s, so nothing amortises. Keep the remaining six profiles unmeasured rather than
+assuming either way — but start from "this was six times slower on the profile closest to
+yours".
 
 Two things that were checked rather than assumed before testing, both of which held up and
 neither of which predicted the failure:
@@ -523,6 +529,14 @@ neither of which predicted the failure:
   backend: `triton_attn.py` lists `fp8`, `fp8_e4m3` and `fp8_e5m2` in
   `supported_kv_cache_dtypes`, and raises `NotImplementedError` for a quantized cache only on
   the **encoder** attention path, which decoder-only Qwen3.x never takes.
+- **Nor is it coarser prefill chunks**, which was this section's first guess. The prefill
+  chunk is the largest multiple of the attention block size that fits in
+  `--max-num-batched-tokens`, and FP8 doubles that block size, 784 -> 1568 (forced by the
+  hybrid model's mamba/attention page-equality constraint). So FP8's chunk is 20 x 1568 =
+  31,360 against bf16's 41 x 784 = 32,144 — it does **less** work per step and still takes six
+  times as long. The cost is inside the attention kernel. The leading hypothesis, untested, is
+  that halving the KV block count halves the segments TRITON_ATTN's 3D path can split across,
+  on a GPU `docs/rdna4-long-context.md` already describes as parallelism-starved at depth.
 - **The precedent that it can go wrong is image-level, not flag-level.** On the 2026-10-15
   Radiance canary, FP8 KV fell back to Triton paged attention and cost 35-46% of decode at 8K+
   with 2x TTFT. That was measured on a different image and does not transfer to v0.26.0 — but
