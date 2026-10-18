@@ -77,7 +77,7 @@ llmpanel
 
 ---
 
-## Model profiles
+## Model profiles (ready made)
 
 | Profile | Backend | VRAM | Context | Best for |
 |---------|---------|------|---------|---------|
@@ -93,6 +93,8 @@ llmpanel
 | `gemma4-26b-fp8` | vLLM TP=4, FP8 | — | 262K | Long-context Gemma 4 agent serving |
 | `gemma4-26b-q8` | llama-server Vulkan | ~32 GB | 32K | Vision-capable; 154 tok/s conc=8; co-loadable |
 | `gemma4-12b-q4` | llama-server Vulkan | ~13 GB | 32K | Lightest vision option; co-loadable with any profile |
+
+Note You can customize & add your own model profiles these are just the ones the stack quick ships. Most profiles are tuned for concurrent (agentic) workloads.
 
 Older Qwen profiles (3.6-27B, 3.6-35B 32K/64K/128K/512K/AWQ/GGUF, Qwen3-Coder-30B,
 Qwen3.5-122B) were removed from the shipped config; their benchmark data is kept in
