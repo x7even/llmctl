@@ -11,6 +11,11 @@ The slowness is the finding; the dead engine is a consequence of it. Raise
 and not a kernel that refuses — it is a working configuration that is too slow to use at
 131,072 tokens.
 
+**And there is no shallower depth at which it pays.** A matched ladder against a bf16 control arm
+puts the prefill penalty at **1.85x already at 8K**, rising monotonically to 6.13x at 131K, with
+decode slower at every depth as well. There is no crossover, so there is no narrower profile
+worth proposing — see the ladder below.
+
 Measured 2026-10-18 on 4x R9700 (gfx1201), `docker.io/vllm/vllm-openai-rocm:v0.26.0`,
 `qwen3.8-27b-think` at TP4 — the shipped profile with `--kv-cache-dtype fp8` appended and nothing
 else changed. Four cold boots: two that crashed on the default watchdog, one with the watchdog
@@ -169,6 +174,61 @@ Two one-time explanations are ruled out from the logs rather than by argument:
   exactly the same count — all of them during the short calibration probe, before the deep request
   starts. Whatever the deep request is doing, it is not compiling.
 
+### The full depth ladder: there is no shallow-depth exemption
+
+This was the one route by which the flag could still have shipped. The 1.89-1.93x pool only
+*binds* at full length — at 32K neither arm is pool-limited, because `--max-num-seqs 32` runs out
+first — so if FP8 were at parity until somewhere deep, a profile capped at 65K would buy real
+concurrency for nothing. The ladder closes that door. Both arms, same harness, same container
+name, one flag apart, `depth_bench.py --concurrency 1 --gen 32`:
+
+| depth | bf16 TTFT | FP8 TTFT | prefill penalty | bf16 decode | FP8 decode | decode penalty |
+|---|---|---|---|---|---|---|
+| 8,193 | 1.87 s | 3.46 s | **1.85x** | 46.8 tok/s | 43.6 tok/s | 1.07x |
+| 16,387 | 4.10 s | 10.23 s | **2.50x** | 45.5 | 39.9 | 1.14x |
+| 32,775 | 9.73 s | 33.43 s | **3.44x** | 43.4 | 34.0 | 1.28x |
+| 65,551 | 25.35 s | 120.48 s | **4.75x** | 39.7 | 26.3 | 1.51x |
+| 98,327 | 46.79 s | 261.05 s | **5.58x** | 36.6 | 21.5 | 1.70x |
+| 131,007 | 74.28 s | 455.51 s | **6.13x** | 33.9 | 18.2 | 1.86x |
+
+Every cell retrieved, `acc/step` 1.00 throughout, both engines alive at the end. Three readings
+come out of this table:
+
+- **The penalty never goes away.** 1.85x at the shallowest depth measured. There is no crossover
+  anywhere on the curve, so no cap makes this flag worth setting.
+- **It is not a constant tax — it is a change of slope.** Fit the two arms across the 16x depth
+  range and bf16 prefill scales as roughly **depth^1.33** while FP8 scales as **depth^1.76**. The
+  flag does not add overhead to the existing behaviour; it removes whatever sub-quadratic
+  behaviour the bf16 path has. That is what losing parallelism over context length looks like,
+  and it is the strongest evidence for the hypothesis below.
+- **Decode pays too, not just prefill.** 1.86x slower per stream at 131K. The earlier runs
+  measured prefill because a full-length needle request is nearly all prefill; the ladder
+  separates them and both are worse.
+
+The 455.51 s TTFT also reproduces the 455 s wall clock of the separate needle run almost exactly,
+which independently confirms that essentially all of that time was prefill.
+
+A free control fell out of this: the bf16 arm reads **33.9 tok/s at 131,007 tokens**, against the
+**33.4** that `qwen3.8-27b-think` is documented at in `docs/rdna4-long-context.md`. The control
+arm is the shipped profile, confirmed rather than assumed, which is what licenses reading the
+other column as the flag's cost and nothing else.
+
+### And it is worse under concurrency, which was the entire point
+
+The flag's only argument was concurrency at depth. One modest fleet cell, 32,768 tokens x 4
+concurrent requests, `--gen 64`:
+
+| | mean TTFT | p90 TTFT | e2e | decode per stream |
+|---|---|---|---|---|
+| bf16 KV | 29.18 s | 39.19 s | 40.9 s | 19.3 tok/s |
+| FP8 KV | 102.00 s | 138.75 s | 140.9 s | 11.3 tok/s |
+
+**3.5x on TTFT, 3.5x on p90, 1.7x on per-stream decode** — at a depth and a width where the
+bigger pool buys nothing, because `--max-num-seqs 32` is the binding limit there, not KV bytes.
+To reach a depth where the pool does bind you have to go to full length, where the prefill
+penalty is 6.13x. The trade is 1.93x nominal capacity for a 3.5-6x latency increase, which is
+not a trade.
+
 ### Why the chunk is 31,360 and not 32,768 — and why that is *not* the cause
 
 The chunk size quantizes to the attention block size, and FP8 does change the block size. This is
@@ -225,8 +285,9 @@ Each of these was checked rather than assumed, because each is what the symptom 
 
 ## Leading hypothesis: it halves the parallelism the 3D path depends on
 
-**Labelled as a hypothesis, because it has not been measured.** It is, however, the first thing
-to test, and it follows from something this repo already documents.
+**Labelled as a hypothesis, because nothing here instruments the kernel directly.** It is,
+however, the first thing to test, it follows from something this repo already documents, and it
+made a quantitative prediction that came true — see the slope result at the end of this section.
 
 `docs/rdna4-long-context.md` establishes that on gfx1201 **nothing parallelises over context
 length** unless TRITON_ATTN's 3D split-KV path is open — ROCm's custom paged-attention kernel is
@@ -249,10 +310,19 @@ chunk does not help. It also lines up with vllm#57126 below, which reports the T
 paged-attention path software-converting FP8 K/V: a conversion cost and a parallelism loss are
 not exclusive, and both would land on the same kernel.
 
-What would test it: the block size is forced up only by the mamba/attention page-equality
-constraint on this hybrid model, so a non-hybrid FP8 model on the same backend should not show
-the doubling, and should not show this penalty. Failing that, instrument the 3D predicate and
-count the segments actually launched on each arm.
+**The ladder's shape is the evidence.** A fixed cost — a software FP8 conversion per block, say
+— would show up as a roughly constant multiplier across depth. A *parallelism* loss would not: it
+would change the exponent, because the serial fraction grows with the number of blocks the kernel
+can no longer split across. The ladder shows the second. Across a 16x depth range bf16 prefill
+scales as about **depth^1.33** and FP8 as **depth^1.76**, and the ratio climbs monotonically from
+1.85x to 6.13x rather than sitting flat. That does not prove the mechanism, but it is the
+signature the mechanism predicts and it is not the signature a constant conversion cost predicts.
+Both effects can be present; the slope says the parallelism term dominates.
+
+What would test it directly: the block size is forced up only by the mamba/attention
+page-equality constraint on this hybrid model, so a non-hybrid FP8 model on the same backend
+should not show the doubling, and should not show this penalty. Failing that, instrument the 3D
+predicate and count the segments actually launched on each arm.
 
 ## A related code fact, which is *not* the cause
 
@@ -317,7 +387,9 @@ container went with it and `podman logs` had nothing left to read. Drop `--rm` (
 
 Not ruled out, and cheap to try if the 1.89x is wanted badly enough:
 
-- a lower `--max-model-len`, which caps how deep a single request can get
+- ~~a lower `--max-model-len`, which caps how deep a single request can get~~ — ruled out by the
+  ladder. The penalty is 1.85x at 8,193 tokens, so there is no depth cap that makes the flag
+  worth setting; capping only limits how bad it gets
 - a smaller `--max-num-batched-tokens`, which shrinks the per-chunk step independently of depth
 - dropping `--enable-prefix-caching`, per vllm#13147
 - ~~raising `VLLM_EXECUTE_MODEL_TIMEOUT_SECONDS`~~ — done, see above. It converts the dead

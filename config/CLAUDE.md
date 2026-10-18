@@ -507,6 +507,14 @@ still cannot serve:
   request completes with the engine alive. Not OOM either: `kv_cache_usage` was 6.6% with one
   request in flight.
 
+- **And there is no depth at which it pays.** The obvious next move is to cap the profile
+  shallower and take the pool anyway. A matched ladder against a bf16 control says no: the
+  prefill penalty is already **1.85x at 8,193 tokens** and climbs monotonically — 2.50x at 16K,
+  3.44x at 32K, 4.75x at 65K, 6.13x at 131K — with per-stream decode slower at every depth too
+  (1.86x at 131K). One fleet cell at 32,768 x conc=4, which is where the flag's concurrency
+  argument should have shown up, is **3.5x worse on TTFT and p90**. There is no crossover, so no
+  cap makes this worth setting.
+
 So the 1.89x is pool headroom you cannot spend, because filling it costs six times the latency.
 The cost is steady state — three different-seed full-length cells on one boot came in at 455,
 457 and 458 s, so nothing amortises. Keep the remaining six profiles unmeasured rather than
