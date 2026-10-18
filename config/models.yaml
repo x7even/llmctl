@@ -107,7 +107,7 @@ models:
         --tensor-parallel-size 4
         --max-model-len 131072
         --max-num-seqs 32
-        --max-num-batched-tokens 32768
+        --max-num-batched-tokens 16384
         --gpu-memory-utilization 0.95
         --enable-prefix-caching
         --enable-chunked-prefill
@@ -258,7 +258,7 @@ models:
         --tensor-parallel-size 4
         --max-model-len 131072
         --max-num-seqs 32
-        --max-num-batched-tokens 32768
+        --max-num-batched-tokens 16384
         --gpu-memory-utilization 0.95
         --enable-prefix-caching
         --enable-chunked-prefill

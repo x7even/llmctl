@@ -474,6 +474,7 @@ llama.cpp auto-discovers the remaining parts.
 |------|-------------|----------------|
 | `--max-num-seqs` | Max concurrent sequences in flight | Lower if OOM; raise if throughput limited and VRAM free |
 | `--gpu-memory-utilization` | Fraction of VRAM reserved for KV cache | Lower if OOM; keep at 0.95–0.97 normally. Exception: `qwen3.8-flash-next-vllm` stays at 0.90 (0.97 stalls under concurrent 100K prompts; see docs/models.md) |
+| `--max-num-batched-tokens` | Prefill chunk size, and the size of an MTP drafter's per-batch buffer | **16384 on MTP profiles serving Qwen3.8-27B** (`qwen3.8-27b-code`, `qwen3.8-27b-fast`); 32768 elsewhere. See below |
 | `--kv-cache-dtype fp8` | Store KV tensors in FP8 | **Not a default — see below.** Only `qwen3.6-35b-fast` sets it today |
 | `concurrencyLimit` | Queue depth before 429 | Set to `--max-num-seqs` or slightly above |
 | `ttl` | Seconds before auto-unload | 0 = never; useful for infrequently used profiles |
@@ -578,3 +579,46 @@ filler with `ignore_eos` and never reads the reply — it cannot see this failur
 require every cell to retrieve before looking at a single tok/s figure. That gate earned its
 keep here: it was the only thing issuing a full-length request, so it is what found the crash,
 and a throughput-only sweep at 65K would have reported FP8 KV as a clean win.
+
+### `--max-num-batched-tokens` on MTP profiles: 16384, not 32768
+
+An MTP profile allocates a `[embedding, hidden]` buffer sized by
+`--max-num-batched-tokens` for the drafter. On Qwen3.8-27B that is
+`32768 x (2 x 5120) x 2 bytes = 640 MiB` per step. A **fresh** container driven
+straight into 32 concurrent 8K-token prompts cannot find it: all four TP
+workers raise `torch.OutOfMemoryError` in the same step and the EngineCore
+exits, while the API server keeps answering `/health` 200 for minutes.
+Reproduced on 2 of 2 fresh spawns. Full write-up and the reproduction recipe:
+`docs/mtp-drafter-oom.md`.
+
+Halving the flag halves that buffer to 320 MiB and fixes it. Measured on
+`qwen3.8-27b-code`, same image, FAST band confirmed either side:
+
+- **KV pool goes up**, not down: 1,009,850 -> ~1,085,000 tokens (+7-9%), i.e.
+  7.70x -> ~8.3x concurrent requests at the full 131,072 window. The profiling
+  pass needs less transient room, so more is left for KV.
+- **Free on `medium-256`**: 67.4 / 352.6 / 566.0 / 861.8 tok/s at conc
+  1 / 8 / 16 / 32 against a 66.0 / 339.2 / 570.7 / 851.2 stock baseline — all
+  within run-to-run noise.
+- **It costs cold deep-burst prefill**, which is the real trade. At
+  `8192 x conc=32` cold it read 17.6 aggregate tok/s and 201.7 s p90 TTFT
+  against ~28.5 and ~133 s on 32768. n=1; the engine survives either way with
+  the flag set.
+
+Applies to the two profiles serving `/models/Qwen3.8-27B-FP8` with a
+speculative config. `qwen3.8-27b-think` is deliberately left at 32768: it has
+no MTP drafter, so there is no buffer to shrink, and it is the long-context
+profile whose whole job is deep prompts.
+
+**Not applied to `qwen3.6-27b-code` or `qwen3.6-35b-code`**, which also run MTP.
+Their drafter buffers are the same shape in principle, but neither has been
+measured, and `qwen3.6-27b-code`'s own engine death at `32768 x conc=32` is a
+*different* defect — `TimeoutError: RPC call to sample_tokens timed out`, with
+no OOM anywhere in its log. A smaller prefill chunk means more steps per batch,
+which could make an RPC timeout worse rather than better. Measure before
+copying this flag across.
+
+`--gpu-memory-utilization` is not the lever here. The step that fails is outside
+that budget — it budgets the KV pool, while activations and workspaces grow
+lazily into leftover driver VRAM — and 0.01 is only ~326 MiB per card on a
+32 GB card.
