@@ -7,8 +7,50 @@
 | Script | Purpose |
 |--------|---------|
 | `concurrent_bench.py` | Main benchmark: sweep concurrency levels, collect tok/s, TTFT, VRAM |
+| `depth_bench.py` | Context-depth × concurrency matrix: streams, so prefill (TTFT) and decode are measured separately |
+| `needle_check.py` | Long-context **retrieval** check: can the model still see the context it is decoding over |
 | `opt_probe.py` | Targeted probe for optimization impact (before/after comparison) |
 | `codetests/run_codetests.py` | Code-correctness suite: model writes code, hidden tests grade it (`validate` / `run` / `regrade`) |
+
+### Depth matters, and `concurrent_bench.py` cannot see it
+
+`concurrent_bench.py` is non-streaming, so its "decode tok/s" is `completion_tokens /
+total_wall` — prefill included. At a 256-token prompt that is a rounding error; at 128K it is
+most of the wall clock and the number stops being a decode rate at all. `medium-256` numbers
+therefore say nothing about how the stack behaves at agent-fleet context depths, where the
+spread between profiles reached **24×** (see `docs/rdna4-long-context.md`). Use
+`depth_bench.py` for anything depth-related.
+
+Two rules for `depth_bench.py`, both learned by getting them wrong:
+
+- **Pass `--max-model-len` when going through llama-swap.** The router reports
+  `max_model_len: null` for every profile, so the automatic clamp is inert and deep cells fail
+  with an HTTP 400 instead of being clamped.
+- **Use `--prewarm` for steady-state decode.** Without it, deep concurrent cells measure
+  prefill contention, not decode: each stream pays a full unique prefill and chunked prefill
+  interleaves those tokens into everyone else's decode steps. Cold 65K × conc=4 measured 181 s
+  TTFT against 13.7 s of serial end-to-end. Both regimes are real; the header line says which
+  one ran, and an unlabelled number between them is worthless.
+
+### Retrieval check — mandatory for any attention or kernel change
+
+`depth_bench.py` sends filler with `ignore_eos` and never reads the reply. A split-KV decode
+kernel that combines its softmax segments incorrectly loses whole stretches of context and
+**still benchmarks perfectly**. Speed at depth is worthless if the model can no longer see the
+depth.
+
+```bash
+python3 bench/needle_check.py --model qwen3.8-27b-think --no-thinking \
+    --depths 16384,65536,131072 --positions 0.05,0.25,0.5,0.75,0.95 \
+    --max-model-len 131072
+```
+
+It sweeps the needle's **position** as well as the depth, because position is the discriminator
+for this bug class: vLLM's TRITON_ATTN 3D path splits the context into 16 softmax segments, so
+a needle at 30% depth and one at 70% land in different segments. A uniform failure means
+retrieval is broken; failures clustered at particular positions mean the segment reduction is.
+Exit status is 0 only if every cell retrieved its needle. Run it against the shipped profile
+as a reference and against the candidate, with the same `--seed` so the needles are identical.
 
 ---
 
@@ -56,6 +98,9 @@ with the model's own recipe failing the same way, so it was not adopted.
 
 1. Baseline the shipped profile on the same prompts and settings first.
 2. Run the quality gate above before any throughput work.
+2b. For an attention-backend, kernel or block-size change, also run `needle_check.py` against
+   both arms with the same `--seed`. A split-KV kernel can be fast and wrong at the same time,
+   and no throughput number will tell you.
 3. Run the model card's own recipe verbatim, as a config-vs-model check.
 4. Long-context stress: ~7 concurrent unique ~100K-token prompts (~690K tokens total) must all finish, with
    no timeouts, under the profile's real `--gpu-memory-utilization`. This is what separates 0.95 from 0.97.

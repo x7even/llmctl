@@ -138,6 +138,25 @@ models:
     # llama-swap forwards the client's model string upstream; vLLM only
     # answers to --served-model-name, so without this every alias 404s.
     useModelName: qwen3.8-27b-think
+    # --attention-backend TRITON_ATTN in cmd is load-bearing for long context, not
+    # a preference. Without it vLLM auto-selects ROCM_ATTN, and because this profile
+    # has no MTP, every decode step has query_len=1 and routes to
+    # kernel_paged_attention_2d, whose grid is (num_seqs, num_kv_heads) -- at TP4 this
+    # model has 1 KV head per rank, so a single request decodes in ONE workgroup on a
+    # 64-CU GPU, walking the whole context serially. TRITON_ATTN's 3D path instead
+    # splits the context across NUM_PAR_SOFTMAX_SEGMENTS=16 and reduces, so the serial
+    # loop shortens by 16x. Measured 2026-10-18, TP4, --no-thinking, gen 128, serial
+    # decode tok/s, same image and profile either side, varying only this flag:
+    #   depth    1K    4K    16K    32K    64K    98K   131K
+    #   ROCM   40.0  26.6   11.4    6.4    3.4    2.0    1.4
+    #   TRITON 46.3  47.5   45.6   43.4   39.4   36.1   33.4
+    # i.e. 1.2x at 1K rising to 24x at 131K, and the curve goes flat. Retrieval is
+    # unaffected: bench/needle_check.py scores 15/15 on both, at 5 needle positions
+    # across 16K/64K/131K. See docs/rdna4-long-context.md.
+    #
+    # The 3D path also closes if num_seqs exceeds the threshold derived from
+    # --cudagraph-capture-sizes (here: 32). Do NOT raise --max-num-seqs above 32
+    # without re-measuring -- the path would silently switch off.
     # -e GPU_MAX_HW_QUEUES=1 in cmd is load-bearing on gfx1201, not a tuning knob.
     # Without it this profile can come up in a slow decode band -- same kernels, same
     # compiled graphs, ~15 us of idle between small kernel launches -- and serve at
@@ -170,6 +189,7 @@ models:
         --host 127.0.0.1
         --port ${PORT}
         --served-model-name qwen3.8-27b-think
+        --attention-backend TRITON_ATTN
         --dtype auto
         --tensor-parallel-size 4
         --max-model-len 131072

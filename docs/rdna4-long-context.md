@@ -1,0 +1,267 @@
+# Long-context decode on gfx1201: parallelism starvation in the attention kernels
+
+A Qwen3.8-27B profile on this stack could lose **24× of its decode throughput** between a
+1K and a 131K context, and the cause was not bandwidth, not the PCIe link and not the
+decode band. It was that every available split-KV decode kernel had been gated off, leaving
+attention to run in a handful of workgroups on a 64-CU GPU, each walking the whole context
+serially.
+
+This document records the mechanism, the measurements, and which profile settings turn it on
+and off. Companion documents: `docs/rdna4-decode-bands.md` (a different ~2× loss, with
+overlapping symptoms) and `docs/gpu-counts.md`.
+
+---
+
+## The symptom
+
+Serial decode, Qwen3.8-27B-FP8, TP4, `--no-thinking`, `gen 128`, measured with
+`bench/depth_bench.py`. Three configurations, same image, same weights, same host, all
+drawn in the fast decode band:
+
+| depth | A0 `27b-code`: MTP + ROCM_ATTN | A3: no MTP + TRITON_ATTN | A4 `27b-think`: no MTP + ROCM_ATTN |
+|---|---|---|---|
+| 1,023 | 72.3 | 46.3 | 40.0 |
+| 4,096 | 51.6 | 47.5 | 26.6 |
+| 16,387 | 25.7 | 45.6 | 11.4 |
+| 32,775 | 17.6 | 43.4 | 6.4 |
+| 65,551 | 10.2 | 39.4 | 3.4 |
+| 98,327 | 6.5 | 36.1 | 2.0 |
+| 130,911 | — | 33.4 | 1.4 |
+
+Read the columns, not the rows. A0 decays 11× across the range and A4 decays **28×**, while
+A3 decays 1.39× — its curve is essentially flat out to the full 131K window. At 131K, A3 is
+**24× faster than A4**.
+
+The counter-intuitive part: **A4 differs from A0 only by having MTP removed, and it is three
+times worse.** Removing speculative decoding did not free up capacity, it destroyed it. That
+is the clue that the problem is not arithmetic throughput at all.
+
+---
+
+## Why: three gates, all keyed on `query_len`
+
+Attention decode on this model at TP4 can take one of four code paths. Which one it takes is
+decided by the attention backend and by the number of query tokens per decode step — and
+*every* path that parallelises over the context length is gated off by something this stack
+was doing.
+
+The model shape matters, so take it from the checkpoint config: 64 layers at
+`full_attention_interval=4` (16 full-attention, 48 gated-delta-net), `head_dim=256`,
+`num_attention_heads=24`, `num_key_value_heads=4`. **At TP4 that is 6 query heads and 1 KV
+head per rank.** A grid dimension of `num_kv_heads` is therefore a grid dimension of *one*.
+
+### Gate 1 — the ROCm custom paged-attention kernel is permanently disqualified
+
+`vllm/platforms/rocm.py`'s `use_rocm_custom_paged_attention()` requires `head_size == 128`.
+This model has `head_dim=256`, so the fast hand-written kernel is unavailable no matter what
+else is configured. (It also wants `block_size == 16`, and the attention block size is forced
+to 800 by the GDN layers' requirements — `platforms/interface.py` only ever *raises* the
+block size, so `--block-size 16` cannot claw it back. But the head size alone settles it.)
+
+Block size was an early red herring here. It is not the reason.
+
+### Gate 2 — with MTP, decode is routed to the prefill kernel
+
+`chunked_prefill_paged_decode.py:303`:
+
+```python
+if max_query_len > 1:
+    context_attention_fwd(..., skip_decode=True)
+```
+
+With MTP at `num_speculative_tokens: 2`, **every decode step carries query_len=3**, so the
+branch is taken and decode is serviced by `prefix_prefill._fwd_kernel`. That kernel's grid is
+`(batch, num_q_heads, cdiv(max_query_len, BLOCK_M))` — at conc=1, TP4, that is
+`(1, 6, cdiv(3,32)=1)` = **6 workgroups**, each looping over the full context in steps of 32.
+
+Without MTP, the fallback is `kernel_paged_attention_2d[(num_seqs, num_kv_heads)]` with
+`filter_by_query_len=True`. That kernel **has no KV-split dimension at all**, and at conc=1
+with 1 KV head per rank its grid is `(1, 1)` — **one workgroup** for the entire attention
+computation. This is A4, and it is why A4 is the worst column in the table.
+
+### Gate 3 — with MTP, TRITON_ATTN's 3D split-KV path is also closed
+
+`triton_unified_attention.py`'s `use_3d` predicate, verbatim:
+
+```python
+use_3d = not (
+    seq_threshold_3D is None
+    or num_par_softmax_segments is None
+    or softmax_segm_output is None
+    or softmax_segm_max is None
+    or softmax_segm_expsum is None
+    or max_seqlen_q > 1          # <-- MTP sets this to 3
+    or num_seqs > seq_threshold_3D
+    or is_batch_invariant
+)
+...
+if not use_3d:
+    grid = (total_num_q_blocks, num_kv_heads)
+else:
+    grid = (total_num_q_blocks, num_kv_heads, num_par_softmax_segments)
+```
+
+So `max_seqlen_q > 1` closes the 3D path too. **MTP is the single gate that shuts every
+context-parallel decode path on this model**, which is the whole explanation for why removing
+it (A4) and adding TRITON_ATTN (A3) behave so differently: A4 removed the gate but had no
+kernel able to use the opening, A3 removed the gate *and* selected the backend that can.
+
+### What the open gate buys
+
+`triton_attn.py` sets `NUM_PAR_SOFTMAX_SEGMENTS = 16`, so the 3D grid gains a third dimension
+of 16 and each program walks 1/16 of the context. Serial loop iterations at 98K:
+
+| arm | decode path | grid at conc=1, TP4 | serial iterations at 98K |
+|---|---|---|---|
+| A0 | `prefix_prefill._fwd_kernel` | `(1, 6, 1)` = 6 | `cdiv(98304, 32)` = 3072 |
+| A4 | `kernel_paged_attention_2d` | `(1, 1)` = 1 | full context, one program |
+| A3 | unified 3D, 16 segments | `(q_blocks, 1, 16)` | `cdiv(98304, 16*16)` = **384** |
+
+384 against 3072 is the 8× that shows up as A3's flat curve.
+
+---
+
+## The threshold that can silently close the path again
+
+`use_3d` also requires `num_seqs <= seq_threshold_3D`. That threshold is **not** a constant:
+
+```
+MIN_LAUNCH_GRID_SIZE_2D = 128
+seq_threshold_3D = MIN_LAUNCH_GRID_SIZE_2D // num_heads_kv      # 128 // 1 = 128
+# then, when full cudagraphs are enabled, it snaps to the nearest capture size:
+seq_threshold_3D = min(capture_sizes, key=lambda x: abs(x - 128))
+```
+
+With `--cudagraph-capture-sizes 1 2 4 8 16 32` the nearest capture size to 128 is **32**, and
+the profile's `--max-num-seqs` is also 32 — so the path stays open across the whole serving
+range, but only just.
+
+**Raising `--max-num-seqs` above 32, or changing the capture-size list, can switch the 3D path
+off with nothing in the log to say so.** Both profile comments carry this warning. Re-measure
+with `bench/depth_bench.py` after any change to either flag.
+
+---
+
+## Correctness: a split-KV kernel must be checked, not assumed
+
+A kernel that splits the context into 16 segments and reduces across them can combine those
+segments wrongly and lose whole stretches of context — and it would still benchmark
+perfectly, because `depth_bench.py` sends filler with `ignore_eos` and never reads the reply.
+Speed at depth is worthless if the model can no longer see the depth.
+
+`bench/needle_check.py` exists for this. It plants a unique code in a long filler body, asks
+for it back, and grades on exact substring — sweeping the needle's **position** as well as the
+depth, because position is the discriminator for this bug class: a needle at 30% depth and one
+at 70% land in different softmax segments. A uniform failure means retrieval is broken;
+failures clustered at particular positions mean the segment reduction is.
+
+Measured 2026-10-18, 5 positions (0.05/0.25/0.50/0.75/0.95) at each of 16K, 64K and 131K,
+identical needles on both arms:
+
+| arm | retrieved |
+|---|---|
+| A4, ROCM_ATTN (reference) | 15/15 |
+| A3, TRITON_ATTN 3D | **15/15** |
+
+The segment reduction is correct. Run this before shipping any attention backend, kernel or
+block-size change:
+
+```bash
+python3 bench/needle_check.py --model <profile> --no-thinking \
+    --depths 16384,65536,131072 --positions 0.05,0.25,0.5,0.75,0.95 \
+    --max-model-len 131072        # required through llama-swap, which does not report it
+```
+
+Exit status is 0 only if every cell retrieved its needle.
+
+---
+
+## Concurrency: the win is not only a single-stream win
+
+Prewarmed matrix (steady-state decode from a prefix-cache hit — see `--prewarm` in
+`bench/depth_bench.py` and the note below), aggregate tok/s per cell:
+
+| depth | conc | A0 MTP+ROCM | A3 no-MTP+TRITON | A4 no-MTP+ROCM |
+|---|---|---|---|---|
+| 4,096 | 1 | 44.4 | 47.7 | 26.6 |
+| 4,096 | 4 | 131.4 | 140.0 | 93.9 |
+| 4,096 | 8 | 175.1 | **269.6** | 172.1 |
+| 16,384 | 1 | 25.8 | 45.6 | 11.4 |
+| 16,384 | 4 | 72.5 | 128.8 | 40.7 |
+| 16,384 | 8 | 109.2 | **192.3** | 73.2 |
+| 65,536 | 1 | 10.2 | 39.4 | 3.4 |
+| 65,536 | 4 | 26.2 | 107.8 | 12.8 |
+| 65,536 | 8 | 36.6 | **143.4** | 24.5 |
+
+A3 wins every cell in the matrix, including the shallow ones. TTFT improves too: at
+65K × conc=8, 1.81 s against A0's 10.59 s.
+
+The KV pool is unaffected — 1,126,917 tokens on both A3 and A4 at `--max-model-len 131072`,
+so the 3D path's segment buffers cost about 0.06 GiB. 8 × 65K is 47% of the pool; these cells
+are not pool-starved and preemption does not explain anything here.
+
+### Two measurement cautions
+
+- **Deep cells at conc>1 measure prefill contention unless prewarmed.** With unique prompts
+  and chunked prefill, every stream's prefill tokens ride inside every other stream's decode
+  steps. A cold 65K × conc=4 cell measured 181 s TTFT against 13.7 s of serial end-to-end,
+  and at conc=8 two requests timed out. That is a real regime — it is what a cold fleet
+  hitting long unique documents costs — but it is not the regime an agent fleet runs in, where
+  context grows a turn at a time and prefix caching covers nearly all of it. Say which one a
+  number came from.
+- **TTFT is only comparable within a single cold pass.** The prefix cache survives between
+  runs: the same 65K conc=1 prompt reported 1.23 s in one run and 25.79 s in another.
+
+---
+
+## What this is *not*
+
+Each of these was ruled out by measurement or arithmetic, and each is a plausible-sounding
+explanation someone will reach for again:
+
+- **Memory bandwidth.** Step time grew by ~318 ms at 98K. KV at 98K is ~6.4 GB total, ~1.6
+  GB/GPU/step, i.e. ~2.5 ms at ~640 GB/s. That is **~127× too small** to explain the loss.
+- **The PCIe slot link.** Per-step TP collective traffic for this model is ~2 MB over one
+  rank's link: ~35 µs at Gen5 against ~76 µs at Gen4, a 41 µs difference against a ~25 ms
+  step. ~600× too small. See `docs/rdna4-decode-bands.md` for why a downtrained link is still
+  worth fixing, just not for throughput.
+- **The gfx1201 decode band.** A different effect, and already handled by
+  `-e GPU_MAX_HW_QUEUES=1`. It is a *fixed per-step tax* of roughly 2× that amortises with
+  batch size; it cannot produce a 28× slide that grows with depth. All three arms above carried
+  the flag and all were confirmed in the fast band (`mem_busy` 48% under load, against 26%
+  slow / 46% fast).
+- **KV pool starvation / preemption.** 47% of the pool in use at the deepest concurrent cell.
+- **`--block-size 16`.** Block-size unification only ever raises the block size, and the head
+  size disqualifies the custom kernel anyway.
+- **`--decode-context-parallel-size` (DCP).** This would shard KV along the sequence
+  dimension — precisely the missing parallelism — but it is implemented only in the
+  FlashInfer, FlashAttention and MLA backends, none of which exist on gfx1201.
+- **`VLLM_ATTENTION_BACKEND`.** This env var **does not exist in vLLM 0.26.0**. The selector
+  is the CLI flag `--attention-backend`, and an invalid name **silently falls through to
+  auto-selection**. Always confirm in the log:
+  `rocm.py:570 Using TRITON_ATTN backend (selected via --attention-backend).`
+  Auto-selection on this model logs instead:
+  `rocm.py:615 Found incompatible backend(s) [TURBOQUANT] ... Overriding with ROCM_ATTN out of potential backends: ['ROCM_ATTN', 'TRITON_ATTN'].`
+
+---
+
+## Current profile settings
+
+| profile | MTP | backend | rationale |
+|---|---|---|---|
+| `qwen3.8-27b-think` | no | **TRITON_ATTN** (explicit) | no MTP, so the 3D path is available; 24× at 131K over the auto-selected ROCM_ATTN |
+| `qwen3.8-27b-code` | yes | ROCM_ATTN (auto) | MTP gates the 3D path shut, so the flag would do nothing; keeps its short-context MTP advantage |
+| `qwen3.8-27b-fast` | yes | ROCM_ATTN (auto) | as above |
+
+**The flag does nothing on an MTP profile.** Adding `--attention-backend TRITON_ATTN` to
+`27b-code` leaves `max_seqlen_q = 3`, so `use_3d` is still false and decode still goes to a 2D
+grid. Choosing the long-context path means giving up MTP; it is one decision, not two.
+
+Which profile to reach for therefore depends on context depth, and the crossover is between
+4K and 16K:
+
+- **below ~8K**, MTP's extra tokens per step win — use `27b-code`
+- **above ~16K**, the flat curve wins by a growing margin — use `27b-think`
+
+Whether `27b-code` should also give up MTP to get the flat curve is a policy question about
+the default workload, not a measurement question; the measurements are above.
