@@ -271,6 +271,82 @@ models:
         --cudagraph-capture-sizes 1 2 4 8 16 32
     cmdStop: podman stop llmstack-vllm-${MODEL_ID}
 
+  # ─── vLLM: Qwen3.6-27B FP8 — previous-generation dense 27B, MTP ──────────
+  # Best for: coding where you want the 3.6 generation's answers rather than
+  #           3.8's. Throughput is the same: a matched 2026-10-05 sweep ran
+  #           both models through one harness on one day and put them within
+  #           1-2% at every concurrency from 1 to 64. Pick this profile for its
+  #           output, not for speed. That sweep's absolute numbers are not
+  #           quoted: every row truncated at the harness's 1000-token cap over
+  #           a 102-token prompt, which bench/CLAUDE.md warns makes throughput
+  #           figures meaningless. It is a valid A/B between two models and
+  #           nothing more.
+  # Shape:    structurally the same model as the 3.8-27B — 64 layers, 16 full
+  #           attention + 48 gated-delta-net, head_dim 256, MTP draft head
+  #           bundled (mtp.safetensors). Same TP constraints apply.
+  # Thinking: ON by default, and unlike the 3.8 template there is no
+  #           reasoning_effort knob here (only enable_thinking), so there is no
+  #           xhigh default that can run away. Do not pass reasoning_effort.
+  # VRAM:     ~29 GB FP8 weights across 4 GPUs + MTP draft head + KV
+  # Context:  131072 tokens (checkpoint's native maximum is 262144)
+  qwen3.6-27b-code:
+    name: "Qwen3.6-27B FP8 (code, MTP)"
+    ttl: 0
+    metadata:
+      requires:
+        gpus: [2, 4]
+        estimate: true
+        note: "inferred from head counts identical to qwen3.8-27b-code (24 attention / 4 KV heads, 16 linear-attention key heads, vocab 248320): TP3 cannot work, TP1 would have to fit 29 GB of weights on one 32 GB card. TP2/TP1 not run on this checkpoint."
+    checkEndpoint: /health
+    concurrencyLimit: 64
+    aliases:
+      - 27b-code
+      - qwen3.6-27b
+    # llama-swap forwards the client's model string upstream; vLLM only
+    # answers to --served-model-name, so without this every alias 404s.
+    useModelName: qwen3.6-27b-code
+    # -e GPU_MAX_HW_QUEUES=1: see qwen3.8-27b-code for the measurement. Not
+    # measured on this checkpoint, but it is the same architecture on the same
+    # GPU, it costs nothing measurable, and the failure it prevents is silent.
+    cmd: |
+      podman run --replace --rm
+        --name llmstack-vllm-${MODEL_ID}
+        --device=/dev/kfd
+        --device=/dev/dri
+        --group-add keep-groups
+        --security-opt seccomp=unconfined
+        --security-opt apparmor=unconfined
+        --ipc=private
+        --shm-size=32g
+        --network=host
+        -v /mnt/models/llm:/models:ro
+        -v __LLMSTACK_DIR__/.vllm-cache:/root/.cache/vllm
+        -v __LLMSTACK_DIR__/.triton-cache:/root/.triton/cache
+        -e HSA_ENABLE_SDMA=0
+        -e GPU_MAX_HW_QUEUES=1
+        -e TORCH_BLAS_PREFER_HIPBLASLT=1
+        --entrypoint=""
+        docker.io/vllm/vllm-openai-rocm:v0.26.0
+        vllm serve /models/Qwen3.6-27B-FP8
+        --host 127.0.0.1
+        --port ${PORT}
+        --served-model-name qwen3.6-27b-code
+        --dtype auto
+        --tensor-parallel-size 4
+        --max-model-len 131072
+        --max-num-seqs 32
+        --max-num-batched-tokens 32768
+        --gpu-memory-utilization 0.95
+        --enable-prefix-caching
+        --enable-chunked-prefill
+        --trust-remote-code
+        --reasoning-parser qwen3
+        --enable-auto-tool-choice
+        --tool-call-parser qwen3_xml
+        --speculative-config '{"method": "mtp", "num_speculative_tokens": 2}'
+        --cudagraph-capture-sizes 1 2 4 8 16 32
+    cmdStop: podman stop llmstack-vllm-${MODEL_ID}
+
   # ─── vLLM: Qwen3.6-35B-A3B FP8 — previous generation, MTP + thinking ────
   # Best for: Claude Code, OpenCode, agentic coding — highest quality output
   # Backend: vLLM via pinned AMD official image (see header pin)

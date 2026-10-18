@@ -362,6 +362,14 @@ def main(argv=None):
             "label": args.label,
             "gen": args.gen,
             "no_thinking": args.no_thinking,
+            # Which regime ran. --prewarm populates the prefix cache serially
+            # first, so the cells measure steady-state decode; without it each
+            # stream pays a full unique prefill and the cells measure the
+            # mixed prefill+decode cost a real client actually pays. Both are
+            # real and they differ by more than an order of magnitude in deep
+            # cells, so a saved number that does not say which one ran cannot
+            # be compared against anything.
+            "prewarm": args.prewarm,
             "shared_prefix": args.shared_prefix,
             "words_per_token": wpt,
             "timestamp": time.strftime("%Y-%m-%dT%H:%M:%S"),

@@ -291,7 +291,7 @@ def test_real_config_profiles_all_have_requires_and_known_values():
     text = (REPO / "config" / "models.yaml").read_text()
     _, profiles, _ = cfg.split_profiles(text)
     names = [n for n, _ in profiles]
-    assert len(names) == 12, names
+    assert len(names) == 13, names
     req = llmhw.parse_requires(text)
     missing = [n for n in names if n not in req]
     assert not missing, f"profiles without metadata.requires: {missing}"
