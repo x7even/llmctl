@@ -159,9 +159,18 @@ $ grep -n 'split_decodes\|reorder_batch\|def build' .../triton_attn.py
 
 What this does and does not change:
 
-- **It does not change the profile comparison.** The auto-selected ROCM_ATTN path is on a
-  2D grid in *every* step, mixed or not. TRITON_ATTN is on the 3D path in pure-decode steps
-  and matches ROCM_ATTN otherwise, so it is never worse. The fix stands.
+- **It does not change the profile comparison, for decode.** The auto-selected ROCM_ATTN path
+  is on a 2D grid in *every* step, mixed or not. TRITON_ATTN is on the 3D path in pure-decode
+  steps and falls back to the same 2D grid otherwise, so on the decode side it is never worse.
+  The fix stands.
+- **That argument covers decode only, and the backend flag also changes prefill.** Selecting
+  TRITON_ATTN swaps the prefill kernel as well: its unified kernel replaces ROCM_ATTN's
+  `context_attention_fwd`. Nothing here measures that, because every depth × concurrency cell
+  in this document is `--prewarm`, i.e. a prefix-cache hit with almost no real prefill in it.
+  A 24× decode win dominates any plausible prefill delta on a long reply, so this does not
+  put the fix in doubt — but a long-prompt / short-reply workload (one big context, a few
+  tokens back) is **not characterised**, and that is exactly the shape of some agent traffic.
+  Measure it before recommending the flag for that regime.
 - **It does bound the magnitude.** The depth × concurrency matrix in this document was
   measured with `--prewarm`, i.e. on prefix-cache hits, so almost every step was a pure
   decode and the 3D path was open almost always. A fleet sending *unique* long prompts
