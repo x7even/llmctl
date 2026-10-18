@@ -490,13 +490,25 @@ carry inline comments explaining that they deliberately do not — the BF16 `gem
 where quantising the KV cache against BF16 weights was rejected on purpose. The remaining six,
 including all three shipping Qwen3.8 profiles, simply never had it measured.
 
-So treat it as an **unmeasured opportunity, not a missing default.** The reason it is worth
-measuring is real and it is large: FP8 halves KV bytes per token, so on `qwen3.8-27b-think` at
-131K the pool should go from the measured 1,126,917 tokens (8.60x concurrency) to roughly
-double that. Concurrency at depth is the scarce resource on this box, and nothing else on the
-table buys that much of it.
+It has since been **measured on `qwen3.8-27b-think`, and the answer is do not set it.** Full
+write-up: `docs/fp8-kv-cache.md`. The short version is that the prize is real and the flag
+still cannot serve:
 
-Two things to know before testing it, both checked rather than assumed:
+- The pool grows **1.89x** — 1,126,917 -> 2,133,560 tokens, lifting concurrency at 131K from
+  8.60x to 16.28x. `TRITON_ATTN` is retained, the boot is clean, and retrieval is
+  cell-identical to the baseline at 16,384 and 65,536 (6/6 on the same needle codes).
+- Then a **130,752-token request kills the server.** One prefill chunk stays inside the model
+  past the worker-RPC watchdog (`VLLM_EXECUTE_MODEL_TIMEOUT_SECONDS`, default 300), the
+  executor raises `TimeoutError: RPC call to sample_tokens timed out`, `EngineCore` shuts down
+  and every later request gets a 500. Not OOM — `kv_cache_usage` was 6.6% with one request in
+  flight. Reproduced on two cold boots.
+
+So the 1.89x is a paper number: it is pool headroom that cannot be spent, because reaching full
+length is what breaks the engine. Keep the remaining six profiles unmeasured rather than
+assuming either way — but start from "this failed on the profile closest to yours".
+
+Two things that were checked rather than assumed before testing, both of which held up and
+neither of which predicted the failure:
 
 - **It does not close the 3D split-KV path.** The worry is obvious — the long-context fix in
   `docs/rdna4-long-context.md` depends entirely on TRITON_ATTN's 3D decode kernel, and a KV
@@ -520,4 +532,6 @@ Two things to know before testing it, both checked rather than assumed:
 and values, which degrades *retrieval* before it degrades speed, and `depth_bench.py` sends
 filler with `ignore_eos` and never reads the reply — it cannot see this failure at all. Run
 `bench/needle_check.py` against both arms with the same `--seed`, sweeping needle position, and
-require every cell to retrieve before looking at a single tok/s figure.
+require every cell to retrieve before looking at a single tok/s figure. That gate earned its
+keep here: it was the only thing issuing a full-length request, so it is what found the crash,
+and a throughput-only sweep at 65K would have reported FP8 KV as a clean win.
