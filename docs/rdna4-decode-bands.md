@@ -407,8 +407,15 @@ empirically effective — and use `llmband` as the post-start check that the wra
 this rig it is a complete one: it converted a 5/5-slow profile into a 3/3-fast one and restored
 the stored baseline at every concurrency level with no measurable cost. The three
 `qwen3.8-27b-*` profiles ship with it. Everything below is for detecting a slow draw *despite*
-the flag, or on a profile that does not have it yet (the 35B, gemma4 and Flash-Next profiles are
-unmeasured — the flag is a candidate for them, not a decision).
+the flag, or on a profile that does not have it.
+
+   **It is not universal, and Flash-Next is the counter-example.** A matched pair on 2026-10-18
+   found no band to fix on `qwen3.8-flash-next-vllm`: serial 55.6 stock against 53.5 flagged,
+   conc=8 187.4 against 197.2, and `mem_busy` ~31% on *both* arms where the 27B's bands separate
+   at 26% / 46% with no overlap. Both arms sat at or above the profile's best stored conc=8
+   figure. So the flag is a candidate per profile, not a blanket fix — the mechanism is
+   device-level, but whether a given model's step is launch-bound enough to care is not.
+   The 35B and gemma4 profiles are still unmeasured.
 
    A slow draw under the flag is anomalous rather than expected, so treat it as a signal to
    investigate, not just to restart. Remember to recalibrate after adding the flag: a baseline

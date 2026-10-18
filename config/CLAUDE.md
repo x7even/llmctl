@@ -185,11 +185,28 @@ Measured same-day on this rig, 4× R9700 TP4, `qwen3.8-27b-code`, `v0.26.0`, `me
 The penalty is a fixed per-step tax, so it **amortises with batch size** — 1.89× on one stream,
 1.11× at conc=8. Do not quote "1.9×" for a saturated server. The flagged arm lands within 4% of
 the stored baseline at every level, so the flag itself costs nothing measurable. It is set on the three
-`qwen3.8-27b-*` profiles. **It is not yet set on the 35B, gemma4 or Flash-Next profiles** — the
-mechanism is device-level and upstream reports it helps dense and MoE models too, but nothing on
-this rig has been measured for them, and Flash-Next especially has its own capture-size and
-image quirks. Measure before adding it there; give any *new* vLLM profile the flag from the
-start, since the downside is bounded and the upside is a silent 2×.
+`qwen3.8-27b-*` profiles, and on the template at the bottom of `models.yaml`.
+
+**It is deliberately NOT set on Flash-Next, and that is now a measurement rather than an
+omission.** A matched pair on 2026-10-18 (same profile and image either side, flag confirmed in
+the container with `podman inspect`, `medium-256`, `--no-thinking`, 16 requests per level):
+
+| arm | serial | conc=8 | `mem_busy` | steps/s |
+|---|---|---|---|---|
+| stock | **55.6** | 187.4 | 32.4% | 58.4 |
+| `GPU_MAX_HW_QUEUES=1` | 53.5 | **197.2** | 30.6% | 54.3 |
+
+Serial −3.8%, conc=8 +5.2% — both inside this profile's own session spread, and both arms landed
+at or above the best stored conc=8 figure (182), so neither was a slow draw to begin with. The
+decisive column is `mem_busy`: ~31% on both arms, where the 27B's two bands separate cleanly at
+26% against 46% with no overlap. There is no band to fix here, so the flag is not shipped on
+this profile. One matched pair cannot prove the flag never helps Flash-Next; it does show the
+flag is not needed to reach full speed on it, which is the question that decides the config.
+
+**The 35B and gemma4 profiles remain unmeasured.** Measure before adding it there — the
+Flash-Next result above is the reason to measure rather than assume. Give any *new* vLLM profile
+the flag from the start, since the downside is bounded (a few percent on one stream) and the
+upside is a silent 2×.
 
 Two detection notes, both learned the hard way:
 
@@ -451,9 +468,44 @@ llama.cpp auto-discovers the remaining parts.
 |------|-------------|----------------|
 | `--max-num-seqs` | Max concurrent sequences in flight | Lower if OOM; raise if throughput limited and VRAM free |
 | `--gpu-memory-utilization` | Fraction of VRAM reserved for KV cache | Lower if OOM; keep at 0.95–0.97 normally. Exception: `qwen3.8-flash-next-vllm` stays at 0.90 (0.97 stalls under concurrent 100K prompts; see docs/models.md) |
-| `--kv-cache-dtype fp8` | Store KV tensors in FP8 | Leave on for all vLLM profiles; saves ~40% KV VRAM |
+| `--kv-cache-dtype fp8` | Store KV tensors in FP8 | **Not a default — see below.** Only `qwen3.6-35b-fast` sets it today |
 | `concurrencyLimit` | Queue depth before 429 | Set to `--max-num-seqs` or slightly above |
 | `ttl` | Seconds before auto-unload | 0 = never; useful for infrequently used profiles |
 | `--enable-prefix-caching` | Cache prompt prefixes across requests | Leave on for all profiles |
 | `--enable-expert-parallel` | Distribute MoE experts across GPUs | ON for FP8/dense profiles; OFF for AWQ |
 | `--speculative-config` | MTP or other speculative decoding | Only for models with bundled draft heads |
+
+### `--kv-cache-dtype fp8` is not on, and "turn it on everywhere" is the wrong instruction
+
+This row used to read "leave on for all vLLM profiles". That was never true of the config and
+is the kind of instruction someone acts on in one pass across nine profiles. Reality, as of
+2026-10-18: **one** of the nine vLLM profiles sets it (`qwen3.6-35b-fast`). Two of the others
+carry inline comments explaining that they deliberately do not — the BF16 `gemma4` profiles,
+where quantising the KV cache against BF16 weights was rejected on purpose. The remaining six,
+including all three shipping Qwen3.8 profiles, simply never had it measured.
+
+So treat it as an **unmeasured opportunity, not a missing default.** The reason it is worth
+measuring is real and it is large: FP8 halves KV bytes per token, so on `qwen3.8-27b-think` at
+131K the pool should go from the measured 1,126,917 tokens (8.60x concurrency) to roughly
+double that. Concurrency at depth is the scarce resource on this box, and nothing else on the
+table buys that much of it.
+
+Two things to know before testing it, both checked rather than assumed:
+
+- **It does not close the 3D split-KV path.** The worry is obvious — the long-context fix in
+  `docs/rdna4-long-context.md` depends entirely on TRITON_ATTN's 3D decode kernel, and a KV
+  dtype change is exactly the sort of thing that silently drops a kernel to a fallback. It
+  does not. In the pinned v0.26.0 image, `triton_attn.py` lists `fp8`, `fp8_e4m3` and
+  `fp8_e5m2` in `supported_kv_cache_dtypes`, and its only `NotImplementedError` for a
+  quantized cache is on the **encoder** attention path, which decoder-only Qwen3.x never
+  takes. The decode path just views the cache as FP8.
+- **The precedent that it can go wrong is image-level, not flag-level.** On the 2026-10-15
+  Radiance canary, FP8 KV fell back to Triton paged attention and cost 35-46% of decode at 8K+
+  with 2x TTFT. That was measured on a different image and does not transfer to v0.26.0 — but
+  it is why the pairing has to be re-measured on any image bump rather than inherited.
+
+**The gate is `needle_check.py`, not throughput.** FP8 KV reduces the precision of stored keys
+and values, which degrades *retrieval* before it degrades speed, and `depth_bench.py` sends
+filler with `ignore_eos` and never reads the reply — it cannot see this failure at all. Run
+`bench/needle_check.py` against both arms with the same `--seed`, sweeping needle position, and
+require every cell to retrieve before looking at a single tok/s figure.

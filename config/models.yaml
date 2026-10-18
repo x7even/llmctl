@@ -823,18 +823,28 @@ models:
 # ── Template for adding new models ──────────────────────────────────────────
 #
 # # vLLM (safetensors / FP8 / AWQ):
+# #
+# # Five things in here are mandatory, not style. Omit 1 and startup dies with
+# # "unrecognized arguments"; omit 2 or 3 and the first start takes 18+ minutes;
+# # omit 4 and every alias 404s; omit 5 and the profile looks healthy while serving
+# # at roughly half speed. Each is marked (1)-(5) below. See the root CLAUDE.md
+# # section "vLLM profiles: mandatory flags".
 # my-new-model:
 #   name: "Human Readable Name"
-#   ttl: 600
+#   # TTL 0 unless you have measured otherwise. llama-swap starts the TTL clock at
+#   # container launch, not at the point the model becomes healthy, so any TTL below
+#   # the ~2-3 min cold start unloads the model the moment it finishes loading.
+#   ttl: 0
 #   metadata:                      # required: see config/CLAUDE.md "Profile requirements"
 #     requires:
 #       gpus: [2, 4]               # valid tensor-parallel sizes (list), not min_gpus
 #       estimate: true             # drop once measured on this rig
 #       note: "why these counts"
 #   checkEndpoint: /health
+#   concurrencyLimit: 32           # set to --max-num-seqs or slightly above
 #   aliases:
 #     - shortname
-#   useModelName: my-new-model     # must equal --served-model-name below, or every
+#   useModelName: my-new-model     # (4) must equal --served-model-name below, or every
 #                                  # alias above 404s: llama-swap routes by alias but
 #                                  # forwards the client's model string to a backend
 #                                  # that only answers to --served-model-name.
@@ -850,17 +860,49 @@ models:
 #       --shm-size=32g
 #       --network=host
 #       -v /mnt/models/llm:/models:ro
+#       # (3) persistent compile caches. Without both mounts torch.compile and Triton
+#       # re-run on every single start (~14 min). __LLMSTACK_DIR__ is a placeholder --
+#       # run scripts/configure to write the real path into your working copy, and
+#       # never commit the substituted form (tests/test_configure.py enforces this).
+#       -v __LLMSTACK_DIR__/.vllm-cache:/root/.cache/vllm
+#       -v __LLMSTACK_DIR__/.triton-cache:/root/.triton/cache
 #       -e HSA_ENABLE_SDMA=0
-#       -e VLLM_ROCM_USE_AITER=0
-#       localhost/vllm-rdna4:rocm7.1.1-navi-fixed
-#       serve /models/<local-model-dir>
+#       # (5) load-bearing on gfx1201, not a tuning knob. Without it the container can
+#       # draw the slow decode band and serve at ~half speed for its whole life, with
+#       # nothing in the logs. Measured on the 27B at TP4: serial 35.6 -> 67.2 tok/s.
+#       # Classify any new profile with scripts/llmband. See docs/rdna4-decode-bands.md.
+#       -e GPU_MAX_HW_QUEUES=1
+#       -e TORCH_BLAS_PREFER_HIPBLASLT=1
+#       # For an MoE model, also mount the tuned expert configs, or every MoE layer
+#       # falls back to an untuned kernel:
+#       #   -v __LLMSTACK_DIR__/vllm-tuned-configs:/vllm-tuned-configs:ro
+#       #   -e VLLM_TUNED_CONFIG_FOLDER=/vllm-tuned-configs
+#       # (1) nullify the AMD image's broken ENTRYPOINT, then invoke vllm explicitly.
+#       --entrypoint=""
+#       # Pinned tag. Never reference a moving :latest, and never the local
+#       # localhost/llmstack-vllm image (transformers 5.x breaks Qwen3 at startup).
+#       docker.io/vllm/vllm-openai-rocm:v0.26.0
+#       vllm serve /models/<local-model-dir>
 #       --host 127.0.0.1
 #       --port ${PORT}
 #       --served-model-name my-new-model
 #       --dtype auto
 #       --tensor-parallel-size 4
-#       --gpu-memory-utilization 0.90
+#       --max-model-len 131072
+#       --max-num-seqs 32          # raising this above 32 closes TRITON_ATTN's 3D
+#                                  # split-KV path: docs/rdna4-long-context.md
+#       --gpu-memory-utilization 0.95
+#       --enable-prefix-caching
+#       --enable-chunked-prefill
 #       --trust-remote-code
+#       # (2) explicit capture sizes. Without this vLLM enumerates ~2000+ shapes and
+#       # the first start takes 18+ minutes. Do NOT reach for --enforce-eager instead:
+#       # it costs 10-20% throughput permanently. These exact values are measured --
+#       # see docs/rdna4-decode-bands.md before changing them.
+#       --cudagraph-capture-sizes 1 2 4 8 16 32
+#       # MoE only -- never combine --quantization awq with --enable-expert-parallel,
+#       # it crashes mid-startup with an IndexError:
+#       #   --enable-expert-parallel
 #   cmdStop: podman stop llmstack-vllm-${MODEL_ID}
 #
 # # llama-server (GGUF):

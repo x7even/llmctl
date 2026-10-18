@@ -394,8 +394,13 @@ only that variable: stock drew slow 5/5 at 35.6 tok/s serial, 320.9 at conc=8, 4
 with the flag it drew fast 3/3 at 67.2 / 357.6 / 536.8 — within 4% of the stored baseline at
 every level, for no measurable cost. The penalty is a fixed per-step tax and so **amortises with
 batch size**: 1.89x on a single stream, 1.76x at conc=2, 1.11x at conc=8. Quote the level you
-mean; "1.9x" is the single-stream figure, not the fleet figure. The three `qwen3.8-27b-*` profiles ship with it (mandatory item 5 above); the
-35B, gemma4 and Flash-Next profiles do not have it yet and are unmeasured.
+mean; "1.9x" is the single-stream figure, not the fleet figure. The three `qwen3.8-27b-*` profiles ship with it (mandatory item 5 above).
+
+**It is not universal.** Measured on Flash-Next 2026-10-18 and deliberately not shipped there:
+serial 55.6 stock vs 53.5 flagged, conc=8 187.4 vs 197.2, and `mem_busy` ~31% on *both* arms
+where the 27B's bands separate at 26%/46% with no overlap — there is no band to fix on that
+profile. The 35B and gemma4 profiles are still unmeasured. Measure per profile; the mechanism is
+device-level but whether a model's step is launch-bound enough to care is not.
 
 Two local corrections to the upstream framing. **Here the draw is deterministic, not a
 lottery** — stock was slow on every one of five spawns across two launchers, three launch
