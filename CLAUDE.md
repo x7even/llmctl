@@ -259,7 +259,7 @@ See `tui/CLAUDE.md` for architecture and coding conventions.
 | Profile | Backend | VRAM | Active params | Notes |
 |---------|---------|------|--------------|-------|
 | `qwen3.8-27b-code` ✓ | vLLM + MTP | ~31 GB + KV | 27B (dense) | **Default.** Thinking (medium effort); 131K ctx; 361 tok/s @ conc=8 |
-| `qwen3.8-27b-think` | vLLM | ~31 GB + KV | 27B (dense) | Thinking, no MTP — parallel agent fleets |
+| `qwen3.8-27b-think` ✓ | vLLM + TRITON_ATTN | ~31 GB + KV | 27B (dense) | Thinking, no MTP — parallel agent fleets. **The long-context profile:** 33 tok/s at 131K vs 1.4 without the backend flag |
 | `qwen3.8-27b-fast` | vLLM + MTP | ~31 GB + KV | 27B (dense) | Thinking OFF by default |
 | `qwen3.8-flash-next` | llama-server (Vulkan) | ~81 GB | 6B (MoE, 125B) | UD-IQ4_XS GGUF, custom llama.cpp fork; single-user |
 | `qwen3.8-flash-next-vllm` | vLLM TP4+EP (nightly image) | ~19 GB/GPU + ~48 GB pinned PLE in host RAM (~96 GB host RAM recommended) | 6B (MoE, 125B) | W4A16 INT4 + FP8 PLE; 262K ctx, **medium effort by default** (xhigh runs away); 55.7 tok/s serial, ~150-185 @ conc=8 (182 best run), 216 @ conc=16, flat ~55 out to 258K; needs `--ulimit memlock=-1:-1` and all 4 GPUs; exclusive VRAM |
@@ -433,6 +433,44 @@ below steady state — the same order as the detector's own tolerance, so an unw
 healthy cold spawn read `undecided`. That 12% was never a cost of the flag; end-to-end
 throughput is at baseline at all six concurrency levels. Use `--warmup-tokens 0` only to study
 the warmup effect itself.
+### Long context: the default attention backend collapses, TRITON_ATTN does not
+
+On gfx1201 a Qwen3.x profile's decode rate can fall away to nothing as the prompt gets
+deeper — 40 tok/s at 1K down to **1.4 tok/s at 131K** on the no-MTP 27B, a **28x** decay
+across the window. `--attention-backend TRITON_ATTN` turns that into a 1.39x decay (46.3 ->
+33.4), i.e. **24x faster at 131K**, and it wins every depth x concurrency cell measured
+(65,536 x conc=8: 24.5 -> 143.4 tok/s). Shipped on `qwen3.8-27b-think`.
+
+The cause is parallelism starvation: no kernel on this GPU parallelises over context length
+unless TRITON_ATTN's 3D split-KV path is open. Four gates decide it, all keyed on `query_len`:
+
+1. ROCm's custom paged-attention kernel needs `head_size == 128`. **Every Qwen3.x checkpoint
+   here is `head_dim = 256`**, so it is permanently disqualified — a shape mismatch, not a
+   tuning problem.
+2. The 2D fallback launches `(num_seqs, num_kv_heads)`. At TP4 with 2-4 KV heads that is
+   **one workgroup** at conc=1, however long the context is.
+3. TRITON_ATTN's 3D path adds a segment dimension and is the only depth-scaling kernel — but
+   its predicate excludes `max_query_len > 1`, so **MTP closes it**.
+4. The predicate is evaluated per *batch*. A step carrying a prefill chunk drops every
+   co-batched deep decoder to the 2D grid. This one cannot be configured away.
+
+Operational consequences:
+
+- **`--max-num-seqs` above 32 silently closes the 3D path.** The threshold snaps to the
+  nearest CUDA-graph capture size, which is 32 today. Changing `--max-num-seqs` or the
+  capture-size list can undo the whole fix with nothing in the log.
+- **`VLLM_ATTENTION_BACKEND` does not exist in 0.26.0.** Use the CLI `--attention-backend`;
+  an invalid name **silently falls back to auto-selection**. Always confirm with
+  `podman logs <container> | grep ATTN` — the pass line is
+  `Using TRITON_ATTN backend (selected via --attention-backend)`.
+- **Do not flip `qwen3.8-27b-code`.** At 256-token prompts MTP wins 17-30% (conc=8: 361 vs
+  267), so the default keeps MTP and long-context work goes to `27b-think` explicitly.
+- **Benchmark depth, and check retrieval.** `bench/depth_bench.py` sweeps depth x concurrency
+  (`--prewarm` for steady-state decode); `concurrent_bench.py` at `medium-256` cannot see any
+  of this. A split-KV kernel that mis-combines its softmax segments benchmarks perfectly while
+  losing context, so any attention or kernel change must also pass `bench/needle_check.py`.
+
+Full write-up, with source lines and the prefill-kernel caveat: `docs/rdna4-long-context.md`.
 
 **Note:** R9700-tuned MoE configs (-33% at conc=8) were reverted; all 35b profiles use MI300X
 defaults, which outperform at concurrent load.
@@ -459,12 +497,15 @@ docs/llmctl.md       Full CLI reference
 docs/workarounds.md  Active bugs + workarounds (vLLM SSE null name)
 docs/flash-next-half-speed.md  Half-speed Flash-Next starts: cause (full page cache) and the llm-prestart guard
 docs/rdna4-decode-bands.md     gfx1201 bimodal decode bands: detection with llmband, ratios, ruled-out list
+docs/rdna4-long-context.md     Why decode collapses at depth on gfx1201 and the TRITON_ATTN fix (four query_len gates)
 docs/hard-code-tasks.md        Harder code tests: caps vs 4-bit weights, 27B early stops, ceiling check
 docs/upgrade-plan-2026-*.md    Image/ROCm upgrade canaries and their gates
 scripts/llm-prestart  exec wrapper in front of Flash-Next's podman run (drops page cache first)
 scripts/pcie-link-check  Checks every GPU's PCIe link reaches its rated speed UNDER LOAD
 scripts/llmhw.py     Hardware/requirements checker used by configure, llmctl and llmpanel
 bench/codetests/     Code-correctness suite (11 tasks, 5 of them the harder set) run by run_codetests.py
+bench/depth_bench.py Context-depth x concurrency sweep (--prewarm for steady-state decode)
+bench/needle_check.py Long-context retrieval, sweeping needle position — the correctness gate for kernel changes
 .vllm-cache/         Persistent Inductor compilation cache (gitignored)
 .triton-cache/       Persistent Triton kernel cache (gitignored)
 ```
