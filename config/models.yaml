@@ -107,7 +107,7 @@ models:
         --tensor-parallel-size 4
         --max-model-len 131072
         --max-num-seqs 32
-        --max-num-batched-tokens 32768
+        --max-num-batched-tokens 16384
         --gpu-memory-utilization 0.95
         --enable-prefix-caching
         --enable-chunked-prefill
@@ -258,7 +258,7 @@ models:
         --tensor-parallel-size 4
         --max-model-len 131072
         --max-num-seqs 32
-        --max-num-batched-tokens 32768
+        --max-num-batched-tokens 16384
         --gpu-memory-utilization 0.95
         --enable-prefix-caching
         --enable-chunked-prefill
@@ -267,6 +267,81 @@ models:
         --enable-auto-tool-choice
         --tool-call-parser qwen3_xml
         --default-chat-template-kwargs '{"enable_thinking": false}'
+        --speculative-config '{"method": "mtp", "num_speculative_tokens": 2}'
+        --cudagraph-capture-sizes 1 2 4 8 16 32
+    cmdStop: podman stop llmstack-vllm-${MODEL_ID}
+
+  # ─── vLLM: Qwen3.6-27B FP8 — previous-generation dense 27B, MTP ──────────
+  # Best for: coding where you want the 3.6 generation's answers rather than
+  #           3.8's. Throughput is the same: a matched 2026-10-05 sweep ran
+  #           both models through one harness on one day and put them within
+  #           1-2% at every concurrency from 1 to 64. Pick this profile for its
+  #           output, not for speed. That sweep's absolute numbers are not
+  #           quoted: every row truncated at the harness's 1000-token cap over
+  #           a 102-token prompt, which bench/CLAUDE.md warns makes throughput
+  #           figures meaningless. It is a valid A/B between two models and
+  #           nothing more.
+  # Shape:    structurally the same model as the 3.8-27B — 64 layers, 16 full
+  #           attention + 48 gated-delta-net, head_dim 256, MTP draft head
+  #           bundled (mtp.safetensors). Same TP constraints apply.
+  # Thinking: ON by default, and unlike the 3.8 template there is no
+  #           reasoning_effort knob here (only enable_thinking), so there is no
+  #           xhigh default that can run away. Do not pass reasoning_effort.
+  # VRAM:     ~29 GB FP8 weights across 4 GPUs + MTP draft head + KV
+  # Context:  131072 tokens (checkpoint's native maximum is 262144)
+  qwen3.6-27b-code:
+    name: "Qwen3.6-27B FP8 (code, MTP)"
+    ttl: 0
+    metadata:
+      requires:
+        gpus: [2, 4]
+        note: "measured 2026-10-18 on this checkpoint, all four counts run: TP4 and TP2 both serve real completions (TP2 KV pool 259,165 tokens = 1.98x concurrency at 131K, against 8.38x at TP4, so TP2 is viable but nearly single-stream at full depth); TP1 OOMs loading weights, 29.78 GiB allocated on a 31.86 GiB card; TP3 fails at startup with AssertionError: 16 is not divisible by 3, the 16 linear-attention key heads."
+    checkEndpoint: /health
+    concurrencyLimit: 64
+    aliases:
+      - 27b-code
+      - qwen3.6-27b
+    # llama-swap forwards the client's model string upstream; vLLM only
+    # answers to --served-model-name, so without this every alias 404s.
+    useModelName: qwen3.6-27b-code
+    # -e GPU_MAX_HW_QUEUES=1: see qwen3.8-27b-code for the measurement. Not
+    # measured on this checkpoint, but it is the same architecture on the same
+    # GPU, it costs nothing measurable, and the failure it prevents is silent.
+    cmd: |
+      podman run --replace --rm
+        --name llmstack-vllm-${MODEL_ID}
+        --device=/dev/kfd
+        --device=/dev/dri
+        --group-add keep-groups
+        --security-opt seccomp=unconfined
+        --security-opt apparmor=unconfined
+        --ipc=private
+        --shm-size=32g
+        --network=host
+        -v /mnt/models/llm:/models:ro
+        -v __LLMSTACK_DIR__/.vllm-cache:/root/.cache/vllm
+        -v __LLMSTACK_DIR__/.triton-cache:/root/.triton/cache
+        -e HSA_ENABLE_SDMA=0
+        -e GPU_MAX_HW_QUEUES=1
+        -e TORCH_BLAS_PREFER_HIPBLASLT=1
+        --entrypoint=""
+        docker.io/vllm/vllm-openai-rocm:v0.26.0
+        vllm serve /models/Qwen3.6-27B-FP8
+        --host 127.0.0.1
+        --port ${PORT}
+        --served-model-name qwen3.6-27b-code
+        --dtype auto
+        --tensor-parallel-size 4
+        --max-model-len 131072
+        --max-num-seqs 32
+        --max-num-batched-tokens 16384
+        --gpu-memory-utilization 0.95
+        --enable-prefix-caching
+        --enable-chunked-prefill
+        --trust-remote-code
+        --reasoning-parser qwen3
+        --enable-auto-tool-choice
+        --tool-call-parser qwen3_xml
         --speculative-config '{"method": "mtp", "num_speculative_tokens": 2}'
         --cudagraph-capture-sizes 1 2 4 8 16 32
     cmdStop: podman stop llmstack-vllm-${MODEL_ID}
@@ -312,6 +387,7 @@ models:
         -v __LLMSTACK_DIR__/.vllm-cache:/root/.cache/vllm
         -v __LLMSTACK_DIR__/.triton-cache:/root/.triton/cache
         -e HSA_ENABLE_SDMA=0
+        -e GPU_MAX_HW_QUEUES=1
         -e TORCH_BLAS_PREFER_HIPBLASLT=1
         --entrypoint=""
         docker.io/vllm/vllm-openai-rocm:v0.26.0
@@ -356,6 +432,29 @@ models:
     concurrencyLimit: 64
     aliases:
       - 35b-nomtp
+    # Two flags here are load-bearing, both measured on this profile 2026-10-19,
+    # fast-band against fast-band (docs/rdna4-long-context.md):
+    #
+    #   -e GPU_MAX_HW_QUEUES=1   2.87x serial / 2.07x conc=8 on medium-256.
+    #   --attention-backend TRITON_ATTN   no MTP here, so the 3D split-KV path is
+    #     open and this is the only kernel on gfx1201 that parallelises over
+    #     context length. Aggregate tok/s vs the auto-selected ROCM_ATTN:
+    #       2,048x1  59.2 -> 97.1     16,384x1   18.4 -> 91.5
+    #       16,384x8 131.9 -> 439.8   65,536x4   20.7 -> 231.1  (prewarmed)
+    #       129,984x1 2.2 -> 62.4  = 28x, and decay across the window 26.9x -> 1.56x
+    #     Retrieval gated: needle_check 3 depths x 5 positions, 15/15.
+    #
+    # It costs nothing at short prompts. An earlier version of this comment said
+    # TRITON was 19% SLOWER at medium-256 conc=8; that was one bench run per arm
+    # at --requests 32, and the request count alone moves a conc=8 reading by
+    # +4% to +32% here. Matched (fresh spawn per arm, 3 reps, --requests 128,
+    # --serial-n 8) TRITON wins every level: serial 91.5 vs 88.1, conc=8 463.9
+    # vs 446.7, conc=32 1208.6 vs 1180.2, non-overlapping spreads, KV pool
+    # parity verified (1,538,425 vs 1,538,939). Route to this profile on depth;
+    # 35b-code's advantage at short prompts is MTP, not its attention backend.
+    #
+    # --max-num-seqs must stay at 32: above the nearest --cudagraph-capture-sizes
+    # entry the 3D path closes silently, with nothing in the log.
     # llama-swap forwards the client's model string upstream; vLLM only
     # answers to --served-model-name, so without this every alias 404s.
     useModelName: qwen3.6-35b-128k-nomtp
@@ -374,6 +473,7 @@ models:
         -v __LLMSTACK_DIR__/.vllm-cache:/root/.cache/vllm
         -v __LLMSTACK_DIR__/.triton-cache:/root/.triton/cache
         -e HSA_ENABLE_SDMA=0
+        -e GPU_MAX_HW_QUEUES=1
         -e TORCH_BLAS_PREFER_HIPBLASLT=1
         --entrypoint=""
         docker.io/vllm/vllm-openai-rocm:v0.26.0
@@ -381,6 +481,7 @@ models:
         --host 127.0.0.1
         --port ${PORT}
         --served-model-name qwen3.6-35b-128k-nomtp
+        --attention-backend TRITON_ATTN
         --dtype auto
         --tensor-parallel-size 4
         --enable-expert-parallel
@@ -436,6 +537,7 @@ models:
         -v __LLMSTACK_DIR__/.vllm-cache:/root/.cache/vllm
         -v __LLMSTACK_DIR__/.triton-cache:/root/.triton/cache
         -e HSA_ENABLE_SDMA=0
+        -e GPU_MAX_HW_QUEUES=1
         -e TORCH_BLAS_PREFER_HIPBLASLT=1
         --entrypoint=""
         docker.io/vllm/vllm-openai-rocm:v0.26.0
@@ -737,6 +839,7 @@ models:
         -v __LLMSTACK_DIR__/.vllm-cache:/root/.cache/vllm
         -v __LLMSTACK_DIR__/.triton-cache:/root/.triton/cache
         -e HSA_ENABLE_SDMA=0
+        -e GPU_MAX_HW_QUEUES=1
         -e TORCH_BLAS_PREFER_HIPBLASLT=1
         --entrypoint=""
         docker.io/vllm/vllm-openai-rocm:v0.26.0

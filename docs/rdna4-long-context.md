@@ -319,11 +319,98 @@ explanation someone will reach for again:
   dimension — precisely the missing parallelism — but it is implemented only in the
   FlashInfer, FlashAttention and MLA backends, none of which exist on gfx1201.
 - **`VLLM_ATTENTION_BACKEND`.** This env var **does not exist in vLLM 0.26.0**. The selector
-  is the CLI flag `--attention-backend`, and an invalid name **silently falls through to
-  auto-selection**. Always confirm in the log:
+  is the CLI flag `--attention-backend`. An earlier version of this file said an invalid name
+  silently falls through to auto-selection; **it does not** — both failure modes are loud.
+  `arg_utils.py:2257` parses the flag with `AttentionBackendEnum[value.upper()]`, so a typo
+  raises `KeyError` before the server starts, and `rocm.py`'s `get_attn_backend_cls` raises
+  `Selected backend ... is not valid for this configuration` for a name that is spelled right
+  but incompatible with the model's shapes. `auto` is the only string meaning auto-selection.
+  Confirm what is running in the log:
   `rocm.py:570 Using TRITON_ATTN backend (selected via --attention-backend).`
   Auto-selection on this model logs instead:
   `rocm.py:615 Found incompatible backend(s) [TURBOQUANT] ... Overriding with ROCM_ATTN out of potential backends: ['ROCM_ATTN', 'TRITON_ATTN'].`
+  Read the backend *name* in that first line, not the parenthetical: `rocm.py` prints
+  "selected via --attention-backend" whenever anything set a backend, vLLM itself included.
+  `gemma4-26b-a4b` gets TRITON_ATTN from `model_executor/models/config.py:239` — Gemma 4 has
+  heterogeneous head dimensions and no FA4 here — and logs that line with no flag on its argv.
+
+---
+
+## The same fix on the 35B MoE, and what it reveals about the cost
+
+Measured 2026-10-19 on `qwen3.6-35b-128k-nomtp` (FP8, 3B active of 35B, TP4+EP, no MTP).
+Two arms, one variable — both carry `-e GPU_MAX_HW_QUEUES=1` and **both spawns were
+classified fast-band before measuring**, so the ratios below are kernel effects and not a
+band draw:
+
+| cell (depth × streams) | ROCM_ATTN (auto) | TRITON_ATTN | ratio |
+|---|---|---|---|
+| 2,048 × 1 | 59.2 | 97.1 | 1.64× |
+| 2,048 × 8 | 341.3 | 469.5 | 1.38× |
+| 16,384 × 1 | 18.4 | 91.5 | 4.97× |
+| 16,384 × 8 | 106.9 | 300.7 | 2.81× |
+| 16,384 × 8 *prewarmed* | 131.9 | **439.8** | 3.33× |
+| 65,536 × 1 | 4.6 | 76.3 | 16.6× |
+| 65,536 × 4 | 16.1 | 108.4 | 6.73× |
+| 65,536 × 4 *prewarmed* | 20.7 | **231.1** | 11.2× |
+| 129,984 × 1 | 2.2 | **62.4** | 28.4× |
+
+Aggregate tok/s, `--no-thinking`, gen 128. Decay across the window falls from **26.9× to
+1.56×** (97.1 at 2K → 62.4 at 130K). Prefill improves as well, which the 27B write-up did
+not establish: TTFT at 65,536 × 4 goes 55.21 s → 23.77 s (2.32×), at 16,384 × 8
+11.73 → 7.72 s, at 129,984 × 1 32.06 → 22.74 s. One cell is marginally worse
+(16,384 × 1 TTFT, 1.23 → 1.28 s).
+
+Correctness gate, the same one `27b-think` had to pass: `bench/needle_check.py`, 3 depths
+(16K/64K/130K) × 5 needle positions (0.05–0.95), **15/15 retrieved**, exit 0.
+
+**This profile now holds the long-context record in the stack** — 62.4 tok/s at 130K on one
+stream against `qwen3.8-27b-think`'s 33.4, which is the expected direction for 3B active
+parameters against 27B dense but had not been measured.
+
+### What it costs at short prompts: nothing — and the first answer here was wrong
+
+An earlier version of this section said TRITON is **19% slower at `medium-256` conc=8** on
+this profile (347.9 against ROCM_ATTN's 431.1) and called that "TRITON's own cost under churn."
+**Withdrawn.** Both figures were one `concurrent_bench.py` run per arm at `--requests 32`, and
+on this hardware the request count alone moves a conc=8 reading by that much: same profile,
+same config, same flag, `qwen3.6-35b-code` reads 250.1 at n=32 and 298.4 at n=128 (+19%), and
+this profile reads 347.9 at n=32 and 458.3 at n=128 (+32%). 32 requests through 8 slots is a
+~12 s run that ramp-up and drain dominate, so the comparison could not support a kernel
+attribution at all.
+
+Re-measured 2026-10-19 as a matched pair — one fresh spawn per arm, 3 bench reps against each
+live server, `--requests 128`, `--serial-n 8`, `--no-thinking`, this profile's own config with
+`--attention-backend TRITON_ATTN` as the single variable:
+
+| cell | ROCM_ATTN (3 reps) | TRITON_ATTN (3 reps) | T/R |
+|---|---|---|---|
+| serial (n=8) | 87.9 / 88.1 / 88.3 | 91.5 / 91.5 / 91.6 | **+3.9%** |
+| conc=8 (n=128) | 445.5 / 446.7 / 446.7 | 464.1 / 463.9 / 461.3 | **+3.9%** |
+| conc=32 (n=128) | 1180.2 / 1187.3 / 1174.1 | 1208.6 / 1226.1 / 1203.5 | **+2.4%** |
+
+The spreads do not overlap at any level, and run-to-run noise against one live server is 0.6%
+at conc=8 and 1.9% at conc=32. **TRITON_ATTN is slightly faster at short prompts too**, so this
+profile's backend is not a trade against short-prompt throughput, and there is no crossover to
+locate. KV pool parity is now verified rather than assumed: 1,538,425 tokens on the TRITON
+spawn against 1,538,939 on the ROCM spawn, a 0.03% difference.
+
+Two things the retraction does not touch:
+
+- **Gate 4 is a source-code fact.** The 3D split-KV predicate is evaluated per *batch*, so a
+  co-batched prefill chunk does drop deep decoders to the 2D grid. What was never measured is
+  what that costs at depth.
+- **The depth grid above is still a no-arrival best case.** `depth_bench.py` launched exactly
+  `conc` streams once; `--requests N` (added 2026-10-19) measures the churn regime, and
+  **depth under churn remains unmeasured here** — so do not quote 11× or 28× as fleet
+  numbers.
+
+And one thing it reverses. `bfe8115` attributed `27b-think`'s `medium-256` cost to TRITON
+**and** the loss of MTP together, two variables at once; this pair was supposed to separate
+them, and it does — just the other way. With no TRITON cost to find at short prompts, that
+cost points back at losing MTP, which the same-day 27B pair supports directly (MTP wins 41%
+serial, 27% at conc=8, 21% at 16, 13% at 32). `--max-num-seqs` stays at 32 regardless: above
+the nearest capture size the 3D path closes silently.
 
 ---
 
@@ -332,6 +419,7 @@ explanation someone will reach for again:
 | profile | MTP | backend | rationale |
 |---|---|---|---|
 | `qwen3.8-27b-think` | no | **TRITON_ATTN** (explicit) | no MTP, so the 3D path is available; 24× at 131K over the auto-selected ROCM_ATTN |
+| `qwen3.6-35b-128k-nomtp` | no | **TRITON_ATTN** (explicit) | no MTP; 28× at 130K, 1.56× decay across the window, and the fastest deep-context profile here, with no measured short-prompt cost (+3.9% at `medium-256` conc=8, matched n=128) |
 | `qwen3.8-27b-code` | yes | ROCM_ATTN (auto) | MTP gates the 3D path shut, so the flag would do nothing; keeps its short-context MTP advantage |
 | `qwen3.8-27b-fast` | yes | ROCM_ATTN (auto) | as above |
 

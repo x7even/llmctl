@@ -1,0 +1,218 @@
+{
+  "model": "qwen3.6-35b-128k-nomtp",
+  "url": "http://127.0.0.1:8080/v1/chat/completions",
+  "label": "",
+  "gen": 1024,
+  "no_thinking": true,
+  "prewarm": false,
+  "shared_prefix": false,
+  "seed": 1234,
+  "run_nonce": 47597,
+  "words_per_token": 1.0002463661000247,
+  "timestamp": "2026-10-19T05:46:27",
+  "rows": [
+    {
+      "ok": 1,
+      "requested": 1,
+      "errors": [],
+      "prompt_tokens": 2047,
+      "completion_tokens": 1024,
+      "agg_decode_tok_s": 97.07344234765321,
+      "per_stream_tok_s_mean": 97.07344234765321,
+      "per_stream_tok_s_min": 97.07344234765321,
+      "ttft_s_mean": 0.18121033199713565,
+      "ttft_s_p90": 0.18121033199713565,
+      "e2e_s_max": 10.71962305600755,
+      "dist": {
+        "per_stream_tok_s": {
+          "n": 1,
+          "mean": 97.07344234765321,
+          "stdev": 0.0,
+          "min": 97.07344234765321,
+          "p10": 97.07344234765321,
+          "p50": 97.07344234765321,
+          "p90": 97.07344234765321,
+          "max": 97.07344234765321,
+          "percentiles_meaningful": false
+        },
+        "ttft_s": {
+          "n": 1,
+          "mean": 0.18121033199713565,
+          "stdev": 0.0,
+          "min": 0.18121033199713565,
+          "p10": 0.18121033199713565,
+          "p50": 0.18121033199713565,
+          "p90": 0.18121033199713565,
+          "max": 0.18121033199713565,
+          "percentiles_meaningful": false
+        },
+        "e2e_s": {
+          "n": 1,
+          "mean": 10.71962305600755,
+          "stdev": 0.0,
+          "min": 10.71962305600755,
+          "p10": 10.71962305600755,
+          "p50": 10.71962305600755,
+          "p90": 10.71962305600755,
+          "max": 10.71962305600755,
+          "percentiles_meaningful": false
+        },
+        "decode_window_s": {
+          "n": 1,
+          "mean": 10.538412724010414,
+          "stdev": 0.0,
+          "min": 10.538412724010414,
+          "p10": 10.538412724010414,
+          "p50": 10.538412724010414,
+          "p90": 10.538412724010414,
+          "max": 10.538412724010414,
+          "percentiles_meaningful": false
+        },
+        "accepted_per_step": {
+          "n": 1,
+          "mean": 1.0,
+          "stdev": 0.0,
+          "min": 1.0,
+          "p10": 1.0,
+          "p50": 1.0,
+          "p90": 1.0,
+          "max": 1.0,
+          "percentiles_meaningful": false
+        }
+      },
+      "samples": {
+        "per_stream_tok_s": [
+          97.07344234765321
+        ],
+        "ttft_s": [
+          0.18121033199713565
+        ],
+        "e2e_s": [
+          10.71962305600755
+        ]
+      },
+      "accepted_per_step": 1.0,
+      "prefill_tok_s": 11296.265380896473,
+      "prefill_tok_s_per_stream_mean": 11296.265380896473,
+      "live": {
+        "interval_s": 1.0,
+        "n_samples": 10,
+        "modal_running_requests": 1.0,
+        "max_running_requests": 1.0,
+        "saturation_threshold_requests": 0.9,
+        "max_waiting_requests": 0,
+        "n_samples_in_band": 10,
+        "n_zero_decode_ticks_in_band": 0,
+        "zero_decode_tick_fraction_in_band": 0.0,
+        "decode_tok_s_all": {
+          "n": 10,
+          "mean": 95.3908439369262,
+          "stdev": 5.419269976287286,
+          "min": 79.9933051996575,
+          "p10": 96.9886139242435,
+          "p50": 96.9908128352039,
+          "p90": 96.99282068833281,
+          "max": 97.9908674468403,
+          "percentiles_meaningful": true
+        },
+        "decode_tok_s_saturated": {
+          "n": 10,
+          "mean": 95.3908439369262,
+          "stdev": 5.419269976287286,
+          "min": 79.9933051996575,
+          "p10": 96.9886139242435,
+          "p50": 96.9908128352039,
+          "p90": 96.99282068833281,
+          "max": 97.9908674468403,
+          "percentiles_meaningful": true
+        },
+        "prefill_tok_s_nonzero": {
+          "n": 1,
+          "mean": 2046.828696796236,
+          "stdev": 0.0,
+          "min": 2046.828696796236,
+          "p10": 2046.828696796236,
+          "p50": 2046.828696796236,
+          "p90": 2046.828696796236,
+          "max": 2046.828696796236,
+          "percentiles_meaningful": false
+        },
+        "samples": [
+          {
+            "dt": 1.0,
+            "gen_tok_s": 79.99,
+            "prompt_tok_s": 2046.83,
+            "running": 1.0,
+            "waiting": 0.0
+          },
+          {
+            "dt": 1.0,
+            "gen_tok_s": 96.99,
+            "prompt_tok_s": 0.0,
+            "running": 1.0,
+            "waiting": 0.0
+          },
+          {
+            "dt": 1.0,
+            "gen_tok_s": 96.99,
+            "prompt_tok_s": 0.0,
+            "running": 1.0,
+            "waiting": 0.0
+          },
+          {
+            "dt": 1.0,
+            "gen_tok_s": 96.99,
+            "prompt_tok_s": 0.0,
+            "running": 1.0,
+            "waiting": 0.0
+          },
+          {
+            "dt": 1.0,
+            "gen_tok_s": 97.99,
+            "prompt_tok_s": 0.0,
+            "running": 1.0,
+            "waiting": 0.0
+          },
+          {
+            "dt": 1.0,
+            "gen_tok_s": 96.99,
+            "prompt_tok_s": 0.0,
+            "running": 1.0,
+            "waiting": 0.0
+          },
+          {
+            "dt": 1.0,
+            "gen_tok_s": 96.99,
+            "prompt_tok_s": 0.0,
+            "running": 1.0,
+            "waiting": 0.0
+          },
+          {
+            "dt": 1.0,
+            "gen_tok_s": 96.99,
+            "prompt_tok_s": 0.0,
+            "running": 1.0,
+            "waiting": 0.0
+          },
+          {
+            "dt": 1.0,
+            "gen_tok_s": 96.99,
+            "prompt_tok_s": 0.0,
+            "running": 1.0,
+            "waiting": 0.0
+          },
+          {
+            "dt": 1.0,
+            "gen_tok_s": 96.99,
+            "prompt_tok_s": 0.0,
+            "running": 1.0,
+            "waiting": 0.0
+          }
+        ],
+        "peak_over_median": 1.010310817925978
+      },
+      "depth_requested": 2048,
+      "concurrency": 1
+    }
+  ]
+}

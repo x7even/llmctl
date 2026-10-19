@@ -1,0 +1,33 @@
+{
+  "model": "qwen3.8-27b-code",
+  "url": "http://127.0.0.1:8080/v1/chat/completions",
+  "label": "campaign6-20261018 d128k gen=1024 band=fast",
+  "gen": 1024,
+  "no_thinking": true,
+  "prewarm": false,
+  "shared_prefix": false,
+  "seed": 1234,
+  "run_nonce": 1792368051,
+  "words_per_token": 1.0002463661000247,
+  "timestamp": "2026-10-19T00:26:15",
+  "rows": [
+    {
+      "ok": 1,
+      "requested": 1,
+      "errors": [],
+      "prompt_tokens": 130015,
+      "completion_tokens": 1024,
+      "agg_decode_tok_s": 5.490850387288111,
+      "per_stream_tok_s_mean": 5.490850387288111,
+      "per_stream_tok_s_min": 5.490850387288111,
+      "ttft_s_mean": 90.41651472100057,
+      "ttft_s_p90": 90.41651472100057,
+      "e2e_s_max": 276.72645359100716,
+      "accepted_per_step": 2.623076923076923,
+      "prefill_tok_s": 1437.9563335435898,
+      "prefill_tok_s_per_stream_mean": 1437.9563335435898,
+      "depth_requested": 129984,
+      "concurrency": 1
+    }
+  ]
+}

@@ -47,6 +47,11 @@ run `llmctl logs <profile>` and wait for "Application startup complete." before 
 
 ## Profiles
 
+The per-profile tables below are the headline figures. Every measured cell —
+prefill and decode in one row, cold and prewarmed kept apart, with the
+steady-state decode distribution — is generated into
+`docs/benchmark-results-full.md` by `bench/report_full_table.py`.
+
 ### Qwen3.8-27B FP8 — the default family (`qwen3.8-27b-code` / `-think` / `-fast`)
 
 Official `Qwen/Qwen3.8-27B-FP8` (Apache 2.0, 30.9 GB including the bundled MTP head).
@@ -134,6 +139,57 @@ Decode tok/s. p90 latency at conc=8: ~5 s (medium), ~12 s (long), ~49 s (xlarge)
 The 0.20.0 thinking number is not directly comparable (thinking tokens inflate
 measured throughput). The 0.22.1 and AWQ no-thinking numbers are clean comparisons.
 The 261 figure is the pre-MTP baseline; a fresh conc=8 run with MTP enabled is pending.
+
+---
+
+### `qwen3.6-35b-128k-nomtp` — the deep-context profile
+
+**Aliases:** `35b-nomtp`
+
+Same FP8 checkpoint as `-code`, no speculative decoding, `--max-model-len 131072`, TP4 with
+expert parallelism. Carries two load-bearing flags: `-e GPU_MAX_HW_QUEUES=1` and
+`--attention-backend TRITON_ATTN`. Without MTP every decode step has `query_len=1`, which is
+what keeps TRITON_ATTN's 3D split-KV path open — the only kernel on gfx1201 that parallelises
+over context length.
+
+**This is the fastest deep-context profile in the stack.** Measured 2026-10-19, both arms
+fast-band, one variable, `--no-thinking`, gen 128, aggregate tok/s (per-stream in brackets):
+
+| depth × streams | ROCM_ATTN (auto) | TRITON_ATTN (shipped) | ratio |
+|---|---|---|---|
+| 2,048 × 1 | 59.2 | 97.1 | 1.64× |
+| 2,048 × 8 | 341.3 [44.1] | 469.5 [61.5] | 1.38× |
+| 16,384 × 1 | 18.4 | 91.5 | 4.97× |
+| 16,384 × 8 | 106.9 [15.6] | 300.7 [50.1] | 2.81× |
+| 16,384 × 8 *prewarmed* | 131.9 [16.6] | **439.8** [55.4] | 3.33× |
+| 65,536 × 1 | 4.6 | 76.3 | 16.6× |
+| 65,536 × 4 | 16.1 [4.8] | 108.4 [45.9] | 6.73× |
+| 65,536 × 4 *prewarmed* | 20.7 [5.2] | **231.1** [58.3] | 11.2× |
+| 129,984 × 1 | 2.2 | **62.4** | 28.4× |
+
+Decay across the whole window is **1.56×** (97.1 at 2K → 62.4 at 130K) where ROCM_ATTN decays
+26.9×. At 130K on one stream it serves 62.4 tok/s against `qwen3.8-27b-think`'s 33.4 — the
+expected direction for 3B active parameters against 27B dense, now measured. Prefill improves
+too: TTFT at 65,536 × 4 falls 55.21 s → 23.77 s (2.32×), at 16,384 × 8 11.73 → 7.72 s.
+
+Retrieval is gated, not assumed: `bench/needle_check.py`, 3 depths (16K/64K/130K) × 5 needle
+positions, **15/15**. A split-KV kernel that mis-combines its softmax segments benchmarks
+perfectly while silently losing context, so this gate runs on every attention change.
+
+**What it costs at short prompts: nothing measurable.** An earlier version of this entry said
+the profile was 19% slower than `-code`'s configuration at `medium-256` conc=8 (347.9 vs
+431.1). That is withdrawn: both figures were single runs at `--requests 32`, and the request
+count alone moves a conc=8 reading by +4% to +32% here. Re-measured as a matched pair (fresh
+spawn per arm, 3 reps, `--requests 128`, `--serial-n 8`, `--attention-backend` the single
+variable), TRITON_ATTN is **faster** at every level — serial 91.5 vs 88.1, conc=8 463.9 vs
+446.7, conc=32 1208.6 vs 1180.2 — with non-overlapping spreads and verified KV-pool parity.
+
+So route to this profile on depth, not away from it on burstiness. The caveat that survives is
+about quoting: the depth grid above launched exactly `conc` streams once, so it is a no-arrival
+best case, and gate 4 (the 3D predicate is evaluated per *batch*) means a co-batched prefill
+chunk still drops deep decoders to the 2D grid — how much that costs at depth is unmeasured.
+Keep `--max-num-seqs` at 32 — above the nearest CUDA-graph capture size the 3D path closes
+with nothing in the log. Full write-up: `docs/rdna4-long-context.md`.
 
 ---
 
@@ -232,13 +288,39 @@ thin headroom. Do not go to 0.97 on this profile.
 
 | Metric | Result |
 |--------|--------|
-| Decode, serial / conc=8 / conc=16 (tok/s aggregate) | 55.7 / ~150-185 (182 best run) / 216 |
+| Decode, serial / conc=8 / conc=16 / conc=32 (tok/s aggregate) | 55.4 / 140-182 (see below) / 244 / 451 |
 | Decode vs context depth, 1K to 258K | flat, 57 to 55 tok/s |
 | Code tests, `reasoning_effort=medium` | 29-32/32 (two runs of 8 samples x 4 tasks: 29/32 with an explicit flag, 32/32 with the server-side default; sampling noise) |
 | Code tests, template default (xhigh) | 4/32 at a 32K cap, 3/8 at 256K (runaway thinking) |
 
-conc=8 is noisy on this config (149, 157, 165 and 185 were all seen across runs, including
-157 in the same-config 262K A/B), so 182 and the earlier 149 are not distinguishable. The
+conc=8 is the unstable cell on this config. Readings of 149, 157, 165 and 185 were seen across
+earlier runs (including 157 in the same-config 262K A/B), and on 2026-10-19 one server gave
+154.4, then 140.1, then 140.5 in that order, all at `--requests 128`. So the variation is not
+only spawn-to-spawn. Treat this cell as 140-182 and do not read a difference between any two
+values inside that band. conc=16 and conc=32, by contrast, reproduce across spawns to within
+0.5%.
+
+**Open issue: an intermittent single-stream latency tail.** This profile's one-stream cells are
+not reliably reproducible, and the failure is in the latency distribution rather than in the
+rate. Five one-stream cells on one server on 2026-10-19:
+
+| cell | n | decode tok/s | mean lat | p90 lat |
+|---|---|---|---|---|
+| serial | 32 | 55.48 | 2.82 s | 3.03 s |
+| conc=1 | 128 | 55.38 | 2.81 s | 3.09 s |
+| serial | 32 | 55.37 | 2.79 s | 3.06 s |
+| conc=1 | 128 | **42.90** | 3.64 s | **5.72 s** |
+| serial | 8 | **29.60** | 5.54 s | **10.21 s** |
+
+The three clean cells agree to 0.2% and reproduce the 55.3 measured independently on an earlier
+spawn, so 55.4 is the profile's single-stream rate. The other two are the same server minutes
+later or earlier, with a tail that stretches rather than a mode that shifts. The episodes do not
+trend — a clean n=32 cell ran immediately before the 42.90 one, and a normal conc=8 cell
+immediately after it — and `scripts/llmband` classified the server fast throughout, so this is
+not the decode band. **Cause not established.** It matters more than a benchmarking footnote
+suggests: this is the interactive profile, and a request that takes 10 s instead of 2.8 s is
+visible to whoever is waiting for it. Worth a dedicated investigation, with host memory state
+(this profile pins ~48 GiB of host RAM) as one thing to rule in or out. The
 0.4.1 serial/conc=16 numbers come from local runs, not a saved
 baseline; `bench/baselines/qwen3.8-flash-next-vllm-*.json` holds the earlier 55 / 149 / 232. Unlike the dense 27B, Flash-Next does not slow down with context depth, which makes
 the 262K window usable in practice. Medium effort is the server default because xhigh
@@ -263,6 +345,59 @@ empty-reply early stops: `docs/hard-code-tasks.md`.
 (UVA expert offload, `humming` MoE backend); it does not apply to ROCm.
 
 ---
+
+---
+
+### `qwen3.6-27b-code` — dense 27B with MTP
+
+**Aliases:** `27b-code`, `qwen3.6-27b`
+
+**Use for:** A second dense-27B MTP profile alongside `qwen3.8-27b-code`, kept for the
+checkpoint difference rather than for speed. Restored to the config on 2026-10-19 after
+having been archived.
+
+Official `Qwen/Qwen3.6-27B-FP8`. MTP (`num_speculative_tokens: 2`), 131,072 token context,
+`--max-num-seqs 32`, `--max-num-batched-tokens 16384`, `GPU_MAX_HW_QUEUES=1`,
+`--gpu-memory-utilization 0.95`. TP4 or TP2 only — TP1 OOMs loading weights and TP3 fails on
+16 linear-attention key heads not dividing by 3.
+
+**`--max-num-batched-tokens 16384` is load-bearing.** Without it the MTP drafter OOMs during
+startup profiling on this checkpoint. It is plain memory exhaustion, not fragmentation.
+
+**Benchmark (vLLM 0.26.0, no-thinking, MTP, `medium-256`, 2026-10-19, `--requests 128`):**
+
+| | conc=1 | conc=8 | conc=16 | conc=32 |
+|--|--------|--------|---------|---------|
+| decode tok/s | 67.7 | 347.3 | 584.6 | **869.5** |
+| p90 latency s | 2.94 | 4.17 | 4.99 | 6.72 |
+
+Baseline: `bench/baselines/qwen3.6-27b-code-v0.26.0-peak-nothink-matched-20261019.json`,
+a fresh spawn classified **fast** by `scripts/llmband` before it was benchmarked. The earlier
+`-peak-nothink-20261019.json` reading of the same profile sits within 1-3% of every cell here,
+which is this harness's same-server spread.
+
+**It is not faster than `qwen3.8-27b-code`** — equal at shallow prompts, a few percent behind
+at depth. On the `medium-256` sweep the two are indistinguishable — 0.9% to 3.2% apart depending
+on the level (67.7/347.3/584.6/869.5 against 66.0/350.4/569.4/842.7) — and with one
+run per arm that is no basis for calling either one ahead. At depth the 3.8 profile is slightly ahead rather
+than equal — the prewarmed decode rows, which are the comparable ones, read 168.0 against 178.8
+tok/s at 16,384 x 8 (-6%) and 37.0 against 40.6 at 65,536 x 4 (-9%), with the cold rows 2-3%
+apart. Nothing in that spread is a reason to pick one over the other; the 2026-10-05 comparison
+found Qwen3.8 weaker on `expr_eval`
+(`bench/benchmark-qwen3.8-vs-3.6-27b-2026-10-05.md`), and that difference is larger than
+anything in these tables.
+
+**Depth behaviour is the dense-27B profile's weakness**, the same as `qwen3.8-27b-code`'s:
+34.7 tok/s serial at 16K, 12.0 at 64K, and a cold 16,384 x 32 cell that completed only 29 of
+32 requests behind a ~17-minute prefill queue. For deep prompts use `qwen3.8-27b-think`, whose
+`--attention-backend TRITON_ATTN` holds 45.0 tok/s serial at 16K and 39.0 at 64K.
+
+Steady-state distribution at 2,048 x 32 (one-second sampling of
+`vllm:generation_tokens_total`): run average 642.3 tok/s, p10 873.9, median 1007.9, p90 1075.9,
+peak 1104.9 — the median is 1.57x the run average, because the run average also pays for
+the ramp, where the slow seconds are.
+Every measured cell for this profile, prefill and decode together, is in
+`docs/benchmark-results-full.md`.
 
 ---
 
@@ -308,8 +443,12 @@ Clones of the code profile with `--max-model-len` bounded to 32K/64K/128K: a sma
 KV pool means faster warmup and more sequence headroom for tool-call/MCP sessions
 that never approach 256K. The `-32k`/`-64k`/`-128k` variants keep MTP.
 
-**`qwen3.6-35b-128k-nomtp`** (alias `35b-nomtp`) drops speculative decoding. Measured
-on vLLM 0.24.0 (2026-07-07, 4× R9700, 1024-in/256-out, seed 42):
+**`qwen3.6-35b-128k-nomtp` is NOT archived** — it is live in `config/models.yaml` and has its
+own section above, which is the one to read. It is mentioned here only because this heading
+covers the family it was cloned from. The table below is a vLLM **0.24.0** measurement from
+2026-07-07 and is superseded: the profile has since gained `GPU_MAX_HW_QUEUES=1` and
+`TRITON_ATTN`, which together take it from ~59 to 97.1 tok/s at 2K and from unusable to 62.4 at
+130K. Kept for the MTP-vs-no-MTP comparison only, which is what it was run for:
 
 | Profile | conc 1 tok/s | conc 8 tok/s | ITL p50 @ conc 8 |
 |---|---|---|---|
@@ -390,47 +529,10 @@ parameters per forward pass. This makes it slower but more accurate:
 |---|---|---|---|
 | decode tok/s | 23 | 125 | **153** |
 
-No MTP. For the MTP-enabled variant with higher throughput see `qwen3.6-27b-code` below.
-
----
-
-### `qwen3.6-27b-code` — dense 27B with MTP
-
-**Aliases:** `27b-code`
-
-**Use for:** High-quality code generation where throughput at concurrent load matters;
-same SWE-bench accuracy as `qwen3.6-27b-fp8` (77.2) with significantly higher tok/s
-at conc≥4 due to Multi-Token Prediction.
-
-**Key differences from `qwen3.6-27b-fp8`:**
-- MTP enabled (`--speculative-config '{"method": "mtp", "num_speculative_tokens": 2}'`) —
-  major throughput uplift at conc≥4 where batch verification amortises draft cost.
-- 131,072 token context (vs shorter in the fp8 profile).
-- BF16 KV cache (no `--kv-cache-dtype fp8`) — slightly higher VRAM per token but avoids
-  per-start FP8 KV calibration (~16 min).
-- `--gpu-memory-utilization 0.95`, `--max-num-seqs 32`.
-
-**Benchmark (vLLM 0.22.1, no-thinking, MTP enabled, 2026-06-21):**
-
-| Prompt | serial | conc=2 | conc=4 | conc=8 | conc=16 |
-|--------|--------|--------|--------|--------|---------|
-| short-64    | 65 | 89  | 122 | **303** | 500 |
-| medium-256  | 67 | 115 | 214 | **381** | 629 |
-| long-512    | 74 | 128 | 240 | **412** | 677 |
-| xlarge-2048 | 71 | 127 | 243 | **444** | 720 |
-
-Decode tok/s. Baseline: `bench/baselines/qwen3.6-27b-code-notunableop-20260621.json`.
-p90 latency at conc=8: ~3.7 s (medium), ~7.8 s (long), ~37 s (xlarge).
-
-**MTP impact vs no-MTP (medium-256):**
-
-| | conc=1 | conc=4 | conc=8 | conc=16 |
-|--|--------|--------|--------|---------|
-| qwen3.6-27b-fp8 (no MTP, 2026-05-09) | 26 | 125 | 153 | — |
-| qwen3.6-27b-code (MTP, 2026-06-21)   | 66 | 214 | **381** | 629 |
-
-The ~2.5× gain at conc=8 is primarily MTP — the profiles also differ in context length
-and KV dtype, but MTP is the dominant factor at high concurrency.
+No MTP. For the MTP-enabled variant with higher throughput see
+`qwen3.6-27b-code` under Profiles above — it is in the config, this one is not.
+The ~2.5x gain at conc=8 between these two rows (153 -> 351 on the newer run) is
+primarily MTP; the profiles also differ in context length and KV dtype.
 
 ---
 
@@ -678,9 +780,15 @@ against a baseline four vLLM versions back, not a matched 0.24.0→0.26.0 delta,
 isn't read as a regression from this bump specifically.
 
 **Use for:** High-concurrency agent workloads. vLLM's PagedAttention and MoE architecture
-(4B active params per token) combine to give outstanding batching efficiency — **528 tok/s
-at conc=16** on medium-256 prompts, which exceeds the pre-MTP `qwen3.6-35b-code` baseline
-(481 tok/s; a fresh MTP-enabled baseline for 35b-code is pending).
+(4B active params per token) combine to give outstanding batching efficiency — on the
+2026-10-19 matched sweep this is **the fastest profile on the stack at every concurrency
+level**: 891 tok/s at conc=16 and 1443 at conc=32 on medium-256 prompts.
+
+The 528 tok/s figure this section used to quote was measured before
+`GPU_MAX_HW_QUEUES=1` shipped on this profile, and gemma4 is the one profile where a slow
+band draw costs fleet throughput rather than just single-stream latency (it keeps 1.71× of
+the flag's gain all the way to conc=8). The dated 2026-06-13 sweep below is kept as the
+historical record, not as a current figure.
 Use this profile when many parallel requests are hitting Gemma 4 simultaneously.
 
 **First boot:** vLLM triggers Inductor/Triton compile on first start (~3–5 min with warm
@@ -766,6 +874,12 @@ Three of four Gemma 4 profiles have benchmark data. Medium-256 prompt, decode to
 | `gemma4-12b-q4` | llama-server | Q4_K_M GGUF | 13 GB | 36.1 | 108.9 | 94.8 |
 | — | — | — | — | — | — | — |
 | `qwen3.6-35b-code` (pre-MTP baseline, no-think) | vLLM | FP8 | 35 GB | 43 | 261 | 481 |
+
+**Superseded for the two vLLM rows.** Every figure in this table predates
+`GPU_MAX_HW_QUEUES=1`. On the 2026-10-19 matched sweep `gemma4-26b-a4b` reads
+129.2 / 539.9 / 890.8 at conc=1/8/16 and `qwen3.6-35b-code` reads 109.7 / 302.0 / 584.8. The
+llama-server rows are unaffected by that flag and still stand. The table is left as measured
+so the pre-flag record survives.
 | `qwen3.6-35b-fast` (no-think, no-MTP) | vLLM | FP8 | 35 GB | 69 | 222 | — |
 | `qwen3.6-35b-q4ks` | llama-server | Q4_K_S | 20 GB | ~80 | ~175 | — |
 

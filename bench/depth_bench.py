@@ -36,10 +36,12 @@ Exit status is 0 unless a cell errored.
 
 import argparse
 import json
+import math
 import os
 import random
 import statistics
 import sys
+import threading
 import time
 from concurrent.futures import ThreadPoolExecutor
 
@@ -76,6 +78,19 @@ def filler(n_words, seed):
     """Deterministic, unique-per-seed filler text."""
     rng = random.Random(seed)
     return " ".join(rng.choice(VOCAB) for _ in range(n_words))
+
+
+def seed_for(seed, run_nonce, depth, conc):
+    """Base seed for one (depth, conc) cell.
+
+    `conc` has to be in here. Without it, a cell's requests take seeds
+    base+0..conc-1, so at one depth conc=1 draws base+0, conc=8 draws base+0..7
+    and conc=32 draws base+0..31 -- every cell after the first re-sends prompts
+    the engine has already cached. Measured on a 32K pass: the prefix-cache hit
+    rate climbed from 0% to 30.5%, which flatters exactly the high-concurrency
+    cells worth publishing.
+    """
+    return seed + depth * 1000 + conc * 1_000_003 + run_nonce * 7_000_001
 
 
 def build_messages(depth_words, seed):
@@ -185,12 +200,210 @@ def server_max_model_len(url, model, headers, timeout):
     return None
 
 
+
+def pct(sorted_vals, q):
+    """Nearest-rank percentile, no interpolation.
+
+    Deliberately not statistics.quantiles(): these samples are 1 to 32 requests
+    wide, and interpolating between four observations reports precision the
+    measurement does not have. Nearest-rank always returns a value that was
+    actually observed.
+    """
+    if not sorted_vals:
+        return None
+    # floor(x + 0.5), not round(): Python's round() is banker's rounding, so
+    # round(4.5) is 4 and the p50 of an even-length sample would silently pick the
+    # lower-middle value. Round-half-up is the conventional nearest-rank rule and
+    # does not depend on that surprise.
+    i = int(math.floor(q * (len(sorted_vals) - 1) + 0.5))
+    return sorted_vals[min(max(i, 0), len(sorted_vals) - 1)]
+
+
+def dist(vals):
+    """Full distribution of one measured quantity across a cell's streams.
+
+    `percentiles_meaningful` is the honest caveat: below ~10 samples p10 and p90
+    degenerate to min and max, so a reader can see when a tail figure is really
+    just an extreme.
+    """
+    v = sorted(x for x in vals if x is not None)
+    if not v:
+        return None
+    return {
+        "n": len(v),
+        "mean": statistics.fmean(v),
+        "stdev": statistics.stdev(v) if len(v) > 1 else 0.0,
+        "min": v[0],
+        "p10": pct(v, 0.10),
+        "p50": pct(v, 0.50),
+        "p90": pct(v, 0.90),
+        "max": v[-1],
+        "percentiles_meaningful": len(v) >= 10,
+    }
+
+
+class MetricsSampler:
+    """Sample vLLM's own token counters while a cell runs.
+
+    This exists to reconcile two numbers that look like they disagree and do not.
+    The aggregate decode rate this script reports is a run average over the whole
+    decode span, so at high concurrency it is diluted by the staggered ramp-in
+    while most streams are still prefilling. A live panel instead shows
+    delta(generation_tokens_total)/tick and keeps the running maximum, which is an
+    instantaneous steady-state rate. Both are correct and they are not the same
+    statistic; sampling here lets one run report both.
+
+    Scrape the BACKEND port, not the router: llama-swap does not proxy /metrics.
+    """
+
+    def __init__(self, url, interval=1.0):
+        self.url = url
+        self.interval = interval
+        self.samples = []
+        self._stop = threading.Event()
+        self._thread = None
+
+    def _scrape(self):
+        r = requests.get(self.url, timeout=5)
+        r.raise_for_status()
+        got = {}
+        for line in r.text.split("\n"):
+            for key in ("vllm:generation_tokens_total", "vllm:prompt_tokens_total",
+                        "vllm:num_requests_running", "vllm:num_requests_waiting"):
+                if line.startswith(key + "{"):
+                    try:
+                        got[key] = float(line.rsplit("}", 1)[1])
+                    except (ValueError, IndexError):
+                        pass
+        return got
+
+    def _loop(self):
+        prev = None
+        while not self._stop.is_set():
+            t = time.monotonic()
+            try:
+                g = self._scrape()
+            except Exception:
+                self._stop.wait(self.interval)
+                continue
+            if prev is not None and t - prev[0] > 0.1:
+                dt = t - prev[0]
+                self.samples.append({
+                    "dt": dt,
+                    "gen_tok_s": (g.get("vllm:generation_tokens_total", 0.0)
+                                  - prev[1].get("vllm:generation_tokens_total", 0.0)) / dt,
+                    "prompt_tok_s": (g.get("vllm:prompt_tokens_total", 0.0)
+                                     - prev[1].get("vllm:prompt_tokens_total", 0.0)) / dt,
+                    "running": g.get("vllm:num_requests_running"),
+                    "waiting": g.get("vllm:num_requests_waiting"),
+                })
+            prev = (t, g)
+            self._stop.wait(max(0.0, self.interval - (time.monotonic() - t)))
+
+    def start(self):
+        self.samples = []
+        self._stop.clear()
+        self._thread = threading.Thread(target=self._loop, daemon=True)
+        self._thread.start()
+
+    def stop(self):
+        self._stop.set()
+        if self._thread:
+            self._thread.join(timeout=self.interval * 3)
+
+    def summary(self):
+        """Distributions of the instantaneous rates, saturated subset separated.
+
+        The saturated subset is the samples taken while the server was within 10%
+        of its high-water running-request count. Restricting to those removes the
+        ramp-in and the drain, which is what makes the median a steady-state figure
+        rather than an average over three different regimes.
+
+        Returns None when nothing was sampled, so a caller stores an honest null
+        rather than a distribution over an empty window.
+        """
+        if not self.samples:
+            return None
+        gen = [x["gen_tok_s"] for x in self.samples]
+        runs = [x["running"] for x in self.samples if x["running"]]
+        # Saturation is a HIGH-WATER band, not the modal running-count. The mode
+        # is wrong in the one regime that matters most: when prompts are deep and
+        # concurrency is high, the ramp-in is LONGER than the plateau, so the most
+        # common running-count is a partially-filled server and a mode-based subset
+        # would report the ramp as the steady state -- precisely backwards. Taking
+        # everything within 10% of the high-water mark targets the plateau whether
+        # it is long or short.
+        hi = max(runs) if runs else None
+        mode = statistics.mode(runs) if runs else None
+        band = [x for x in self.samples
+                if hi is not None and (x["running"] or 0) >= 0.9 * hi]
+        # Zero-decode ticks are dropped from the DECODE distribution, and counted
+        # separately. A tick inside the saturated band can still emit no tokens:
+        # the requests are admitted and running, but the engine spent that whole
+        # second on a prefill chunk. Leaving those in makes the floor and the p10
+        # read 0.0 tok/s, which is not a slow decode -- it is a second that was not
+        # decoding at all, and it would also disagree with
+        # RingBuffer.ActiveStats() in tui/sparkline.go, which filters them. The
+        # fraction is reported because it is the thing that explains the gap
+        # between these percentiles and the run average: the run average pays for
+        # those seconds and these percentiles do not.
+        sat = [x["gen_tok_s"] for x in band if x["gen_tok_s"] > 0]
+        nz = len(band) - len(sat)
+        out = {
+            "interval_s": self.interval,
+            "n_samples": len(self.samples),
+            "modal_running_requests": mode,
+            "max_running_requests": hi,
+            "saturation_threshold_requests": (0.9 * hi) if hi is not None else None,
+            "max_waiting_requests": max((x["waiting"] or 0) for x in self.samples),
+            "n_samples_in_band": len(band),
+            "n_zero_decode_ticks_in_band": nz,
+            "zero_decode_tick_fraction_in_band": (nz / len(band)) if band else None,
+            "decode_tok_s_all": dist([x for x in gen if x > 0]),
+            "decode_tok_s_saturated": dist(sat) if sat else None,
+            "prefill_tok_s_nonzero": dist([x["prompt_tok_s"] for x in self.samples
+                                           if x["prompt_tok_s"] > 0]),
+            # The raw series, so every figure above can be re-derived later. Kept
+            # because a bug in the subset rule was found AFTER a run and could not
+            # be re-checked against the saved file -- only the summary had been
+            # stored, so the run had to be repeated. ~50 rows per cell.
+            "samples": [{"dt": round(x["dt"], 3),
+                         "gen_tok_s": round(x["gen_tok_s"], 2),
+                         "prompt_tok_s": round(x["prompt_tok_s"], 2),
+                         "running": x["running"], "waiting": x["waiting"]}
+                        for x in self.samples],
+        }
+        d = out["decode_tok_s_saturated"] or out["decode_tok_s_all"]
+        if d and d["p50"] and d["p50"] > 0:
+            # How much of a live panel's "peak" is just the maximum of a noisy
+            # difference quotient rather than a higher true rate.
+            out["peak_over_median"] = d["max"] / d["p50"]
+        return out
+
 def run_cell(url, model, depth_words, conc, gen, timeout, no_thinking, headers,
-             shared_prefix, seed_base, prewarm=False):
-    """Run `conc` concurrent requests at one depth. Returns the aggregate row."""
+             shared_prefix, seed_base, prewarm=False,
+             metrics_url=None, metrics_interval=1.0, requests=None):
+    """Run requests at one depth through `conc` slots. Returns the aggregate row.
+
+    `requests` defaults to `conc`, i.e. every stream starts at once and nothing
+    arrives later -- the no-churn case. Setting it higher pushes that many
+    requests through `conc` slots, so a new request enters whenever one
+    finishes. That distinction is not cosmetic on this hardware: TRITON_ATTN's
+    3D split-KV path is chosen per *batch*, and a step carrying a newcomer's
+    prefill chunk drops every co-batched decoder to the 2D grid
+    (docs/rdna4-long-context.md, gate 4). A no-churn cell therefore measures
+    that kernel's best case, so quote the regime, not just the depth and width.
+
+    Keep the request count fixed when comparing anything. On this hardware a
+    conc=8 reading moves +19% to +32% from the count alone, no config change
+    involved, because 32 requests through 8 slots is a ~12 s run that ramp-up
+    and drain dominate. A TRITON-vs-ROCM "cost" measured that way did not
+    survive matched counts (bench/CLAUDE.md).
+    """
+    n_req = conc if requests is None else max(requests, conc)
     msgs = [
         build_messages(depth_words, seed=(seed_base if shared_prefix else seed_base + i))
-        for i in range(conc)
+        for i in range(n_req)
     ]
 
     # Without this, every stream in a deep cell pays a full unique prefill, and
@@ -206,17 +419,34 @@ def run_cell(url, model, depth_words, conc, gen, timeout, no_thinking, headers,
         for m in msgs:
             one_request(url, model, m, 1, timeout, no_thinking, headers)
 
-    with ThreadPoolExecutor(max_workers=conc) as pool:
-        futs = [
-            pool.submit(one_request, url, model, m, gen, timeout, no_thinking, headers)
-            for m in msgs
-        ]
-        results = [f.result() for f in futs]
+    # Sampling starts after any prewarm, so the series covers the measured pass
+    # only and is not diluted by the serial cache-population requests.
+    sampler = MetricsSampler(metrics_url, metrics_interval) if metrics_url else None
+    if sampler:
+        sampler.start()
+    try:
+        with ThreadPoolExecutor(max_workers=conc) as pool:
+            futs = [
+                pool.submit(one_request, url, model, m, gen, timeout, no_thinking,
+                            headers)
+                for m in msgs
+            ]
+            results = [f.result() for f in futs]
+    finally:
+        if sampler:
+            sampler.stop()
 
     errors = [r["error"] for r in results if "error" in r]
     ok = [r for r in results if "error" not in r]
     if not ok:
-        return {"errors": errors, "ok": 0, "requested": conc}
+        row = {"errors": errors, "ok": 0, "requested": n_req,
+               "slots": conc}
+        if sampler:
+            # A cell that completed nothing is exactly when the live
+            # series matters most: it distinguishes a server that was
+            # grinding from one that produced nothing at all.
+            row["live"] = sampler.summary()
+        return row
 
     # Aggregate decode rate: every decode token the server produced for this cell,
     # divided by the window in which it was decoding. First-token to last-token
@@ -227,9 +457,10 @@ def run_cell(url, model, depth_words, conc, gen, timeout, no_thinking, headers,
     ttfts = sorted(r["ttft_s"] for r in ok)
     per_stream = [r["tok_s"] for r in ok]
 
-    return {
+    row = {
         "ok": len(ok),
-        "requested": conc,
+        "requested": n_req,
+        "slots": conc,
         "errors": errors,
         "prompt_tokens": int(statistics.median(r["prompt_tokens"] for r in ok)),
         "completion_tokens": int(statistics.median(r["completion_tokens"] for r in ok)),
@@ -237,8 +468,25 @@ def run_cell(url, model, depth_words, conc, gen, timeout, no_thinking, headers,
         "per_stream_tok_s_mean": statistics.fmean(per_stream),
         "per_stream_tok_s_min": min(per_stream),
         "ttft_s_mean": statistics.fmean(ttfts),
-        "ttft_s_p90": ttfts[min(len(ttfts) - 1, int(0.9 * len(ttfts)))],
+        "ttft_s_p90": pct(ttfts, 0.90),
         "e2e_s_max": max(r["wall_s"] for r in ok),
+        # Full distributions. The scalars above are kept so older readers of these
+        # files keep working, but these are the ones to quote: a mean decode rate
+        # at conc=32 hides whether the slowest stream got a usable share.
+        "dist": {
+            "per_stream_tok_s": dist(per_stream),
+            "ttft_s": dist(ttfts),
+            "e2e_s": dist([r["wall_s"] for r in ok]),
+            "decode_window_s": dist([r["decode_window_s"] for r in ok]),
+            "accepted_per_step": dist([r["accepted_per_step"] for r in ok]),
+        },
+        # Raw vectors so any other percentile can be recomputed without re-running
+        # a cell that can take a quarter of an hour.
+        "samples": {
+            "per_stream_tok_s": per_stream,
+            "ttft_s": ttfts,
+            "e2e_s": [r["wall_s"] for r in ok],
+        },
         "accepted_per_step": statistics.fmean(r["accepted_per_step"] for r in ok),
         # Aggregate prefill throughput: all the prompt tokens in the batch, over the window
         # in which the batch's prefills actually finished -- which ends at the LAST TTFT, not
@@ -251,6 +499,13 @@ def run_cell(url, model, depth_words, conc, gen, timeout, no_thinking, headers,
         "prefill_tok_s_per_stream_mean": statistics.fmean(
             r["prompt_tokens"] / max(r["ttft_s"], 1e-9) for r in ok),
     }
+    if sampler:
+        # Instantaneous aggregate rates sampled from the server's own counters.
+        # `decode_tok_s_saturated.p50` is the steady-state figure; `.max` is the
+        # statistic a live panel calls "peak", and the two differ by ramp-in
+        # dilution plus the upward bias of maximising a noisy difference quotient.
+        row["live"] = sampler.summary()
+    return row
 
 
 def main(argv=None):
@@ -261,6 +516,15 @@ def main(argv=None):
                     help="target prompt_tokens per request, comma separated")
     ap.add_argument("--concurrency", default="1",
                     help="comma separated concurrency levels")
+    ap.add_argument("--requests", type=int, default=None,
+                    help="total requests per cell, pushed through --concurrency "
+                         "slots, so a new one arrives whenever one finishes. "
+                         "Default: equal to the concurrency level, i.e. all "
+                         "streams start together and nothing arrives later. Raise "
+                         "it to measure the churn regime a real agent fleet runs "
+                         "in -- arrivals inject prefill chunks into other "
+                         "streams' decode steps, which closes TRITON_ATTN's 3D "
+                         "split-KV path for that step (see run_cell)")
     ap.add_argument("--prewarm", action="store_true",
                     help="populate the prefix cache serially before each cell, so it "
                          "measures steady-state decode instead of prefill contention")
@@ -276,6 +540,25 @@ def main(argv=None):
                     help="send the SAME long prompt to every stream in a cell "
                          "(measures the prefix-cache-hit regime instead)")
     ap.add_argument("--seed", type=int, default=1234)
+    ap.add_argument("--run-nonce", type=int, default=0,
+                    help="shifts every prompt so a re-run against a server that "
+                         "is already live is COLD again. Prompts are a pure "
+                         "function of the seed, so without a fresh nonce a "
+                         "second run re-sends text the engine still has cached "
+                         "and the cells read far faster than they are. Measured: "
+                         "a 32K cell re-run warm reported 41,463 prompt tok/s "
+                         "against a true rate near 4,300.")
+    ap.add_argument("--metrics-url",
+                    help="vLLM /metrics on the BACKEND port (llama-swap does "
+                         "not proxy it), e.g. http://127.0.0.1:9104/metrics. "
+                         "Samples instantaneous aggregate throughput during "
+                         "each cell and reports its distribution, which is "
+                         "what a live panel shows; the row's agg_decode_tok_s "
+                         "is a run average over the whole decode span and "
+                         "reads lower by design.")
+    ap.add_argument("--metrics-interval", type=float, default=1.0,
+                    help="sampling interval in seconds (default 1.0, matching "
+                         "llmpanel's default poll)")
     ap.add_argument("--save", help="write results JSON here")
     ap.add_argument("--label", default="", help="free-text tag stored in the JSON")
     args = ap.parse_args(argv)
@@ -288,6 +571,9 @@ def main(argv=None):
     print("url        : %s" % args.url)
     print("depths     : %s" % depths)
     print("concurrency: %s" % concs)
+    print("requests   : %s" % ("%d per cell (CHURN: arrivals mid-run)"
+                               % args.requests if args.requests
+                               else "= concurrency (no churn)"))
     print("gen        : %d tokens/request (ignore_eos)" % args.gen)
     print("prompts    : %s%s" % ("SHARED (prefix-cache regime)" if args.shared_prefix
                                  else "unique per request",
@@ -338,8 +624,12 @@ def main(argv=None):
         for conc in concs:
             row = run_cell(args.url, args.model, depth_words, conc, args.gen,
                            args.timeout, args.no_thinking, headers,
-                           args.shared_prefix, args.seed + depth * 1000,
-                           prewarm=args.prewarm)
+                           args.shared_prefix,
+                           seed_for(args.seed, args.run_nonce, depth, conc),
+                           prewarm=args.prewarm,
+                           metrics_url=args.metrics_url,
+                           metrics_interval=args.metrics_interval,
+                           requests=args.requests)
             row["depth_requested"] = depth
             row["concurrency"] = conc
             rows.append(row)
@@ -362,7 +652,22 @@ def main(argv=None):
             "label": args.label,
             "gen": args.gen,
             "no_thinking": args.no_thinking,
+            # Which regime ran. --prewarm populates the prefix cache serially
+            # first, so the cells measure steady-state decode; without it each
+            # stream pays a full unique prefill and the cells measure the
+            # mixed prefill+decode cost a real client actually pays. Both are
+            # real and they differ by more than an order of magnitude in deep
+            # cells, so a saved number that does not say which one ran cannot
+            # be compared against anything.
+            "prewarm": args.prewarm,
             "shared_prefix": args.shared_prefix,
+            "requests_per_cell": args.requests,
+            # Recorded so a saved file can be checked for freshness later.
+            # Prompts are a pure function of these two, so two runs sharing
+            # them re-send text the engine may still have cached: the second
+            # run's prefill rate reads far above the hardware's real one.
+            "seed": args.seed,
+            "run_nonce": args.run_nonce,
             "words_per_token": wpt,
             "timestamp": time.strftime("%Y-%m-%dT%H:%M:%S"),
             "rows": rows,

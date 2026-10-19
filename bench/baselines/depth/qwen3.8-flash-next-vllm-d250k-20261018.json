@@ -1,0 +1,33 @@
+{
+  "model": "qwen3.8-flash-next-vllm",
+  "url": "http://127.0.0.1:8080/v1/chat/completions",
+  "label": "campaign6-20261018 d250k gen=1024 band=fast",
+  "gen": 1024,
+  "no_thinking": true,
+  "prewarm": false,
+  "shared_prefix": false,
+  "seed": 1234,
+  "run_nonce": 1792368051,
+  "words_per_token": 1.0002463661000247,
+  "timestamp": "2026-10-19T01:43:53",
+  "rows": [
+    {
+      "ok": 1,
+      "requested": 1,
+      "errors": [],
+      "prompt_tokens": 249916,
+      "completion_tokens": 1024,
+      "agg_decode_tok_s": 55.505367725040884,
+      "per_stream_tok_s_mean": 55.505367725040884,
+      "per_stream_tok_s_min": 55.505367725040884,
+      "ttft_s_mean": 98.84859664700343,
+      "ttft_s_p90": 98.84859664700343,
+      "e2e_s_max": 117.27924654500384,
+      "accepted_per_step": 1.0029411764705882,
+      "prefill_tok_s": 2528.270592373414,
+      "prefill_tok_s_per_stream_mean": 2528.270592373414,
+      "depth_requested": 249856,
+      "concurrency": 1
+    }
+  ]
+}

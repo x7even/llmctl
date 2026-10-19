@@ -209,10 +209,52 @@ established.** Flash-Next differs from the 27B in two ways at once: it is a 6B-a
 than a dense GDN hybrid, *and* it runs the nightly image rather than v0.26.0. Either could
 explain the absence of a band, and this pair cannot separate them.
 
-**The 35B and gemma4 profiles remain unmeasured.** Measure before adding it there — the
-Flash-Next result above is the reason to measure rather than assume. Give any *new* vLLM profile
-the flag from the start, since the downside is bounded (a few percent on one stream) and the
-upside is a silent 2×.
+**The 35B and gemma4 profiles have now been measured, and both wanted the flag.** Matched pairs
+on 2026-10-19, same image and profile either side, `medium-256`, `--no-thinking`, varying only
+the env var:
+
+| profile | serial | conc=1 | conc=8 |
+|---|---|---|---|
+| `qwen3.6-35b-code` (3B-active MoE, MTP) | 46.8 → **98.9** (2.11×) | 49.5 → 116.8 (2.36×) | 249.5 → 250.1 (**1.00×**) |
+| `gemma4-26b-a4b` (4B-active MoE, BF16) | 56.4 → **128.2** (2.27×) | 56.4 → 129.6 (2.30×) | 305.1 → **522.1 (1.71×)** |
+| `qwen3.6-35b-128k-nomtp` (FP8, no MTP) | 30.7 → **87.7** (2.86×) | 30.7 → 88.0 (2.87×) | 208.1 → 431.1 (2.07×) |
+
+Shipped on all three, and on `qwen3.6-35b-fast` unmeasured — same weights and backend as
+`-code`, differing only in chat-template defaults.
+
+**Gemma 4 is the counter-example to "it amortises, so it only matters on one stream."** The two
+Qwen MoE profiles behave as the 27B does — the 35B-code curve is fully flat by conc=8 — but
+gemma4 keeps **1.71×** at conc=8, where 522 tok/s nearly matches the conc=16 figure documented
+for the profile at the time (528 — itself a pre-flag reading; the flagged profile now does
+891 at conc=16). A slow draw on that profile costs real fleet throughput, not just latency on an
+idle server. So the amortisation ratio is a property of the model, not of the band: 1.11/1.89 =
+0.59 on the 27B dense, 1.00/2.11 = 0.47 on the 35B MoE, 2.07/2.86 = 0.72 on the 35B no-MTP, and
+0.75 on gemma4. Do not assume a conc=8 reading is safe because a sibling profile's was.
+
+This also explains two rows in our own published table: the committed six-profile sweep had
+`qwen3.6-35b-code` at 51.3 serial and `gemma4-26b-a4b` at 56.2/300.0, which match the **stock**
+arms above almost exactly. They were not bad draws — they **predate** `0c05be5`, the commit that
+landed the flag on these two profiles, so each one correctly measured the configuration that was
+shipped on the day it ran. They are superseded, not wrong. That is the mechanism behind "why do
+the published numbers look slower than what these GPUs do" — see `bench/band_audit.py`.
+
+Re-measured on the flagged config at matched `--requests 128`, the gain is not uniform across
+the sweep and does not simply amortise away:
+
+| profile | serial | conc=8 | conc=16 | conc=32 |
+|---|---|---|---|---|
+| `qwen3.6-35b-code` | 2.14× | 1.04× | 1.02× | **1.12×** |
+| `gemma4-26b-a4b` | 2.30× | 1.80× | 1.59× | **1.53×** |
+
+gemma4 keeps more than half its serial gain all the way out to conc=32. The 35B-code curve
+flattens at conc=8 and then **rebounds to 1.12× at conc=32**, which is outside this harness's
+~2% same-server spread — so "it amortises, so it only costs you on one stream" is not even true
+of that profile across the whole sweep. Its conc=8 cell is anomalous in both vintages
+(302 → 585 tok/s from conc=8 to conc=16 while p90 latency barely moves, 5.11 → 5.15 s), so read
+that one level with suspicion rather than averaging it in.
+
+Give any *new* vLLM profile the flag from the start: the downside is bounded (a few percent on
+one stream, per the Flash-Next pair) and the upside is a silent 2×.
 
 Two detection notes, both learned the hard way:
 
@@ -474,6 +516,7 @@ llama.cpp auto-discovers the remaining parts.
 |------|-------------|----------------|
 | `--max-num-seqs` | Max concurrent sequences in flight | Lower if OOM; raise if throughput limited and VRAM free |
 | `--gpu-memory-utilization` | Fraction of VRAM reserved for KV cache | Lower if OOM; keep at 0.95–0.97 normally. Exception: `qwen3.8-flash-next-vllm` stays at 0.90 (0.97 stalls under concurrent 100K prompts; see docs/models.md) |
+| `--max-num-batched-tokens` | Prefill chunk size, and the size of an MTP drafter's per-batch buffer | **16384 on the dense-27B MTP profiles** (`qwen3.8-27b-code`, `qwen3.8-27b-fast`, `qwen3.6-27b-code`); 32768 elsewhere. See below |
 | `--kv-cache-dtype fp8` | Store KV tensors in FP8 | **Not a default — see below.** Only `qwen3.6-35b-fast` sets it today |
 | `concurrencyLimit` | Queue depth before 429 | Set to `--max-num-seqs` or slightly above |
 | `ttl` | Seconds before auto-unload | 0 = never; useful for infrequently used profiles |
@@ -578,3 +621,64 @@ filler with `ignore_eos` and never reads the reply — it cannot see this failur
 require every cell to retrieve before looking at a single tok/s figure. That gate earned its
 keep here: it was the only thing issuing a full-length request, so it is what found the crash,
 and a throughput-only sweep at 65K would have reported FP8 KV as a clean win.
+
+### `--max-num-batched-tokens` on MTP profiles: 16384, not 32768
+
+An MTP profile allocates a `[embedding, hidden]` buffer sized by
+`--max-num-batched-tokens` for the drafter. On Qwen3.8-27B that is
+`32768 x (2 x 5120) x 2 bytes = 640 MiB` per step. A **fresh** container driven
+straight into 32 concurrent 8K-token prompts cannot find it: all four TP
+workers raise `torch.OutOfMemoryError` in the same step and the EngineCore
+exits, while the API server keeps answering `/health` 200 for minutes.
+Reproduced on 2 of 2 fresh spawns. Full write-up and the reproduction recipe:
+`docs/mtp-drafter-oom.md`.
+
+Halving the flag halves that buffer to 320 MiB and fixes it. Measured on
+`qwen3.8-27b-code`, same image, FAST band confirmed either side:
+
+- **KV pool goes up**, not down: 1,009,850 -> ~1,085,000 tokens (+7-9%), i.e.
+  7.70x -> ~8.3x concurrent requests at the full 131,072 window. The profiling
+  pass needs less transient room, so more is left for KV.
+- **Free on `medium-256`**: 67.4 / 352.6 / 566.0 / 861.8 tok/s at conc
+  1 / 8 / 16 / 32 against a 66.0 / 339.2 / 570.7 / 851.2 stock baseline — all
+  within run-to-run noise.
+- **It costs cold deep-burst prefill**, which is the real trade. At
+  `8192 x conc=32` cold it read 17.6 aggregate tok/s and 201.7 s p90 TTFT
+  against ~28.5 and ~133 s on 32768. Reproduced on a second fresh spawn
+  (17.6 / 201.86 s p90, same to three figures), so it is a real price rather
+  than noise; the engine survives either way with
+  the flag set.
+
+Applies to the two profiles serving `/models/Qwen3.8-27B-FP8` with a
+speculative config. `qwen3.8-27b-think` is deliberately left at 32768: it has
+no MTP drafter, so there is no buffer to shrink, and it is the long-context
+profile whose whole job is deep prompts.
+
+**Also applied to `qwen3.6-27b-code` as of 2026-10-19, and the reason is a
+correction.** This section used to call that profile's engine death a
+*different* defect — `TimeoutError: RPC call to sample_tokens timed out` with no
+OOM anywhere in its log — and said to measure before copying the flag across.
+Measuring falsified it. Driven into `4096 x conc=32` with 1,024-token outputs it
+loses 31 of 32 requests, and the journal shows the order plainly:
+
+```
+t+0       Worker_TP2  torch.OutOfMemoryError: ... Tried to allocate 630.00 MiB
+t+4m44s   EngineCore  TimeoutError: RPC call to sample_tokens timed out.
+```
+
+The OOM is first and it is on **one rank**; the timeout arrives 4m44s later,
+because the surviving ranks block in the collective until the watchdog fires.
+So there is one defect, not two, and the RPC timeout is its downstream symptom
+rather than an independent cause. 630 MiB against the 3.8's 638 MiB is the same
+drafter buffer at the same 32768-token chunk. Note also that it fires at **4,096
+tokens** per prompt, not only at 32,768 — depth is not what triggers it, batch
+width is.
+
+**`qwen3.6-35b-code` is still at 32768 and still unmeasured** at that cell. It
+is a 3B-active MoE rather than a 27B dense model, so its drafter buffer has a
+different shape; do not copy the flag there on this evidence.
+
+`--gpu-memory-utilization` is not the lever here. The step that fails is outside
+that budget — it budgets the KV pool, while activations and workspaces grow
+lazily into leftover driver VRAM — and 0.01 is only ~326 MiB per card on a
+32 GB card.

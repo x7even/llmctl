@@ -1,0 +1,37 @@
+{
+  "model": "qwen3.6-27b-code",
+  "url": "http://127.0.0.1:8080/v1/chat/completions",
+  "label": "band=fast chunk=16384 d16k-sat",
+  "gen": 1024,
+  "no_thinking": true,
+  "prewarm": false,
+  "shared_prefix": false,
+  "seed": 7,
+  "run_nonce": 1792368051,
+  "words_per_token": 1.0002463661000247,
+  "timestamp": "2026-10-19T03:33:36",
+  "rows": [
+    {
+      "ok": 29,
+      "requested": 32,
+      "errors": [
+        "ConnectionError: HTTPConnectionPool(host='127.0.0.1', port=8080): Read timed out.",
+        "ConnectionError: HTTPConnectionPool(host='127.0.0.1', port=8080): Read timed out.",
+        "ConnectionError: HTTPConnectionPool(host='127.0.0.1', port=8080): Read timed out."
+      ],
+      "prompt_tokens": 16387,
+      "completion_tokens": 1024,
+      "agg_decode_tok_s": 22.47329820607145,
+      "per_stream_tok_s_mean": 1.4702082117906823,
+      "per_stream_tok_s_min": 0.779683852450272,
+      "ttft_s_mean": 397.4076131751745,
+      "ttft_s_p90": 1006.0172842190077,
+      "e2e_s_max": 1324.0930843259994,
+      "accepted_per_step": 2.7543967205772186,
+      "prefill_tok_s": 415.7173677997778,
+      "prefill_tok_s_per_stream_mean": 265.1010887875364,
+      "depth_requested": 16384,
+      "concurrency": 32
+    }
+  ]
+}

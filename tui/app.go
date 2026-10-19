@@ -523,11 +523,25 @@ func (a *app) applyData(data AppData) {
 	if data.Active != nil {
 		currID = data.Active.ID
 	}
-	if currID != a.prevModelID {
+	// Captured before the reset below, which assigns prevModelID. The cursor-snap
+	// at the end of this function used to re-test `currID != a.prevModelID` and so
+	// could never fire -- by then the two are equal by construction, and the
+	// cursor never followed a swap.
+	modelChanged := currID != a.prevModelID
+	if modelChanged {
 		a.prevGen = nil
 		a.decodeRate = nil
 		a.prevPrompt = nil
 		a.prefillRate = nil
+		// The peaks and the histories belong to the model that set them. Carrying
+		// them across a swap makes the panel attribute another profile's best
+		// second to whatever is loaded now -- during a benchmark sweep that swaps
+		// profiles, the displayed peak silently became the maximum over all of
+		// them. Nothing in the display said so, which is worse than showing less.
+		a.peakTokPerS = 0
+		a.peakPrefillPerS = 0
+		a.tokHist = RingBuffer{}
+		a.prefillHist = RingBuffer{}
 		a.prevModelID = currID
 	}
 	prevTime := a.prevGenTime
@@ -585,7 +599,7 @@ func (a *app) applyData(data AppData) {
 	}
 
 	// Snap cursor to active model only when the active model changes
-	if currID != a.prevModelID && data.Active != nil {
+	if modelChanged && data.Active != nil {
 		for i, p := range a.profiles() {
 			if p == data.Active.ID {
 				a.cursor = i
@@ -1159,6 +1173,7 @@ func (a *app) renderTokens(w int) string {
 		runStr,
 		stDim.Render(genStr),
 	))
+	sb.WriteString(" " + distLine(a.tokHist.ActiveStats(), w-1) + "\n")
 
 	// Prefill (encode) track — 2 rows (shorter than decode)
 	pfVmax := a.peakPrefillPerS
@@ -1183,11 +1198,12 @@ func (a *app) renderTokens(w int) string {
 	if a.data.Metrics != nil && a.data.Metrics.PromptTotal != nil {
 		ptStr = fmt.Sprintf("%.0f", *a.data.Metrics.PromptTotal)
 	}
-	sb.WriteString(fmt.Sprintf(" cur: %s tok/s  peak: %s tok/s  prompt: %s",
+	sb.WriteString(fmt.Sprintf(" cur: %s tok/s  peak: %s tok/s  prompt: %s\n",
 		stBold.Render(pfCurStr),
 		lipgloss.NewStyle().Foreground(lipgloss.Color("#00c8c8")).Render(pfPeakStr),
 		stDim.Render(ptStr),
 	))
+	sb.WriteString(" " + distLine(a.prefillHist.ActiveStats(), w-1))
 
 	return sb.String()
 }

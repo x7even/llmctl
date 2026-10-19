@@ -10,6 +10,7 @@
 | `depth_bench.py` | Context-depth × concurrency matrix: streams, so prefill (TTFT) and decode are measured separately |
 | `needle_check.py` | Long-context **retrieval** check: can the model still see the context it is decoding over |
 | `opt_probe.py` | Targeted probe for optimization impact (before/after comparison) |
+| `band_audit.py` | Checks `baselines/` for files recorded in the slow decode band (exit 1 if any) |
 | `codetests/run_codetests.py` | Code-correctness suite: model writes code, hidden tests grade it (`validate` / `run` / `regrade`) |
 
 ### Depth matters, and `concurrent_bench.py` cannot see it
@@ -21,7 +22,7 @@ therefore say nothing about how the stack behaves at agent-fleet context depths,
 spread between profiles reached **24×** (see `docs/rdna4-long-context.md`). Use
 `depth_bench.py` for anything depth-related.
 
-Two rules for `depth_bench.py`, both learned by getting them wrong:
+Three rules for `depth_bench.py`, all learned by getting them wrong:
 
 - **Pass `--max-model-len` when going through llama-swap.** The router reports
   `max_model_len: null` for every profile, so the automatic clamp is inert and deep cells fail
@@ -31,6 +32,46 @@ Two rules for `depth_bench.py`, both learned by getting them wrong:
   interleaves those tokens into everyone else's decode steps. Cold 65K × conc=4 measured 181 s
   TTFT against 13.7 s of serial end-to-end. Both regimes are real; the header line says which
   one ran, and an unlabelled number between them is worthless.
+- **A default cell has no arrivals, and that is a best case for some kernels.** Without
+  `--requests`, the harness launches exactly `conc` streams once and waits: nothing enters
+  mid-run. Real fleets arrive continuously, and that can matter to the kernel, not just to
+  the queue: TRITON_ATTN picks its 3D split-KV path per *batch*, so one newcomer's prefill
+  chunk drops every co-batched decoder to the 2D grid (`docs/rdna4-long-context.md`, gate
+  4). Pass `--requests N` (N > conc) to measure the churn regime, and say which regime a
+  figure came from — a no-arrival depth number is a kernel ceiling, not a fleet throughput.
+  **Depth under churn is still unmeasured here**, so the 1.4-28x figures in
+  `docs/rdna4-long-context.md` are ceilings and must not be quoted as fleet numbers.
+
+### Never compare two runs at different `--requests`
+
+A conc=8 reading moves by up to a third with the request count alone, no config change
+involved. Measured 2026-10-19, same profile and same flag either side:
+
+| profile | n=32 | n=128 | shift |
+|---------|------|-------|-------|
+| `qwen3.6-35b-code` | 250.1 | 298.4 | +19% |
+| `qwen3.6-35b-128k-nomtp` | 347.9 | 458.3 | +32% |
+| `gemma4-26b-a4b` | 522.1 | 543.3 | +4% |
+
+32 requests through 8 slots is a ~12 s run, and ramp-up and drain are most of it. That is
+large enough to invent a result: a 19% "cost" was attributed to TRITON_ATTN on this very
+profile from one n=32 run per arm. Re-run matched — one fresh spawn per arm, 3 bench reps
+against each live server, `--requests 128`, `--serial-n 8`, the backend flag the only variable
+— the sign flips and TRITON wins every level:
+
+| cell | ROCM_ATTN (3 reps) | TRITON_ATTN (3 reps) | T/R |
+|---|---|---|---|
+| serial (n=8) | 87.9 / 88.1 / 88.3 | 91.5 / 91.5 / 91.6 | +3.9% |
+| conc=8 (n=128) | 445.5 / 446.7 / 446.7 | 464.1 / 463.9 / 461.3 | +3.9% |
+| conc=32 (n=128) | 1180.2 / 1187.3 / 1174.1 | 1208.6 / 1226.1 / 1203.5 | +2.4% |
+
+Note the spreads: against one live server, reps land within 0.6% at conc=8 and 1.9% at
+conc=32. Run-to-run noise was never the problem — the request count was. So fix the count
+before comparing anything, prefer n=128 for any number that will be published, and run more
+than one rep so the spread is visible rather than assumed.
+
+**Two reps per arm is the floor for any A/B.** Both arms of that test were single runs when it
+first went in, which is how a 19% artifact reached three documents and a profile comment.
 
 ### Retrieval check — mandatory for any attention or kernel change
 
@@ -111,6 +152,212 @@ with the model's own recipe failing the same way, so it was not adopted.
    is exactly the regime a `--prewarm` matrix does not measure.
 5. Keep throwaway routers and containers on a separate port and name, and leave the shipped profile untouched
    until every step passes.
+
+---
+
+## Harness traps
+
+Each of these produced a wrong number or a wasted run here at least once.
+
+### `--url` is the FULL endpoint, not a base
+
+`DEFAULT_URL` in `depth_bench.py` and `concurrent_bench.py` is
+`http://127.0.0.1:8080/v1/chat/completions`. Passing `--url http://host:8080/v1`
+makes every POST a 404 and the whole sweep reports zero completions, which
+looks exactly like a dead backend.
+
+### `--run-nonce` is mandatory on a re-run
+
+Without it a second run sends byte-identical prompts, the prefix cache answers
+them, and the prefill figure measures cache reuse. A 32K cell re-run warm
+reported 41,463 prompt tok/s against a true ~4,300 -- a 10x overstatement that
+looks like a breakthrough. Pass a fresh `--run-nonce` for every run against a
+server that has already seen traffic.
+
+### Any prefill figure from a prewarmed cell is cache reuse
+
+`--prewarm` populates the prefix cache on purpose, so the prefill rate in a
+prewarmed row is not a compute rate and must never be published as one.
+160K-267K tok/s figures are the tell. `report_full_table.py` prints `cached`
+in that column rather than a number.
+
+### `prefill_tok_s` is a whole-batch rate
+
+It is batch prompt tokens divided by the slowest stream's TTFT. It is not a
+per-stream speed and is not comparable with decode tok/s. At conc=32 it will
+look enormous beside a decode figure; they are different denominators.
+
+### llama-swap does not proxy `/metrics`
+
+Port 8080 returns nothing for `vllm:*`. The backend's own port must be
+scraped, and it is assigned dynamically (9104, 9106, ... depending on what has
+been loaded since the router started). Discover it:
+
+```bash
+ps -eo args | grep -a 'vllm serve' | grep -oE -- '--port [0-9]+'
+```
+
+`depth_bench.py --metrics-url http://127.0.0.1:<port>/metrics` then samples
+`vllm:generation_tokens_total` once a second and reports the distribution
+alongside the run average.
+
+### `llmctl swap <P>` is a no-op when P is already loaded
+
+If the profile is already up and its pid 1 is alive, swap returns success
+without restarting anything. A config change you just made is therefore NOT in
+effect, and an A/B comparing two configs silently measures one of them twice.
+`llmctl unload` first, then swap, then assert the container Id actually
+changed:
+
+```bash
+before=$(podman ps --filter name=llmstack-vllm-<P> -q | head -1)
+llmctl unload && llmctl swap <P>
+after=$(podman ps --filter name=llmstack-vllm-<P> -q | head -1)
+[ "$after" != "$before" ] || echo "swap was a no-op -- the old container is still serving"
+```
+
+After editing `config/models.yaml`, `llmctl down && llmctl up` as well: the
+router reads the config at startup.
+
+### `No available shared memory broadcast block` is not a death signature
+
+vLLM prints it on any stall over 60 s, including a cold start and a long
+prefill queue. A watchdog that treats it as a crash will kill healthy runs.
+The patterns that do mean the engine is gone:
+
+```
+torch\.OutOfMemoryError|Tried to allocate|EngineDeadError|RPC call to [a-z_]+ timed out
+```
+
+### `llmband` exit 2 usually means "no baseline", not "slow"
+
+`config/band-baselines.json` covers only a few profiles. For an uncalibrated
+one the detector cannot decide and exits 2, with the reason on stdout -- read
+it before concluding a spawn was slow. Calibrate with `--calibrate` against a
+server you have reason to believe is fast.
+
+### A deep, wide cell that reports nothing may be a queue, not a failure
+
+16,384 tokens x 32 streams on a 27B produced a ~17-minute prefill backlog and
+three client-side read timeouts. The server was serving the whole time. Check
+`num_requests_waiting_by_reason{reason="capacity"}` -- a non-zero value means
+the KV budget admits fewer streams than you asked for, so the extra streams
+wait rather than run.
+
+### Classify the band BEFORE the sweep, with `concurrent_bench` at `medium-256`
+
+A gfx1201 server's decode band is drawn when it spawns (`docs/rdna4-decode-bands.md`), so
+every absolute figure a run produces belongs to whichever band that spawn landed in. A
+sweep that does not state its band is not a measurement.
+
+**A depth sweep cannot classify its own band.** `depth_bench.py` is the wrong instrument for
+it, for a reason that has nothing to do with the script: there is no stored reference taken
+with it to compare against. Band classification is a comparison, so it has to be run on the
+harness and prompt that the references use — `concurrent_bench.py --prompt medium-256`,
+which is what every file in `bench/baselines/` holds.
+
+This cost a full nine-cell grid on `qwen3.6-35b-128k-nomtp`. Run first, unclassified, it
+read 26.6 tok/s at 2,048 tokens falling to 3.6 at 65,536, and that 7.4x looked like a
+long-context collapse worth a large fix. A `medium-256` check afterwards read 30.7 tok/s
+serial against a stored 88.3 — the spawn was in the slow band, and the whole grid was a
+record of one bad draw. The matched fast spawn reads 59.2 and 4.6 in those cells.
+
+So, in order:
+
+```bash
+# 1. the band check -- comparable with bench/baselines/ and with llmband
+python3 bench/concurrent_bench.py --model <P> --prompt medium-256 --sweep 1,8 --no-thinking
+# 2. only if it matches the stored figure, the thing you actually wanted
+python3 bench/depth_bench.py --model <P> --depths ... --concurrency ...
+```
+
+`scripts/llmband` is the cheaper check and should be preferred — but it only covers the few
+profiles in `config/band-baselines.json`, and for anything else it exits 2 (see above). For
+an uncalibrated profile the `medium-256` sweep against its stored baseline is the fallback,
+and it is also how to decide a spawn is fast enough to calibrate `llmband` from.
+
+One trap inside the trap: **the band ratio is not constant across the sweep.** On the 35B
+MoE it was 2.87x serial, 2.07x at conc=8, and only 1.10x at 65,536 x 4 — the penalty is a
+fixed per-step tax, so it amortises with batch width and shrinks against the longer steps a
+deep context produces. A band check at one cell does not transfer to another, and a slow-band
+ratio must never be quoted as a speedup for a fix measured in the fast band.
+
+### Part of the stored corpus was recorded in the slow band — audit before quoting
+
+`-e GPU_MAX_HW_QUEUES=1` shipped on 2026-10-18. Every baseline taken before that was a stock
+spawn, so some of `baselines/` records the slow band, and a figure copied out of one of those
+files into a doc or a README understates the hardware by up to ~2x at one stream. This is the
+answer to "why do the published numbers look slower than what the GPUs actually do".
+
+```bash
+python3 bench/band_audit.py          # exit 1 if any file needs attention
+python3 bench/band_audit.py --quiet  # just those files
+```
+
+Two confirmed, both arms of the 2026-10-05 Qwen3.8-vs-3.6 comparison:
+
+| file | one-stream | conc=8 |
+|---|---|---|
+| `qwen3.6-27b-code-v0.26.0-nothink-20261005.json` | 1.92x down | 1.11x down |
+| `qwen3.8-27b-code-v0.26.0-nothink-20261005.json` | 1.90x down | 1.17x down |
+| the 27B band curve, for comparison | 1.89x | 1.11x |
+
+Because *both* arms were slow, that comparison's relative verdict ("throughput equal") still
+holds — but every absolute number in it is a slow-band figure.
+
+Three things the audit cannot do, so do not over-read it:
+
+- **The curve does not name the cause.** Any fixed per-step overhead is largest at one stream
+  and amortises with batch width. vLLM 0.31.0's Model Runner V2 draws the same shape (~45% at
+  one stream, nothing by conc=2-4), which is why the 0.31.0 files are flagged too — there the
+  cause is known and is not the band (`docs/upgrade-plan-2026-10.md`). A flag means "read the
+  provenance", not "this was the band".
+- **It needs a comparable peer**, which means the same profile, the same image pin and
+  no-thinking on both sides. Thinking inflates tok/s, so a thinking-on file is a different
+  measurement: comparing this October's no-thinking 35B sweep against `qwen3.6-35b-code.json`
+  (2026-05, thinking on) manufactured a 2.2x shortfall that was entirely the thinking block.
+  **Put the image pin in every baseline filename** or the file can never be audited.
+- **It cannot clear a profile with only one reading.** Those are listed as `unaudited`, and
+  that is the honest state, not a pass.
+
+#### Provenance for the 2026-10-19 matched set
+
+The seven `*-peak-nothink-matched-20261019.json` files are the published `medium-256` table in
+`README.md` and the root `CLAUDE.md`. Each is one fresh spawn on the shipped config, classified
+with `scripts/llmband` before it was benchmarked, 128 requests per level. Six come back as their
+profile's reference on their pin. Two notes:
+
+- **`qwen3.6-35b-128k-nomtp` reads `unaudited`** -- it is the first `medium-256` baseline for
+  that profile on this pin, so the audit has no peer and correctly says nothing. Its
+  91.8 serial / 457.0 conc=8 land within 1% of the TRITON arm of the attention-backend matched
+  pair, which is the closest thing to a peer that exists.
+- **`qwen3.8-flash-next-vllm` carries a `PER-STEP` flag that is *not* the band.** Its
+  one-stream cell is defective: that profile has an intermittent multi-minute single-stream
+  latency tail (`docs/models.md`), and this cell caught one -- 29.6 tok/s at a p90 of 10.21 s,
+  against 55.4 at a p90 of ~3.0 s from three clean cells on the same server. `llmband`
+  classified that server **fast** throughout, so the flag is reading the tail, not a slow draw.
+  The published serial figure for this profile comes from the two
+  `*-serial-recheck-rep{1,2}-nothink-20261019.json` files, not from the matched file. Its
+  conc=8/16/32 cells are sound and are the published ones.
+
+  Do not read `rep2`'s `ok (1.29x of fastest)` as a clean bill of health. `one_stream()` prefers
+  a `conc=1` cell over a `serial` one, and `rep2`'s `conc=1` cell is the contaminated 42.90
+  reading — it clears only because 1.29 happens to fall under the 1.30 threshold. `rep2`'s
+  *serial* cell is clean at 55.37. The audit has no notion of a spoiled cell, so on this profile
+  check the p90/mean latency ratio as well: clean one-stream cells here read 1.08-1.10 and
+  contaminated ones 1.57-1.84, while the six other profiles in the matched set read 1.09-1.27.
+
+### Report a distribution, not a peak
+
+`llmpanel` reports the maximum of one-second difference quotients; the
+benchmark reports a run average over the whole decode span. On the same cell
+those differ by up to 1.44x, and neither is wrong. Quote the saturated median
+for "what the hardware sustains", the run average for "how long the batch
+takes", and the p10 for the floor -- the `low` is a sampling-boundary artifact
+and a single tick can catch one token. Both surfaces use nearest-rank,
+round-half-up, no interpolation, so their figures are comparable. See the
+README's "Reading a live `llmpanel` peak" section and
+`docs/benchmark-results-full.md`.
 
 ---
 
@@ -204,6 +451,13 @@ level gives stable statistics. 32 is better for publication-quality comparisons.
 qwen3.8-27b-code-v0.26.0-nothink.json     ← good
 qwen3.8-27b-code.json                      ← ambiguous
 ```
+
+The image pin is not optional. `band_audit.py` only compares files within one profile *and*
+one pin — comparing across pins would report a version regression as a slow-band draw — so a
+baseline whose name omits the pin can never be audited. Six files committed on 2026-10-19 had
+to be renamed for exactly this reason, and the rename is what revealed that the 2026-10-05
+`qwen3.6-27b-code` baseline was a slow-band record. Flash-Next's pin is its nightly SHA
+(`-nightly-8cbd5d0-`).
 
 ---
 
