@@ -250,7 +250,7 @@ See `tui/CLAUDE.md` for architecture and coding conventions.
 
 ### Committing
 - Write commit messages explaining **why**, not just what changed
-- Never add `Co-Authored-By:` lines
+- Never add any AI assistant trailers, co-authored-by lines, sign-offs, or session links
 - Never use `--no-verify`
 - Include benchmark data in commit messages when changing performance-relevant config
 
