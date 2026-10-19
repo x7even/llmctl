@@ -287,6 +287,24 @@ Cold — every stream pays its own prefill:
 | 4,096 | 32 | 32/32 | 25.5 s | 45.6 s | 2779 | 17.5 | **368.9** |
 | 16,384 | 1 | 1/1 | 4.0 s | 4.0 s | 4112 | 34.7 | **34.7** |
 | 16,384 | 8 | 8/8 | 54.9 s | 92.4 s | 1419 | 16.6 | **64.5** |
+| 16,384 | 16 | 16/16 | 147.6 s | 294.4 s | 880 | 7.4 | **46.8** |
+| 16,384 | 32 | **29/32** ⚠ | 397.4 s | 1006.0 s | 416 | 1.5 | 22.5 |
+| 65,536 | 1 | 1/1 | 28.4 s | 28.4 s | 2307 | 12.0 | **12.0** |
+| 65,536 | 4 | 4/4 | 202.3 s | 367.7 s | 713 | 5.4 | **9.4** |
+
+- ⚠ **16,384 × 32** — 3 of 32 requests lost: client timeout -- the benchmark's own read timeout expired; the server kept serving the other streams
+
+Prewarmed — prefix cache hot, steady-state decode:
+
+| depth | conc | TTFT mean | per-stream tok/s | **aggregate tok/s** |
+|---|---|---|---|---|
+| 16,384 | 1 | 0.47 s | 34.7 | **34.7** |
+| 16,384 | 8 | 3.20 s | 26.1 | **168.0** |
+| 65,536 | 1 | 1.24 s | 12.0 | **12.0** |
+| 65,536 | 4 | 4.76 s | 10.5 | **37.0** |
+
+*(A prefill column is deliberately omitted here: with the cache hot it would
+read 160,000–270,000 tok/s, which is cache reuse, not compute.)*
 
 #### `qwen3.6-35b-code`
 
@@ -331,7 +349,7 @@ by whether the profile runs MTP, at 16,384 tokens cold:
 | `qwen3.8-27b-think` | no | 3965 | 3945 | 3937 | 3931 |
 | `qwen3.8-27b-code` | yes | 4110 | 1418 | 881 | — |
 | `qwen3.8-flash-next-vllm` | no | 2652 | 2732 | 2720 | — |
-| `qwen3.6-27b-code` | yes | 4112 | 1419 | — | — |
+| `qwen3.6-27b-code` | yes | 4112 | 1419 | 880 | — |
 | `qwen3.6-35b-code` | yes | 11944 | 5620 | — | — |
 | `gemma4-26b-a4b` | no | 4203 | 4255 | — | — |
 
@@ -349,6 +367,7 @@ new figures can be compared against the old. It is **not** the headline: a
 | `qwen3.8-27b-think` | 46.0 | 274.0 | 477.0 | **760.1** | 7.67 s |
 | `qwen3.8-27b-code` | 64.9 | 348.8 | 576.5 | **856.5** | 6.89 s |
 | `qwen3.8-flash-next-vllm` | 55.3 | 181.5 | 244.3 | **453.3** | 10.89 s |
+| `qwen3.6-27b-code` | 65.9 | 351.1 | 578.5 | **853.0** | 5.76 s |
 | `qwen3.6-35b-code` | 51.3 | 291.3 | 572.0 | **950.2** | 4.76 s |
 | `gemma4-26b-a4b` | 56.2 | 300.0 | 559.4 | **944.4** | 4.96 s |
 
@@ -401,7 +420,68 @@ scripts/llmband --model <profile>        # 0 fast / 1 slow / 2 undecided
 python3 bench/needle_check.py --model <profile>
 ```
 
+### Reading a live `llmpanel` peak against these tables
+
+`llmpanel` will show a higher number than anything above, and both are
+right. They are different statistics:
+
+- the panel's **cur**/**peak** are computed from
+  `vllm:generation_tokens_total` over one poll tick (1 s by default), so
+  **peak** is the maximum of a few hundred one-second difference
+  quotients;
+- the **aggregate tok/s** column above is a run average over the whole
+  decode span -- from the first stream's first token to the last
+  stream's last token.
+
+Measured on `qwen3.6-35b-code`, 2,048-token prompts, 1,024 tokens
+generated per request, with the sampler running inside the benchmark
+(`depth_bench.py --metrics-url`):
+
+| conc | run average | p10 | median | p90 | peak | peak / run avg |
+|---|---|---|---|---|---|---|
+| 8  | 359.6 | 339 | 406 | 457 | 480 | 1.33x |
+| 16 | 673.3 | 486 | 775 | 901 | 923 | 1.37x |
+| 32 | 977.0 | 1138 | 1276 | 1377 | 1405 | 1.44x |
+
+The percentiles are over the samples taken while the server was within
+10% of its high-water running-request count, which is what makes the
+median a steady-state figure rather than an average over ramp-in,
+plateau and drain. The gap splits into two parts, both measured:
+
+- **ramp dilution, 1.13-1.31x** -- the run-average window opens at the
+  *first* stream's first token while the others are still prefilling, so
+  it averages in a period that is not steady state.
+- **max-of-a-noisy-derivative, 1.10-1.19x** -- the maximum of a few
+  hundred one-second quotients lands on the most favourably-jittered
+  sample, and is biased high even when the true rate is flat.
+
+So quote the median when you mean "what this hardware sustains", and
+the run average when you mean "how long will this batch take". A peak
+alone is the least informative of the three. Both surfaces use the same
+percentile convention -- nearest-rank, round-half-up, no interpolation --
+so a figure read off the panel and a figure read out of a saved baseline
+are directly comparable.
+
+The split is not a constant of the hardware -- it depends on how much
+of the run is ramp. The same 2,048 x 32 shape on `qwen3.6-27b-code`
+dilutes harder: run average 642.3 against a saturated median of 1008
+and a peak of 1105, i.e. 1.57x of ramp against only 1.10x of noise.
+Deeper prompts and wider batches push it further the same way.
+
+Two caveats worth knowing before quoting a floor:
+
+- a one-second tick can land on a transition and catch a single token,
+  so the **low** is a sampling-boundary artifact; the **p10** is the
+  trustworthy floor.
+- a tick can report 32 running requests and still emit no tokens at all,
+  because the engine spent that second on a prefill chunk. Those seconds
+  are excluded from the decode percentiles and counted separately (7% of
+  in-band ticks on the conc=32 cell above). The run average pays for
+  them; the percentiles do not. That is part of the gap.
+
 Full per-profile data and architecture notes: `docs/models.md`.
+
+
 
 
 
