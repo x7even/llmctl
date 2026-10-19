@@ -963,10 +963,12 @@ models:
 # #       only answers to --served-model-name.
 # #   (5) -e GPU_MAX_HW_QUEUES=1 is load-bearing on gfx1201. Without it a container can
 # #       draw the slow decode band and serve at ~half speed for its whole life with
-# #       nothing in the logs (27B at TP4: serial 35.6 -> 67.2 tok/s). It is not a
-# #       blanket win -- it measured neutral on Flash-Next -- so give a new profile the
-# #       flag from the start, then classify the spawn with scripts/llmband.
-# #       docs/rdna4-decode-bands.md.
+# #       nothing in the logs (27B at TP4: serial 35.6 -> 67.2 tok/s). Now set on every
+# #       vLLM profile. It read neutral on Flash-Next at medium-256, which is why that
+# #       profile went without it until 2026-10-19 -- then long generations said 1.66x
+# #       (4x8192-token streams, 104 -> 173 tok/s). So price it on the workload a
+# #       profile exists for, and give a new profile the flag from the start, then
+# #       classify the spawn with scripts/llmband. docs/rdna4-decode-bands.md.
 # #
 # # Also: --max-num-seqs above 32 closes TRITON_ATTN's 3D split-KV path
 # # (docs/rdna4-long-context.md). Never combine --quantization awq with
