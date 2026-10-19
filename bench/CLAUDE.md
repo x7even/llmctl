@@ -203,6 +203,44 @@ three client-side read timeouts. The server was serving the whole time. Check
 the KV budget admits fewer streams than you asked for, so the extra streams
 wait rather than run.
 
+### Classify the band BEFORE the sweep, with `concurrent_bench` at `medium-256`
+
+A gfx1201 server's decode band is drawn when it spawns (`docs/rdna4-decode-bands.md`), so
+every absolute figure a run produces belongs to whichever band that spawn landed in. A
+sweep that does not state its band is not a measurement.
+
+**A depth sweep cannot classify its own band.** `depth_bench.py` is the wrong instrument for
+it, for a reason that has nothing to do with the script: there is no stored reference taken
+with it to compare against. Band classification is a comparison, so it has to be run on the
+harness and prompt that the references use — `concurrent_bench.py --prompt medium-256`,
+which is what every file in `bench/baselines/` holds.
+
+This cost a full nine-cell grid on `qwen3.6-35b-128k-nomtp`. Run first, unclassified, it
+read 26.6 tok/s at 2,048 tokens falling to 3.6 at 65,536, and that 7.4x looked like a
+long-context collapse worth a large fix. A `medium-256` check afterwards read 30.7 tok/s
+serial against a stored 88.3 — the spawn was in the slow band, and the whole grid was a
+record of one bad draw. The matched fast spawn reads 59.2 and 4.6 in those cells.
+
+So, in order:
+
+```bash
+# 1. the band check -- comparable with bench/baselines/ and with llmband
+python3 bench/concurrent_bench.py --model <P> --prompt medium-256 --sweep 1,8 --no-thinking
+# 2. only if it matches the stored figure, the thing you actually wanted
+python3 bench/depth_bench.py --model <P> --depths ... --concurrency ...
+```
+
+`scripts/llmband` is the cheaper check and should be preferred — but it only covers the few
+profiles in `config/band-baselines.json`, and for anything else it exits 2 (see above). For
+an uncalibrated profile the `medium-256` sweep against its stored baseline is the fallback,
+and it is also how to decide a spawn is fast enough to calibrate `llmband` from.
+
+One trap inside the trap: **the band ratio is not constant across the sweep.** On the 35B
+MoE it was 2.87x serial, 2.07x at conc=8, and only 1.10x at 65,536 x 4 — the penalty is a
+fixed per-step tax, so it amortises with batch width and shrinks against the longer steps a
+deep context produces. A band check at one cell does not transfer to another, and a slow-band
+ratio must never be quoted as a speedup for a fix measured in the fast band.
+
 ### Report a distribution, not a peak
 
 `llmpanel` reports the maximum of one-second difference quotients; the
