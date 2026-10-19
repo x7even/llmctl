@@ -306,8 +306,10 @@ median. Read the flag's effect on this table narrowly, and only across cells mea
 request count: **conc=8 is the only one that moved** — four unflagged `--requests 128` readings
 from two spawns (181.5, then 154.4 / 140.1 / 140.5 on a second server in that order) against
 204.3 and 204.1 from two flagged spawns, so every flagged reading beats every unflagged one.
-conc=16 and conc=32 land inside the unflagged spread (222.6-251.3 and 359.1-452.9) and serial is
-flat. The flag's real value here is long generations (1.66x) and avoiding a slow spawn. **The single-stream latency tail is still an open issue** — see
+conc=16 lands inside the unflagged spread outright (stock 222.6-251.3 across four spawns against
+flagged 249.9 / 250.6), and conc=32 clears the unflagged maximum by only 1.4-2.8% against a 16%
+spread (stock 390.7 / 451.0 / 452.9 / 453.3, flagged 459.6 / 465.9) — not a gain to quote.
+Serial is flat on healthy spawns. The flag's real value here is long generations (1.66x) and avoiding a slow spawn. **The single-stream latency tail is still an open issue** — see
 `docs/models.md`.
 
 | Profile | serial | conc=8 | conc=16 | conc=32 |
@@ -340,8 +342,8 @@ things to read out of the table:
   gained the flag on 2026-10-19 and its row is a fresh flagged spawn, so its conc=8 cell is up
   from 154.4 to 204.1. Read that cell alone — conc=16/32 are inside the unflagged spread and
   serial is flat (see its own note in `docs/models.md`). Its conc=16/32 cells were once said to
-  "reproduce to 0.5%"; that was two spawns agreeing and five show a ~13% span, so no two figures
-  inside it are a difference either.
+  "reproduce to 0.5%"; that was two spawns agreeing, and four `n=128` spawns span 222.6-251.3 at
+  conc=16 and 390.7-453.3 at conc=32, so no two figures inside those are a difference either.
 - **`qwen3.6-35b-128k-nomtp` enters this table for the first time, second-fastest at conc=32.**
   The deep-context profile is also one of the strongest short-prompt profiles here — the
   opposite of what this file claimed while the retracted 19% TRITON_ATTN cost stood.

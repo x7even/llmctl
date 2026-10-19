@@ -169,10 +169,15 @@ second server in that order, against 204.3 and 204.1 from two flagged spawns. So
 every flagged reading is above every unflagged one, and the two flagged spawns
 agree to 0.1% where the unflagged server drifted 10% downward across three
 sweeps -- suggestive that the flag steadies the cell as well as raising it, but
-two readings cannot establish that. **conc=16 and conc=32 did not move**: the
-unflagged spawns span 222.6-251.3 and 359.1-452.9, and the published 250.6 and
-459.6 sit inside both, so do not read either as a flag gain. Serial is flat
-(55.4-55.6 either way). What the flag is actually for on this profile is
+two readings cannot establish that. What earns conc=8 the word "moved" is its
+margin against its own spread: 204.1 clears the highest unflagged reading by
+12%. **conc=16 and conc=32 do not clear theirs.** At conc=16 four unflagged
+spawns give 222.6 / 244.3 / 244.5 / 251.3 and the flagged ones 249.9 / 250.6 --
+inside the spread outright. At conc=32 four unflagged spawns give 390.7 / 451.0 /
+452.9 / 453.3 and the flagged ones 459.6 / 465.9, which *are* above the unflagged
+maximum but by 1.4% and 2.8% against a 16% spread, so that is not a gain anyone
+should quote. Serial is flat (55.4-55.6 either way) on spawns that come up
+healthy. What the flag is actually for on this profile is
 long generations, where it is worth 1.66x, and avoiding a slow spawn -- neither
 of which this table measures. Evidence:
 [docs/benchmarks.md](docs/benchmarks.md#the-short-prompt-sweep-in-detail).

@@ -277,12 +277,22 @@ a matched pair of their own) cannot go in a span with the `n=128` ones. At
 one, which is the solid part. The two flagged spawns also agree to 0.1% where
 that unflagged server drifted 10% downward across three consecutive sweeps,
 which hints the flag steadies the cell as well as raising it; two readings
-cannot establish that, so it is not yet a finding. conc=16 and conc=32 did not
-move: unflagged they span 222.6 / 244.5 / 251.3 and 359.1 / 390.7 / 441.5 /
-451.0 / 452.9, and the published 250.6 and 459.6 sit inside both. Serial is flat
-either way (55.4-55.6). An earlier version of this page said conc=16 and conc=32
-"reproduce earlier readings to within 0.5%" -- that was two spawns agreeing, and
-the spans above are what five show.
+cannot establish that, so it is not yet a finding. What makes conc=8 the cell
+that moved is its margin against its own spread: 204.1 clears the highest
+unflagged reading by 12%.
+
+**conc=16 and conc=32 do not clear theirs.** Unflagged `n=128` readings, four
+spawns each: 222.6 / 244.3 / 244.5 / 251.3 at conc=16, and 390.7 / 451.0 /
+452.9 / 453.3 at conc=32. Flagged: 249.9 / 250.6 and 459.6 / 465.9. So conc=16
+sits inside the unflagged spread outright, and while both flagged conc=32
+readings are above the unflagged maximum, they are above it by 1.4% and 2.8%
+against a 16% spread -- which is not a gain anyone should quote from two
+readings. Serial is flat either way (55.4-55.6) on spawns that come up healthy.
+An earlier version of this page said conc=16 and conc=32 "reproduce earlier
+readings to within 0.5%" -- that was two spawns agreeing, and the four-spawn
+spans above are what replaced it. Two figures that earlier appeared in the
+conc=32 span here, 359.1 and 441.5, were never Flash-Next readings at all and
+have been removed.
 
 **Its one-stream cells are intermittently spoiled by a latency tail, and the
 whole server has been seen running at half rate.** Five one-stream cells were

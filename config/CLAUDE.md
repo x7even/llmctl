@@ -250,9 +250,11 @@ and after (57.5, 31.7%) the sweep — worth doing on a profile that changes stat
 Three cautions on reading this table. **Compare only cells taken at the same request count.**
 `--requests` alone moves a conc=8 reading by up to a third (`bench/CLAUDE.md`), so the
 2026-10-18 pair's 187.4 stock / 197.2 flagged are `n=16` figures and belong only to each other,
-not in a span with the `n=128` readings here. **conc=32 is not a gain claim** — stock readings on
-this profile span 359.1 / 390.7 / 441.5 / 451.0 / 452.9, so the flagged 465.9 and 459.6 sit
-inside that spread. Nor is conc=16 (stock 222.6-251.3). **conc=8 is the one cell that moved**:
+not in a span with the `n=128` readings here. **conc=32 is not a gain claim** — stock `n=128` readings
+on this profile span 390.7 / 451.0 / 452.9 / 453.3 across four spawns, so the flagged 465.9 and
+459.6 clear the stock maximum by 2.8% and 1.4% against a 16% spread: above it, but not by enough
+to quote. Nor is conc=16 a gain (stock 222.6 / 244.3 / 244.5 / 251.3, flagged 249.9 / 250.6 —
+inside the spread outright). **conc=8 is the one cell that moved**:
 at `n=128` the stock readings are 181.5 from one spawn and 154.4 / 140.1 / 140.5 from a second
 server in that order, against 204.3 and 204.1 from two flagged spawns — every flagged reading
 above every stock one. The two flagged spawns agree to 0.1% where that stock server drifted 10%

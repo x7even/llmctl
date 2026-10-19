@@ -314,10 +314,15 @@ internally valid — same count both sides — but its figures must not be mixed
 spans.
 
 An earlier version of this section said conc=16 and conc=32 "reproduce across spawns to within
-0.5%". **That was two spawns agreeing, and it does not hold.** Across the 2026-10-19 spawns
-conc=32 spans 359.1 / 390.7 / 441.5 / 451.0 / 452.9 stock and 465.9 flagged, and conc=16 spans
-222.6 / 244.5 / 251.3 stock and 249.9 flagged — so conc=32 is a ~±13% cell too, and no two
-figures inside it should be read as a difference either. What *is* reproducible at those levels
+0.5%". **That was two spawns agreeing, and it does not hold.** Counting only `medium-256`
+`n=128` cells on this profile's own config, the 2026-10-19 spawns give conc=16 **222.6 / 244.3 /
+244.5 / 251.3** stock across four spawns against 249.9 / 250.6 flagged, and conc=32 **390.7 /
+451.0 / 452.9 / 453.3** stock across four spawns against 459.6 / 465.9 flagged. So both are
+~±7-13% cells and no two figures inside either should be read as a difference. Neither is a
+flag gain: conc=16 lands inside the stock spread, and the flagged conc=32 readings clear the
+stock maximum by only 1.4% and 2.8%. (An earlier version of this paragraph listed 359.1 and
+441.5 in the conc=32 stock span; neither is a Flash-Next reading — they belong to other
+profiles and were swept up by a numeric grep.) What *is* reproducible at those levels
 is that they are insensitive to the state the server is in: the 22.6-tok/s-serial spawn below
 still turned in 452.9 at conc=32, near the top of the stock range, so a slow draw costs ~60% on
 one stream, ~9% at conc=16 and nothing measurable at conc=32.
