@@ -2,6 +2,8 @@ package main
 
 import (
 	"fmt"
+	"math"
+	"sort"
 	"strings"
 
 	"github.com/charmbracelet/lipgloss"
@@ -171,4 +173,99 @@ func renderMultilineSparkline(history []float64, width, rows int, vmin, vmax flo
 		result[i] = rowBuilders[i].String()
 	}
 	return result
+}
+
+// Distribution summarises a rolling window of sampled rates.
+//
+// It exists because "cur" and "peak" alone are misleading. A peak is the maximum
+// of a few hundred difference quotients, so it is biased upward by sampling noise
+// even when the underlying rate is flat, and it says nothing about what a client
+// typically got. The median and the p10 do.
+type Distribution struct {
+	N    int
+	Low  float64
+	P10  float64
+	P50  float64
+	P90  float64
+	Peak float64
+}
+
+// pctRank is nearest-rank with round-half-up, deliberately identical to pct() in
+// bench/depth_bench.py so a panel reading and a saved benchmark row are computed
+// the same way and can be compared. Not math.Round: Go's Round is half-away-from-
+// zero and Python's round() is banker's rounding, so neither matches the other by
+// accident -- floor(x+0.5) matches on both.
+func pctRank(sorted []float64, q float64) float64 {
+	if len(sorted) == 0 {
+		return 0
+	}
+	i := int(math.Floor(q*float64(len(sorted)-1) + 0.5))
+	if i < 0 {
+		i = 0
+	}
+	if i > len(sorted)-1 {
+		i = len(sorted) - 1
+	}
+	return sorted[i]
+}
+
+// ActiveStats summarises only the ticks in which the server produced tokens.
+//
+// Idle ticks are excluded on purpose: a stack that has been sitting unused would
+// otherwise report a median of zero, which describes the operator's afternoon
+// rather than the hardware. N is reported so a distribution computed from a
+// handful of active ticks can be recognised as one.
+func (r *RingBuffer) ActiveStats() Distribution {
+	vals := r.Values()
+	act := make([]float64, 0, len(vals))
+	for _, v := range vals {
+		if v > 0 {
+			act = append(act, v)
+		}
+	}
+	if len(act) == 0 {
+		return Distribution{}
+	}
+	sort.Float64s(act)
+	return Distribution{
+		N:    len(act),
+		Low:  act[0],
+		P10:  pctRank(act, 0.10),
+		P50:  pctRank(act, 0.50),
+		P90:  pctRank(act, 0.90),
+		Peak: act[len(act)-1],
+	}
+}
+
+// distLine renders a Distribution as one line, dropping fields from the right as
+// the width shrinks. It reports n because a distribution over a handful of active
+// ticks is not a distribution; the reader should be able to see that without
+// opening the code.
+//
+// The order of what survives a narrow pane is deliberate: median first, because it
+// is the figure a client actually experiences; then p10, because the floor is what
+// a slow request feels; then p90 and the extremes, which are the least robust.
+func distLine(d Distribution, w int) string {
+	if d.N == 0 {
+		return stDim.Render("   (no activity sampled yet)")
+	}
+	full := fmt.Sprintf("   low %s  p10 %s  med %s  p90 %s  peak %s  n=%d",
+		fmtRate(d.Low), fmtRate(d.P10), fmtRate(d.P50),
+		fmtRate(d.P90), fmtRate(d.Peak), d.N)
+	mid := fmt.Sprintf("   p10 %s  med %s  p90 %s  n=%d",
+		fmtRate(d.P10), fmtRate(d.P50), fmtRate(d.P90), d.N)
+	narrow := fmt.Sprintf("   med %s  n=%d", fmtRate(d.P50), d.N)
+	for _, s := range []string{full, mid, narrow} {
+		if len(s) <= w {
+			return stDim.Render(s)
+		}
+	}
+	return stDim.Render(narrow)
+}
+
+func fmtRate(v float64) string {
+	if v >= 100 {
+		return fmt.Sprintf("%.0f", v)
+	}
+	return fmt.Sprintf("%.1f", v)
 }
