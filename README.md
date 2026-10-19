@@ -126,7 +126,8 @@ Best-case aggregate decode throughput, run-averaged over each cell.
 `concurrent_bench.py --prompt medium-256 --no-thinking`: a 41-word prompt with
 the completion capped at 256 tokens, on 4x R9700 (128 GB total) on the pinned
 `v0.26.0` image (`qwen3.8-flash-next-vllm` on its nightly pin). One fresh spawn
-per profile, all seven measured on 2026-10-19 in a single campaign.
+per profile, all seven measured on 2026-10-19 in a single campaign, each spawn
+classified by `scripts/llmband` before and after its sweep.
 
 | Profile | serial | conc=8 | conc=16 | conc=32 | prefill @32 | mean latency @32 |
 |---|---|---|---|---|---|---|
@@ -136,7 +137,7 @@ per profile, all seven measured on 2026-10-19 in a single campaign.
 | `qwen3.6-27b-code` | 67.7 | 347.3 | 584.6 | **869.5** | 401 | 5.80 s |
 | `qwen3.8-27b-code` | 66.0 | 350.4 | 569.4 | **842.7** | 326 | 6.98 s |
 | `qwen3.8-27b-think` | 46.3 | 275.1 | 479.8 | **763.1** | 300 | 7.65 s |
-| `qwen3.8-flash-next-vllm` | 55.4 | 154.4 | 244.5 | **451.0** | 218 | 10.58 s |
+| `qwen3.8-flash-next-vllm` | 55.5 | 204.1 | 250.6 | **459.6** | 224 | 11.62 s |
 
 Zero errors on every cell above, at 128 requests per level (8 for the serial
 column). `prefill @32` is the whole-batch rate -- the cell's prompt tokens over
@@ -152,14 +153,32 @@ superseded, not wrong. The three carried-over dense rows moved by 0.98-1.03x,
 which is to say not at all, and `qwen3.6-35b-128k-nomtp` appears here for the
 first time.
 
-`qwen3.8-flash-next-vllm` is the one row to read with care. Its conc=8 cell does
-not reproduce to better than about 13%, so read it as a 140-182 band rather than
-a figure, and its one-stream cells are intermittently spoiled by a multi-second
-latency tail: three clean cells on one server agree to 0.2% at ~55.4 tok/s while
-two others on the same server read 42.90 and 29.6. The table gives the clean-cell
-median. **The cause of the tail is not established and this is an open issue** --
-on an interactive single-stream profile a multi-second stall is user-visible. Both,
-with the evidence: [docs/benchmarks.md](docs/benchmarks.md#the-short-prompt-sweep-in-detail).
+`qwen3.8-flash-next-vllm` is the one row to read with care, and its numbers moved
+for a reason worth stating: this profile gained `GPU_MAX_HW_QUEUES=1` on
+2026-10-19, so the row above is a fresh flagged spawn while the figures it
+replaces were measured without the flag.
+
+Read the gain narrowly. **conc=8 is the cell that moved**, from a badly
+unreproducible 140-187 across five unflagged spawns to 197.2 / 204.3 / 204.1
+across three flagged ones -- so the flag looks like it stabilises that cell as
+well as raising it, on three spawns against five. **conc=16 and conc=32 did not
+move**: the unflagged spawns span 222.6-251.3 and 359.1-452.9, and the published
+250.6 and 459.6 sit inside both, so do not read either as a flag gain. Serial is
+flat (55.4-55.6 either way). What the flag is actually for on this profile is
+long generations, where it is worth 1.66x, and avoiding a slow spawn -- neither
+of which this table measures. Evidence:
+[docs/benchmarks.md](docs/benchmarks.md#the-short-prompt-sweep-in-detail).
+
+Two open issues sit behind the one-stream cells. The profile has an intermittent
+multi-second **single-stream latency tail** -- three clean cells on one server
+agree to 0.2% at ~55.4 tok/s while two others on the same server read 42.90 and
+29.6 -- and it has been seen **serving an entire spawn at roughly half rate**
+(23.0 tok/s at 2K and 131K, 22.6 on this very sweep's serial cell), in one
+unflagged spawn out of five. Those two are plausibly one phenomenon; neither
+cause is established. A degraded server is only visible in the one-stream cells,
+because that 22.6-serial spawn still turned in 452.9 at conc=32. Run
+`scripts/llmband --model qwen3.8-flash-next-vllm` after a cold start: it catches
+this.
 
 **These are best-case figures on a 41-word prompt, and that is all they are.** A
 prompt that short cannot see the behaviour that dominates real agent work: at
@@ -175,7 +194,9 @@ by more than the gaps between these rows:
   compare across them.
 - **On this GPU a server's decode band is drawn at spawn.** A profile can come up
   slow and serve its whole life at roughly half speed with nothing in the log to
-  say so, so a figure without a band is not a measurement
+  say so, so a figure without a band is not a measurement. On
+  `qwen3.8-flash-next-vllm` the rate has also been seen changing *mid-process*, in
+  both directions, so classify after the run as well as before
   (`scripts/llmband`, `docs/rdna4-decode-bands.md`).
 
 Prefill, per-stream decode, TTFT p90, cold against prewarmed, the full depth x

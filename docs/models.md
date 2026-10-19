@@ -288,16 +288,20 @@ thin headroom. Do not go to 0.97 on this profile.
 
 | Metric | Result |
 |--------|--------|
-| Decode, serial / conc=8 / conc=16 / conc=32 (tok/s aggregate) | 55.4 / 140-182 (see below) / 244 / 451 |
+| Decode, serial / conc=8 / conc=16 / conc=32 (tok/s aggregate) | 55.5 / 204 / 251 / 460 (flagged spawn, 2026-10-19; see below) |
 | Decode vs context depth, 1K to 258K | flat, 57 to 55 tok/s |
 | Code tests, `reasoning_effort=medium` | 29-32/32 (two runs of 8 samples x 4 tasks: 29/32 with an explicit flag, 32/32 with the server-side default; sampling noise) |
 | Code tests, template default (xhigh) | 4/32 at a 32K cap, 3/8 at 256K (runaway thinking) |
 
-conc=8 is the unstable cell on this config. Readings of 149, 157, 165 and 185 were seen across
-earlier runs (including 157 in the same-config 262K A/B), and on 2026-10-19 one server gave
-154.4, then 140.1, then 140.5 in that order, all at `--requests 128`. So the variation is not
-only spawn-to-spawn. Treat this cell as 140-182 and do not read a difference between any two
-values inside that band.
+conc=8 was the unstable cell on this config, and `GPU_MAX_HW_QUEUES=1` appears to have fixed
+that as well as raising it. **Without the flag** readings of 149, 157, 165 and 185 were seen
+across earlier runs (including 157 in the same-config 262K A/B), and on 2026-10-19 one server
+gave 154.4, then 140.1, then 140.5 in that order, all at `--requests 128` — so the variation
+was not only spawn-to-spawn, and the honest reading of that cell was a 140-187 band rather than
+a figure. **With the flag** three spawns read 197.2 / 204.3 / 204.1, a 3.5% span, and 204.1 is
+the published figure. Three spawns against five is not a strong basis for "the flag stabilises
+this cell", but it is the pattern in the data and it is worth re-checking on the next spawn.
+Within the flagged readings, still do not read a difference between 204.3 and 204.1.
 
 An earlier version of this section said conc=16 and conc=32 "reproduce across spawns to within
 0.5%". **That was two spawns agreeing, and it does not hold.** Across the 2026-10-19 spawns

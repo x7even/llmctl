@@ -265,7 +265,7 @@ See `tui/CLAUDE.md` for architecture and coding conventions.
 | `qwen3.8-27b-think` ✓ | vLLM + TRITON_ATTN | ~31 GB + KV | 27B (dense) | Thinking, no MTP — parallel agent fleets. **The long-context profile:** 33 tok/s at 131K vs 1.4 without the backend flag |
 | `qwen3.8-27b-fast` | vLLM + MTP | ~31 GB + KV | 27B (dense) | Thinking OFF by default |
 | `qwen3.8-flash-next` | llama-server (Vulkan) | ~81 GB | 6B (MoE, 125B) | UD-IQ4_XS GGUF, custom llama.cpp fork; single-user |
-| `qwen3.8-flash-next-vllm` | vLLM TP4+EP (nightly image) | ~19 GB/GPU + ~48 GB pinned PLE in host RAM (~96 GB host RAM recommended) | 6B (MoE, 125B) | W4A16 INT4 + FP8 PLE; 262K ctx, **medium effort by default** (xhigh runs away); 55.4 tok/s serial (clean-cell median; **intermittent single-stream latency tail, cause not established** -- see `docs/models.md`), 140-182 @ conc=8 (that cell is not reproducible to better than ~13%), 244 @ conc=16, 451 @ conc=32, flat ~55 out to 258K; needs `--ulimit memlock=-1:-1` and all 4 GPUs; exclusive VRAM |
+| `qwen3.8-flash-next-vllm` | vLLM TP4+EP (nightly image) | ~19 GB/GPU + ~48 GB pinned PLE in host RAM (~96 GB host RAM recommended) | 6B (MoE, 125B) | W4A16 INT4 + FP8 PLE; 262K ctx, **medium effort by default** (xhigh runs away); 55.5 tok/s serial (**intermittent single-stream latency tail, cause not established** -- see `docs/models.md`), 204 @ conc=8, 251 @ conc=16, 460 @ conc=32, flat ~55 out to 258K; gained `GPU_MAX_HW_QUEUES=1` on 2026-10-19 (worth 1.66x on long generations; at `medium-256` it moved conc=8 only, from an unstable 140-187 to a reproducible ~204, and conc=16/32 are inside the unflagged spread); needs `--ulimit memlock=-1:-1` and all 4 GPUs; exclusive VRAM |
 | `qwen3.6-27b-code` ✓ | vLLM + MTP | ~31 GB + KV | 27B (dense) | Previous-gen dense 27B, restored 2026-10-19; 131K ctx; matches `qwen3.8-27b-code` at `medium-256`, 6-9% behind it at depth |
 | `qwen3.6-35b-code` | vLLM + MTP | ~35 GB | 3B (MoE) | Previous gen, MTP + thinking |
 | `qwen3.6-35b-128k-nomtp` ✓ | vLLM + TRITON_ATTN | ~35 GB | 3B (MoE) | **The deep-context profile.** 62 tok/s at 130K serial (vs 33 on `27b-think`), 440 at 16K×8, 231 at 64K×4; no short-prompt cost either (TRITON +3.9% at conc=8, matched n=128) |
@@ -295,11 +295,19 @@ with each other, which the previous table's mix of 0.22.1 and 0.26.0 figures fro
 months was not. Each spawn's provenance was recorded before it was benchmarked: container argv,
 `GPU_MAX_HW_QUEUES=1` presence, KV-pool size, the attention backend read out of the log, and
 `scripts/llmband`. Two driver scripts produced it — `qwen3.6-35b-code` and `gemma4-26b-a4b` in
-one, the other five in the other — same harness, same prompt, same day. One exception in the
-serial column: `qwen3.8-flash-next-vllm` has an intermittent single-stream latency tail, so its
-serial figure is the median of the clean one-stream cells (55.4, reproducing the 55.3 measured
-independently on an earlier spawn) rather than the sweep's own 8-sample cell. **That tail is an
-open issue, not a measurement artifact** — see `docs/models.md`.
+one, the other five in the other — same harness, same prompt, same day.
+
+One row was re-measured later the same day. `qwen3.8-flash-next-vllm` gained
+`GPU_MAX_HW_QUEUES=1` on 2026-10-19, so its row is a fresh flagged spawn, `llmband`-classified
+**fast** both before (57.78 steps/s against a 58.41 baseline, `mem_busy` 31.9%) and after (57.5,
+31.7%) the sweep — which matters on this profile because it has been seen changing state
+mid-process. Its serial figure is that sweep's own 8-sample cell this time, not a clean-cell
+median. Read the flag's effect on this table narrowly: **conc=8 is the only cell that moved**
+(an unstable 140-187 across five unflagged spawns against 197.2 / 204.3 / 204.1 across three
+flagged ones), while conc=16 and conc=32 land inside the unflagged spread (222.6-251.3 and
+359.1-452.9) and serial is flat. The flag's real value here is long generations (1.66x) and
+avoiding a slow spawn. **The single-stream latency tail is still an open issue** — see
+`docs/models.md`.
 
 | Profile | serial | conc=8 | conc=16 | conc=32 |
 |---------|--------|--------|---------|---------|
@@ -309,7 +317,7 @@ open issue, not a measurement artifact** — see `docs/models.md`.
 | qwen3.6-27b-code (MTP, 131K ctx) | 67.7 | 347.3 | 584.6 | 869.5 |
 | qwen3.8-27b-code (MTP, 131K ctx) | 66.0 | 350.4 | 569.4 | 842.7 |
 | qwen3.8-27b-think (TRITON_ATTN, no MTP) | 46.3 | 275.1 | 479.8 | 763.1 |
-| qwen3.8-flash-next-vllm (no MTP, 262K ctx) | 55.4 | 154.4 | 244.5 | 451.0 |
+| qwen3.8-flash-next-vllm (no MTP, 262K ctx) | 55.5 | 204.1 | 250.6 | 459.6 |
 
 Baselines: `bench/baselines/<profile>-<pin>-peak-nothink-matched-20261019.json` (`v0.26.0` on
 every profile but Flash-Next, which is on the nightly pin). `llmband` returned **fast** for

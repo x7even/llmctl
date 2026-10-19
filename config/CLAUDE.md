@@ -231,19 +231,28 @@ flag is justified on — the 1.66× above does not depend on it.
 
 **And it costs nothing where the profile is published**, `medium-256` at `--requests 128`:
 
-| | published | stock, same day | flagged |
-|---|---|---|---|
-| serial | 55.4 | 55.6 | 55.2 / 55.1 |
-| conc=8 | 154.4 | — | **204.3** |
-| conc=16 | 244.5 | 251.3 | 249.9 |
-| conc=32 | 451.0 | 390.7 | 465.9 |
+| | previously published (stock) | stock, same day | flagged | **now published (flagged)** |
+|---|---|---|---|---|
+| serial | 55.4 | 55.6 | 55.2 / 55.1 | **55.5** |
+| conc=8 | 154.4 | — | 204.3 / 197.2 | **204.1** |
+| conc=16 | 244.5 | 251.3 | 249.9 | **250.6** |
+| conc=32 | 451.0 | 390.7 | 465.9 | **459.6** |
 
 Serial −0.7% and conc=16 −0.6% against the same-day stock spawn, both inside this harness's
-same-server spread; the earlier pair's −3.8% serial does not reproduce (under 1%, twice).
-conc=8 at 204.3 is the highest figure ever recorded on this profile. KV pool unchanged
-(482,375 stock vs 492,282 flagged, inside spawn spread). **conc=32 is not a gain claim** —
-stock readings on this profile span 359.1 / 390.7 / 441.5 / 451.0, so 465.9 is ~3% above the
-best stock draw, not +19% above the worst.
+same-server spread; the earlier pair's −3.8% serial does not reproduce (under 1%, three times).
+KV pool unchanged (482,375 stock vs 492,282 and 496,092 flagged, inside spawn spread).
+
+The published column is a third flagged spawn, run with the campaign's methodology
+(`--serial-n 8`, served under the real profile name so `llmband` could classify it) and
+`llmband`-classified **fast** both before (57.78 steps/s vs 58.41 baseline, `mem_busy` 31.9%)
+and after (57.5, 31.7%) the sweep — worth doing on a profile that changes state mid-process.
+
+Two cautions on reading this table. **conc=32 is not a gain claim** — stock readings on this
+profile span 359.1 / 390.7 / 441.5 / 451.0 / 452.9, so the flagged 465.9 and 459.6 sit inside
+that spread. Nor is conc=16 (stock 222.6-251.3). **conc=8 is the one cell that moved**, and it
+moved in two ways: up, and from a ~33% spread across five stock spawns (140.1-187.4) to a 3.5%
+spread across three flagged ones (197.2-204.3). Treat the stabilisation as suggestive at three
+spawns, not settled.
 
 What this still does **not** establish:
 

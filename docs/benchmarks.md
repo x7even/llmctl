@@ -253,23 +253,45 @@ is the measured pattern — this table does not claim a mechanism for it.
 
 The table itself is in the [README](../README.md#benchmarks).
 
-`qwen3.8-flash-next-vllm` is the one row to read with care, in two ways.
+`qwen3.8-flash-next-vllm` is the one row to read with care, in three ways.
 
-Its conc=16 and conc=32 cells reproduce earlier readings to within 0.5%, but
-conc=8 does not reproduce to better than about 13%: 181.5, then 154.4, 140.1 and
-140.5 -- the last three all at `--requests 128` on one server, in that order --
-so read this cell as a 140-182 band, not as a figure.
+**Its row is a different spawn from the other six, and a flagged one.** This
+profile gained `GPU_MAX_HW_QUEUES=1` on 2026-10-19 after a long-generation
+matched pair found the flag worth 1.66x on it (4 concurrent 8,192-token streams:
+104.0 / 104.3 unflagged against 173.0 / 171.3 / 172.3 flagged, two fresh spawns
+per arm). The published row is therefore a fresh flagged spawn measured the same
+day with the same harness, `llmband`-classified fast before (57.78 steps/s,
+`mem_busy` 31.9%) and after (57.5, 31.7%) its sweep.
 
-Its one-stream cells are intermittently spoiled by a latency tail. Five were
+**Only one cell of this sweep moved with the flag, and it is not the headline
+one.** conc=8 went from 181.5 / 154.4 / 140.1 / 140.5 / 187.4 across five
+unflagged spawns -- a ~33% span, which is why earlier versions of this page told
+you to read it as a band rather than a figure -- to 197.2 / 204.3 / 204.1 across
+three flagged ones, a 3.5% span. So the flag appears to raise *and* stabilise
+that cell, on three spawns against five. conc=16 and conc=32 did not move:
+unflagged they span 222.6 / 244.5 / 251.3 and 359.1 / 390.7 / 441.5 / 451.0 /
+452.9, and the published 250.6 and 459.6 sit inside both. Serial is flat either
+way (55.4-55.6). An earlier version of this page said conc=16 and conc=32
+"reproduce earlier readings to within 0.5%" -- that was two spawns agreeing, and
+the spans above are what five show.
+
+**Its one-stream cells are intermittently spoiled by a latency tail, and the
+whole server has been seen running at half rate.** Five one-stream cells were
 measured on one server: three clean, at 55.48, 55.38 and 55.37 tok/s with p90
 around 3.0 s and a spread of 0.2%, and two contaminated, at 42.90 (p90 5.72 s)
 and 29.6 (p90 10.21 s). The episodes last minutes and do not trend -- a clean
 cell ran immediately before the 42.90 one and a normal conc=8 cell immediately
-after it -- and `scripts/llmband` classified the server fast throughout. The
-table gives the clean-cell median, which matches the 55.3 measured
-independently on an earlier spawn. **The cause is not established and this is an
-open issue**: on an interactive single-stream profile a multi-second stall is
-user-visible, so it is worth more than a footnote.
+after it -- and `scripts/llmband` classified the server fast throughout.
+Separately, one unflagged spawn in five came up at **23.0 tok/s** single-stream
+at both 2K and 131K and 22.6 on this sweep's serial cell, served two long loads
+and a full sweep at that rate, and then read 56.9 on the next probe. So the state
+moves in both directions mid-process. **Neither cause is established, both are
+open issues**, and they are plausibly the same one: a flip inside a cell produces
+exactly the stretched-tail shape above rather than a shifted mode. Two practical
+consequences. `llmband` classifying a server fast at one probe does not clear the
+cell that runs minutes later, so classify after a run as well as before. And a
+degraded server is only visible in the one-stream cells -- the 22.6-serial spawn
+still turned in 452.9 at conc=32, near the top of the normal range.
 
 No other profile in the sweep showed the same shape, but that is weak evidence
 on its own: each got a single 8-sample one-stream cell, which is far too short to
