@@ -6,7 +6,7 @@ import (
 	"testing"
 )
 
-// Fixtures are real captures from this hardware (4x R9700, ROCm 10.1 amd-smi / ROCm 7 rocm-smi).
+// Fixtures are real captures from 4x R9700 (amd-smi and rocm-smi).
 func fixture(t *testing.T, name string) string {
 	t.Helper()
 	b, err := os.ReadFile("../tests/fixtures/" + name)
