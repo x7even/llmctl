@@ -6,8 +6,11 @@ anything, depth against concurrency per profile, prefill behaviour, and the
 reproduction commands.
 
 All figures here and in the README's table were measured on the same hardware
-(4× R9700, 128 GB total) across a single campaign, on the pinned `v0.26.0` image
-(`qwen3.8-flash-next-vllm` on its nightly pin), with `--no-thinking`.
+(4× R9700, 128 GB total), on the pinned `v0.26.0` image
+(`qwen3.8-flash-next-vllm` on its nightly pin), with `--no-thinking`. Six of the
+seven `medium-256` rows come from a single campaign;
+`qwen3.8-flash-next-vllm`'s is a later spawn on the same day and harness, after
+that profile gained `GPU_MAX_HW_QUEUES=1`.
 
 Two harnesses, two output conventions, and the difference matters. The depth
 tables below come from `bench/depth_bench.py` with **output pinned at 1,024
@@ -263,15 +266,21 @@ per arm). The published row is therefore a fresh flagged spawn measured the same
 day with the same harness, `llmband`-classified fast before (57.78 steps/s,
 `mem_busy` 31.9%) and after (57.5, 31.7%) its sweep.
 
-**Only one cell of this sweep moved with the flag, and it is not the headline
-one.** conc=8 went from 181.5 / 154.4 / 140.1 / 140.5 / 187.4 across five
-unflagged spawns -- a ~33% span, which is why earlier versions of this page told
-you to read it as a band rather than a figure -- to 197.2 / 204.3 / 204.1 across
-three flagged ones, a 3.5% span. So the flag appears to raise *and* stabilise
-that cell, on three spawns against five. conc=16 and conc=32 did not move:
-unflagged they span 222.6 / 244.5 / 251.3 and 359.1 / 390.7 / 441.5 / 451.0 /
-452.9, and the published 250.6 and 459.6 sit inside both. Serial is flat either
-way (55.4-55.6). An earlier version of this page said conc=16 and conc=32
+**Only one cell of this sweep moved with the flag, it is not the headline one,
+and it rests on six readings in total.** Compare only cells taken at the same
+request count: `--requests` alone moves this cell by up to a third, so the
+`n=16` readings this profile has accumulated (187.4 unflagged, 197.2 flagged, in
+a matched pair of their own) cannot go in a span with the `n=128` ones. At
+`n=128` there are four unflagged readings from two spawns -- 181.5 on one, then
+154.4 / 140.1 / 140.5 on a second server in that order -- against 204.3 and
+204.1 from two flagged spawns. Every flagged reading is above every unflagged
+one, which is the solid part. The two flagged spawns also agree to 0.1% where
+that unflagged server drifted 10% downward across three consecutive sweeps,
+which hints the flag steadies the cell as well as raising it; two readings
+cannot establish that, so it is not yet a finding. conc=16 and conc=32 did not
+move: unflagged they span 222.6 / 244.5 / 251.3 and 359.1 / 390.7 / 441.5 /
+451.0 / 452.9, and the published 250.6 and 459.6 sit inside both. Serial is flat
+either way (55.4-55.6). An earlier version of this page said conc=16 and conc=32
 "reproduce earlier readings to within 0.5%" -- that was two spawns agreeing, and
 the spans above are what five show.
 

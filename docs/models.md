@@ -293,15 +293,25 @@ thin headroom. Do not go to 0.97 on this profile.
 | Code tests, `reasoning_effort=medium` | 29-32/32 (two runs of 8 samples x 4 tasks: 29/32 with an explicit flag, 32/32 with the server-side default; sampling noise) |
 | Code tests, template default (xhigh) | 4/32 at a 32K cap, 3/8 at 256K (runaway thinking) |
 
-conc=8 was the unstable cell on this config, and `GPU_MAX_HW_QUEUES=1` appears to have fixed
-that as well as raising it. **Without the flag** readings of 149, 157, 165 and 185 were seen
-across earlier runs (including 157 in the same-config 262K A/B), and on 2026-10-19 one server
-gave 154.4, then 140.1, then 140.5 in that order, all at `--requests 128` — so the variation
-was not only spawn-to-spawn, and the honest reading of that cell was a 140-187 band rather than
-a figure. **With the flag** three spawns read 197.2 / 204.3 / 204.1, a 3.5% span, and 204.1 is
-the published figure. Three spawns against five is not a strong basis for "the flag stabilises
-this cell", but it is the pattern in the data and it is worth re-checking on the next spawn.
-Within the flagged readings, still do not read a difference between 204.3 and 204.1.
+conc=8 was the unstable cell on this config, and `GPU_MAX_HW_QUEUES=1` raised it. Keep the
+request counts apart when reading the evidence, because `--requests` alone moves this cell by up
+to a third (`bench/CLAUDE.md`), and there are only six readings on the shipped config at
+`--requests 128`.
+
+**Unflagged, `n=128`:** 181.5 on one spawn, then 154.4, 140.1 and 140.5 on a second server in
+that order — so the variation was not only spawn-to-spawn, that server drifted 10% down across
+three consecutive sweeps, and the honest reading of the cell was 140-181 rather than a figure.
+**Flagged, `n=128`:** 204.3 and 204.1 on two spawns; 204.1 is the published figure. Every
+flagged reading is above every unflagged one, and the two flagged spawns agree to 0.1%, which
+hints the flag steadies the cell as well as raising it — but two readings cannot establish that,
+so treat it as something to re-check on the next spawn rather than a finding. Do not read a
+difference between 204.3 and 204.1.
+
+Lower-request-count readings exist and are not comparable with the above: 149, 157, 165 and 185
+across earlier runs at `--requests 8-16` (including 157 in the same-config 262K A/B), and a
+2026-10-18 matched pair at `n=16` reading 187.4 unflagged against 197.2 flagged. That pair is
+internally valid — same count both sides — but its figures must not be mixed into the `n=128`
+spans.
 
 An earlier version of this section said conc=16 and conc=32 "reproduce across spawns to within
 0.5%". **That was two spawns agreeing, and it does not hold.** Across the 2026-10-19 spawns

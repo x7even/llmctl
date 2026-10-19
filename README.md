@@ -126,8 +126,11 @@ Best-case aggregate decode throughput, run-averaged over each cell.
 `concurrent_bench.py --prompt medium-256 --no-thinking`: a 41-word prompt with
 the completion capped at 256 tokens, on 4x R9700 (128 GB total) on the pinned
 `v0.26.0` image (`qwen3.8-flash-next-vllm` on its nightly pin). One fresh spawn
-per profile, all seven measured on 2026-10-19 in a single campaign, each spawn
-classified by `scripts/llmband` before and after its sweep.
+per profile, six of the seven measured on 2026-10-19 in a single campaign and
+each classified with `scripts/llmband` before its sweep.
+`qwen3.8-flash-next-vllm` is the exception: that profile gained
+`GPU_MAX_HW_QUEUES=1` later the same day, so its row is a separate flagged
+spawn, classified before *and* after its sweep.
 
 | Profile | serial | conc=8 | conc=16 | conc=32 | prefill @32 | mean latency @32 |
 |---|---|---|---|---|---|---|
@@ -137,7 +140,7 @@ classified by `scripts/llmband` before and after its sweep.
 | `qwen3.6-27b-code` | 67.7 | 347.3 | 584.6 | **869.5** | 401 | 5.80 s |
 | `qwen3.8-27b-code` | 66.0 | 350.4 | 569.4 | **842.7** | 326 | 6.98 s |
 | `qwen3.8-27b-think` | 46.3 | 275.1 | 479.8 | **763.1** | 300 | 7.65 s |
-| `qwen3.8-flash-next-vllm` | 55.5 | 204.1 | 250.6 | **459.6** | 224 | 11.62 s |
+| `qwen3.8-flash-next-vllm` | 55.5 | 204.1 | 250.6 | **459.6** | 224 | 10.47 s |
 
 Zero errors on every cell above, at 128 requests per level (8 for the serial
 column). `prefill @32` is the whole-batch rate -- the cell's prompt tokens over
@@ -158,13 +161,18 @@ for a reason worth stating: this profile gained `GPU_MAX_HW_QUEUES=1` on
 2026-10-19, so the row above is a fresh flagged spawn while the figures it
 replaces were measured without the flag.
 
-Read the gain narrowly. **conc=8 is the cell that moved**, from a badly
-unreproducible 140-187 across five unflagged spawns to 197.2 / 204.3 / 204.1
-across three flagged ones -- so the flag looks like it stabilises that cell as
-well as raising it, on three spawns against five. **conc=16 and conc=32 did not
-move**: the unflagged spawns span 222.6-251.3 and 359.1-452.9, and the published
-250.6 and 459.6 sit inside both, so do not read either as a flag gain. Serial is
-flat (55.4-55.6 either way). What the flag is actually for on this profile is
+Read the gain narrowly, and mind how few readings it rests on. Comparing only
+cells measured at the same request count (`--requests 128`, since the count
+alone moves this cell by a third), **conc=8 is the one that moved**: four
+unflagged readings from two spawns give 181.5, then 154.4 / 140.1 / 140.5 on a
+second server in that order, against 204.3 and 204.1 from two flagged spawns. So
+every flagged reading is above every unflagged one, and the two flagged spawns
+agree to 0.1% where the unflagged server drifted 10% downward across three
+sweeps -- suggestive that the flag steadies the cell as well as raising it, but
+two readings cannot establish that. **conc=16 and conc=32 did not move**: the
+unflagged spawns span 222.6-251.3 and 359.1-452.9, and the published 250.6 and
+459.6 sit inside both, so do not read either as a flag gain. Serial is flat
+(55.4-55.6 either way). What the flag is actually for on this profile is
 long generations, where it is worth 1.66x, and avoiding a slow spawn -- neither
 of which this table measures. Evidence:
 [docs/benchmarks.md](docs/benchmarks.md#the-short-prompt-sweep-in-detail).

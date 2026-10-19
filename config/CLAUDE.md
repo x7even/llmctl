@@ -234,7 +234,7 @@ flag is justified on — the 1.66× above does not depend on it.
 | | previously published (stock) | stock, same day | flagged | **now published (flagged)** |
 |---|---|---|---|---|
 | serial | 55.4 | 55.6 | 55.2 / 55.1 | **55.5** |
-| conc=8 | 154.4 | — | 204.3 / 197.2 | **204.1** |
+| conc=8 | 154.4 | — | 204.3 | **204.1** |
 | conc=16 | 244.5 | 251.3 | 249.9 | **250.6** |
 | conc=32 | 451.0 | 390.7 | 465.9 | **459.6** |
 
@@ -247,12 +247,17 @@ The published column is a third flagged spawn, run with the campaign's methodolo
 `llmband`-classified **fast** both before (57.78 steps/s vs 58.41 baseline, `mem_busy` 31.9%)
 and after (57.5, 31.7%) the sweep — worth doing on a profile that changes state mid-process.
 
-Two cautions on reading this table. **conc=32 is not a gain claim** — stock readings on this
-profile span 359.1 / 390.7 / 441.5 / 451.0 / 452.9, so the flagged 465.9 and 459.6 sit inside
-that spread. Nor is conc=16 (stock 222.6-251.3). **conc=8 is the one cell that moved**, and it
-moved in two ways: up, and from a ~33% spread across five stock spawns (140.1-187.4) to a 3.5%
-spread across three flagged ones (197.2-204.3). Treat the stabilisation as suggestive at three
-spawns, not settled.
+Three cautions on reading this table. **Compare only cells taken at the same request count.**
+`--requests` alone moves a conc=8 reading by up to a third (`bench/CLAUDE.md`), so the
+2026-10-18 pair's 187.4 stock / 197.2 flagged are `n=16` figures and belong only to each other,
+not in a span with the `n=128` readings here. **conc=32 is not a gain claim** — stock readings on
+this profile span 359.1 / 390.7 / 441.5 / 451.0 / 452.9, so the flagged 465.9 and 459.6 sit
+inside that spread. Nor is conc=16 (stock 222.6-251.3). **conc=8 is the one cell that moved**:
+at `n=128` the stock readings are 181.5 from one spawn and 154.4 / 140.1 / 140.5 from a second
+server in that order, against 204.3 and 204.1 from two flagged spawns — every flagged reading
+above every stock one. The two flagged spawns agree to 0.1% where that stock server drifted 10%
+down across three sweeps, which hints the flag steadies the cell too; two readings do not
+establish it, so do not write that down as a finding yet.
 
 What this still does **not** establish:
 

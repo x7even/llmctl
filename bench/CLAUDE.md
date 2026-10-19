@@ -345,8 +345,9 @@ harness and prompt, `llmband`-classified fast before (57.78 steps/s, `mem_busy` 
   since been seen changing state mid-process in both directions, so a fast probe and a slow cell
   minutes apart are consistent with one server. The conc=8 side of the audit's ratio is a
   *different* effect and a real one: that file is a stock spawn, and `GPU_MAX_HW_QUEUES=1` raises
-  this profile's conc=8 cell from an unstable 140-187 to a reproducible ~204. So nothing in the
-  stock file should be published now. Use the `hwq1` file.
+  this profile's conc=8 cell from 140.1-181.5 (four `n=128` stock readings, two spawns) to 204.1
+  and 204.3 (two flagged spawns). So nothing in the stock file should be published now. Use the
+  `hwq1` file.
 
   Do not read `rep2`'s `ok (1.29x of fastest)` as a clean bill of health. `one_stream()` prefers
   a `conc=1` cell over a `serial` one, and `rep2`'s `conc=1` cell is the contaminated 42.90

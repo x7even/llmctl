@@ -265,7 +265,7 @@ See `tui/CLAUDE.md` for architecture and coding conventions.
 | `qwen3.8-27b-think` ✓ | vLLM + TRITON_ATTN | ~31 GB + KV | 27B (dense) | Thinking, no MTP — parallel agent fleets. **The long-context profile:** 33 tok/s at 131K vs 1.4 without the backend flag |
 | `qwen3.8-27b-fast` | vLLM + MTP | ~31 GB + KV | 27B (dense) | Thinking OFF by default |
 | `qwen3.8-flash-next` | llama-server (Vulkan) | ~81 GB | 6B (MoE, 125B) | UD-IQ4_XS GGUF, custom llama.cpp fork; single-user |
-| `qwen3.8-flash-next-vllm` | vLLM TP4+EP (nightly image) | ~19 GB/GPU + ~48 GB pinned PLE in host RAM (~96 GB host RAM recommended) | 6B (MoE, 125B) | W4A16 INT4 + FP8 PLE; 262K ctx, **medium effort by default** (xhigh runs away); 55.5 tok/s serial (**intermittent single-stream latency tail, cause not established** -- see `docs/models.md`), 204 @ conc=8, 251 @ conc=16, 460 @ conc=32, flat ~55 out to 258K; gained `GPU_MAX_HW_QUEUES=1` on 2026-10-19 (worth 1.66x on long generations; at `medium-256` it moved conc=8 only, from an unstable 140-187 to a reproducible ~204, and conc=16/32 are inside the unflagged spread); needs `--ulimit memlock=-1:-1` and all 4 GPUs; exclusive VRAM |
+| `qwen3.8-flash-next-vllm` | vLLM TP4+EP (nightly image) | ~19 GB/GPU + ~48 GB pinned PLE in host RAM (~96 GB host RAM recommended) | 6B (MoE, 125B) | W4A16 INT4 + FP8 PLE; 262K ctx, **medium effort by default** (xhigh runs away); 55.5 tok/s serial (**intermittent single-stream latency tail, cause not established** -- see `docs/models.md`), 204 @ conc=8, 251 @ conc=16, 460 @ conc=32, flat ~55 out to 258K; gained `GPU_MAX_HW_QUEUES=1` on 2026-10-19 (worth 1.66x on long generations; at `medium-256` it moved conc=8 only, from 140.1-181.5 to 204.1/204.3, and conc=16/32 are inside the unflagged spread); needs `--ulimit memlock=-1:-1` and all 4 GPUs; exclusive VRAM |
 | `qwen3.6-27b-code` ✓ | vLLM + MTP | ~31 GB + KV | 27B (dense) | Previous-gen dense 27B, restored 2026-10-19; 131K ctx; matches `qwen3.8-27b-code` at `medium-256`, 6-9% behind it at depth |
 | `qwen3.6-35b-code` | vLLM + MTP | ~35 GB | 3B (MoE) | Previous gen, MTP + thinking |
 | `qwen3.6-35b-128k-nomtp` ✓ | vLLM + TRITON_ATTN | ~35 GB | 3B (MoE) | **The deep-context profile.** 62 tok/s at 130K serial (vs 33 on `27b-think`), 440 at 16K×8, 231 at 64K×4; no short-prompt cost either (TRITON +3.9% at conc=8, matched n=128) |
@@ -302,11 +302,12 @@ One row was re-measured later the same day. `qwen3.8-flash-next-vllm` gained
 **fast** both before (57.78 steps/s against a 58.41 baseline, `mem_busy` 31.9%) and after (57.5,
 31.7%) the sweep — which matters on this profile because it has been seen changing state
 mid-process. Its serial figure is that sweep's own 8-sample cell this time, not a clean-cell
-median. Read the flag's effect on this table narrowly: **conc=8 is the only cell that moved**
-(an unstable 140-187 across five unflagged spawns against 197.2 / 204.3 / 204.1 across three
-flagged ones), while conc=16 and conc=32 land inside the unflagged spread (222.6-251.3 and
-359.1-452.9) and serial is flat. The flag's real value here is long generations (1.66x) and
-avoiding a slow spawn. **The single-stream latency tail is still an open issue** — see
+median. Read the flag's effect on this table narrowly, and only across cells measured at the same
+request count: **conc=8 is the only one that moved** — four unflagged `--requests 128` readings
+from two spawns (181.5, then 154.4 / 140.1 / 140.5 on a second server in that order) against
+204.3 and 204.1 from two flagged spawns, so every flagged reading beats every unflagged one.
+conc=16 and conc=32 land inside the unflagged spread (222.6-251.3 and 359.1-452.9) and serial is
+flat. The flag's real value here is long generations (1.66x) and avoiding a slow spawn. **The single-stream latency tail is still an open issue** — see
 `docs/models.md`.
 
 | Profile | serial | conc=8 | conc=16 | conc=32 |
@@ -335,9 +336,12 @@ things to read out of the table:
   1.12x, while the three carried-over dense rows moved 0.98-1.03x — i.e. not at all. Those two
   were last measured *before* `0c05be5` landed `GPU_MAX_HW_QUEUES=1` on them, so each correctly
   described the configuration shipped on the day it ran: superseded, not a bad draw. That is why
-  the published numbers looked slow. Flash-Next is the fourth carried-over row and also MoE; its
-  conc=16/32 cells reproduce to 0.5% and its conc=8 cell is unstable at ±13% (see its own note
-  in `docs/models.md`), so do not read it as part of either group.
+  the published numbers looked slow. **Flash-Next also moved, and for the same reason**: it
+  gained the flag on 2026-10-19 and its row is a fresh flagged spawn, so its conc=8 cell is up
+  from 154.4 to 204.1. Read that cell alone — conc=16/32 are inside the unflagged spread and
+  serial is flat (see its own note in `docs/models.md`). Its conc=16/32 cells were once said to
+  "reproduce to 0.5%"; that was two spawns agreeing and five show a ~13% span, so no two figures
+  inside it are a difference either.
 - **`qwen3.6-35b-128k-nomtp` enters this table for the first time, second-fastest at conc=32.**
   The deep-context profile is also one of the strongest short-prompt profiles here — the
   opposite of what this file claimed while the retracted 19% TRITON_ATTN cost stood.
