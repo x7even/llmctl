@@ -16,7 +16,7 @@
 ### Depth matters, and `concurrent_bench.py` cannot see it
 
 `concurrent_bench.py` is non-streaming, so its "decode tok/s" is `completion_tokens /
-total_wall` — prefill included. At a 256-token prompt that is a rounding error; at 128K it is
+total_wall` — prefill included. On the `medium-256` prompt that is a rounding error; at 128K it is
 most of the wall clock and the number stops being a decode rate at all. `medium-256` numbers
 therefore say nothing about how the stack behaves at agent-fleet context depths, where the
 spread between profiles reached **24×** (see `docs/rdna4-long-context.md`). Use
