@@ -288,17 +288,44 @@ thin headroom. Do not go to 0.97 on this profile.
 
 | Metric | Result |
 |--------|--------|
-| Decode, serial / conc=8 / conc=16 / conc=32 (tok/s aggregate) | 55.4 / 140-182 (see below) / 244 / 451 |
+| Decode, serial / conc=8 / conc=16 / conc=32 (tok/s aggregate) | 55.5 / 204 / 251 / 460 (flagged spawn, 2026-10-19; see below) |
 | Decode vs context depth, 1K to 258K | flat, 57 to 55 tok/s |
 | Code tests, `reasoning_effort=medium` | 29-32/32 (two runs of 8 samples x 4 tasks: 29/32 with an explicit flag, 32/32 with the server-side default; sampling noise) |
 | Code tests, template default (xhigh) | 4/32 at a 32K cap, 3/8 at 256K (runaway thinking) |
 
-conc=8 is the unstable cell on this config. Readings of 149, 157, 165 and 185 were seen across
-earlier runs (including 157 in the same-config 262K A/B), and on 2026-10-19 one server gave
-154.4, then 140.1, then 140.5 in that order, all at `--requests 128`. So the variation is not
-only spawn-to-spawn. Treat this cell as 140-182 and do not read a difference between any two
-values inside that band. conc=16 and conc=32, by contrast, reproduce across spawns to within
-0.5%.
+conc=8 was the unstable cell on this config, and `GPU_MAX_HW_QUEUES=1` raised it. Keep the
+request counts apart when reading the evidence, because `--requests` alone moves this cell by up
+to a third (`bench/CLAUDE.md`), and there are only six readings on the shipped config at
+`--requests 128`.
+
+**Unflagged, `n=128`:** 181.5 on one spawn, then 154.4, 140.1 and 140.5 on a second server in
+that order — so the variation was not only spawn-to-spawn, that server drifted 10% down across
+three consecutive sweeps, and the honest reading of the cell was 140-181 rather than a figure.
+**Flagged, `n=128`:** 204.3 and 204.1 on two spawns; 204.1 is the published figure. Every
+flagged reading is above every unflagged one, and the two flagged spawns agree to 0.1%, which
+hints the flag steadies the cell as well as raising it — but two readings cannot establish that,
+so treat it as something to re-check on the next spawn rather than a finding. Do not read a
+difference between 204.3 and 204.1.
+
+Lower-request-count readings exist and are not comparable with the above: 149, 157, 165 and 185
+across earlier runs at `--requests 8-16` (including 157 in the same-config 262K A/B), and a
+2026-10-18 matched pair at `n=16` reading 187.4 unflagged against 197.2 flagged. That pair is
+internally valid — same count both sides — but its figures must not be mixed into the `n=128`
+spans.
+
+An earlier version of this section said conc=16 and conc=32 "reproduce across spawns to within
+0.5%". **That was two spawns agreeing, and it does not hold.** Counting only `medium-256`
+`n=128` cells on this profile's own config, the 2026-10-19 spawns give conc=16 **222.6 / 244.3 /
+244.5 / 251.3** stock across four spawns against 249.9 / 250.6 flagged, and conc=32 **390.7 /
+451.0 / 452.9 / 453.3** stock across four spawns against 459.6 / 465.9 flagged. So both are
+~±7-13% cells and no two figures inside either should be read as a difference. Neither is a
+flag gain: conc=16 lands inside the stock spread, and the flagged conc=32 readings clear the
+stock maximum by only 1.4% and 2.8%. (An earlier version of this paragraph listed 359.1 and
+441.5 in the conc=32 stock span; neither is a Flash-Next reading — they belong to other
+profiles and were swept up by a numeric grep.) What *is* reproducible at those levels
+is that they are insensitive to the state the server is in: the 22.6-tok/s-serial spawn below
+still turned in 452.9 at conc=32, near the top of the stock range, so a slow draw costs ~60% on
+one stream, ~9% at conc=16 and nothing measurable at conc=32.
 
 **Open issue: an intermittent single-stream latency tail.** This profile's one-stream cells are
 not reliably reproducible, and the failure is in the latency distribution rather than in the
@@ -316,8 +343,18 @@ The three clean cells agree to 0.2% and reproduce the 55.3 measured independentl
 spawn, so 55.4 is the profile's single-stream rate. The other two are the same server minutes
 later or earlier, with a tail that stretches rather than a mode that shifts. The episodes do not
 trend — a clean n=32 cell ran immediately before the 42.90 one, and a normal conc=8 cell
-immediately after it — and `scripts/llmband` classified the server fast throughout, so this is
-not the decode band. **Cause not established.** It matters more than a benchmarking footnote
+immediately after it — and `scripts/llmband` classified the server fast throughout.
+
+That last point was once read as "so this is not the decode band". **It no longer rules the band
+in or out.** On 2026-10-19 this profile was observed changing state *mid-process*, in both
+directions: a stock spawn that came up slow (23.0 tok/s single-stream) served two long loads and
+a full sweep at that rate and then read 56.9 on the next probe, while two other stock spawns went
+the other way, 57 → 29. A server that flips mid-life can read fast at an `llmband` probe and slow
+in the bench cell minutes later, and a flip *inside* a cell produces exactly the stretched-tail
+shape in the table above rather than a shifted mode. So the tail and the slow-state observations
+are plausibly one phenomenon. **Cause not established**, and `mem_busy` — the discriminator that
+separated the 27B's bands — has still never been sampled on a slow Flash-Next spawn, which is
+the single most useful missing measurement here. It matters more than a benchmarking footnote
 suggests: this is the interactive profile, and a request that takes 10 s instead of 2.8 s is
 visible to whoever is waiting for it. Worth a dedicated investigation, with host memory state
 (this profile pins ~48 GiB of host RAM) as one thing to rule in or out. The

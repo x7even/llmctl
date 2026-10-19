@@ -461,28 +461,61 @@ the stored baseline at every concurrency level with no measurable cost. The thre
 `qwen3.8-27b-*` profiles ship with it. Everything below is for detecting a slow draw *despite*
 the flag, or on a profile that does not have it.
 
-   **It is not universal, and Flash-Next is the counter-example.** A matched pair on 2026-10-18
-   found no band to fix on `qwen3.8-flash-next-vllm`: serial 55.6 stock against 53.5 flagged,
-   conc=8 187.4 against 197.2, and `mem_busy` ~31% on *both* arms where the 27B's bands separate
-   at 26% / 46% with no overlap. Both arms sat at or above the profile's best stored conc=8
-   figure. So the flag is a candidate per profile, not a blanket fix.
+   **Flash-Next was the counter-example until 2026-10-19, and the reversal is instructive — it
+   is a lesson about measurement design, not about this one profile.** A matched pair on
+   2026-10-18 found no band to fix on `qwen3.8-flash-next-vllm`: serial 55.6 stock against 53.5
+   flagged, conc=8 187.4 against 197.2, and `mem_busy` ~31% on *both* arms where the 27B's bands
+   separate at 26% / 46% with no overlap. Both arms sat at or above the profile's best stored
+   conc=8 figure, so the flag was left off. That pair was wrong on two counts, each with its own
+   methodological moral.
 
-   What that pair establishes is narrow: the stock spawn was already fast, so it shows the flag
-   is not *needed* on this profile, not that the flag fails to work on this model — there was no
-   slow draw to recover from. **The cause is not established.** Flash-Next differs from the 27B
-   in two ways simultaneously, model architecture (6B-active MoE against a dense GDN hybrid) and
-   image (nightly against v0.26.0), and one matched pair cannot separate them. The 35B and
-   gemma4 profiles are still unmeasured.
+   **First: it measured the wrong workload.** Its completions are ~157 tokens and the flag's
+   price is per decode step. Re-measured on long generations — same matched design, flag
+   confirmed with `podman inspect` on both arms, **two fresh spawns per arm** — 4 concurrent
+   8,192-token generations go **104.0 / 104.3 stock against 173.0 / 171.3 / 172.3 flagged
+   (1.66x)**, 26.1 against 43.6 tok/s per stream, the flagged arm reproducing across spawns to
+   within 1%. The scaling is where it shows: fast stock goes 57.0 -> 104.0 from one stream to
+   four (1.82x), flagged 56.4 -> 173.0 (3.07x). A re-run `medium-256` sweep at `--requests 128`
+   costs nothing (serial 55.2 / 55.1 against 55.6, conc=16 249.9 against 251.3, conc=8 204.3 =
+   the profile's best recorded figure) and the KV pool is unchanged, so the flag now ships on
+   this profile too.
 
-   Calibrate the profile while you are at it. `config/band-baselines.json` is gitignored
-   because the numbers are per-rig, so `llmband` returns `undecided` on Flash-Next until
-   somebody runs `--calibrate` against it; on this rig the stock arm read **58.41 steps/s** at
-   `mem_busy` 32%. Calibrate the *stock* arm, since stock is what the profile ships, and treat
-   the result as a throughput reference rather than a *band* reference: no slow Flash-Next draw
-   has ever been observed, so the figure says "this is what a healthy spawn does", and the
-   two-band separation that makes the 27B's baseline a genuine band discriminator has not been
-   demonstrated here. At the detector's ±12% tolerance a 58.41 baseline floors at 51.4, which
-   the flagged arm (54.3) clears, so calibrating on stock does not mislabel the variant either.
+   **Second: one spawn per arm cannot see a 1-in-5 draw.** On 2026-10-19 a stock spawn came up
+   at **23.0 tok/s single-stream** at both 2,048 and 131,072 depth, and 22.6 on `medium-256`
+   serial, against 56-57 on three other stock spawns the same day — a ~2.5x slow state on
+   exactly the short-completion workload the earlier pair had used to rule one out. So "no slow
+   Flash-Next draw has ever been observed", which earlier versions of this file said, is
+   **false**: one stock spawn in five has drawn one (four spawns on 2026-10-19, one on
+   2026-10-18). Both flagged spawns came up fast.
+
+   Two things remain **unestablished**, and they are the interesting ones:
+
+   - **Whether that slow state is this band.** The ratio fits (2.4x, near the gated-delta-net
+     row) but `mem_busy` was not sampled on the slow spawn, and the 2026-10-18 pair's
+     ~31%-on-both reading is still unexplained. Record it as *a slow state consistent with the
+     band, not confirmed by the discriminator*.
+   - **Whether "drawn at spawn, held for life" even applies here.** On this profile it does not.
+     The slow stock spawn served two long-generation loads and a full `medium-256` sweep at 23
+     tok/s and then read **56.9 / 56.4** on the next probe — it left the slow state mid-process.
+     Two earlier stock spawns went the other way, 57 -> 29. The state moves in both directions
+     mid-life, no trigger has been isolated for either, and this is the same shape as the
+     published single-stream latency tail (`docs/models.md`) — plausibly the same phenomenon.
+     Note also that fast stock (104 at four streams) and flagged (173) are both ~56-57 at one
+     stream, so there are at least **three** operating points here, not two bands.
+
+   What is established is the engineering conclusion — **a `medium-256` matched pair on one
+   spawn per arm is not sufficient evidence to leave this flag off a profile.** Price it on the
+   workload the profile exists for, over more than one spawn. The 35B and gemma4 profiles were
+   measured on 2026-10-19 and both wanted it (see `config/CLAUDE.md` item 5).
+
+   Calibrate the profile while you are at it. `config/band-baselines.json` is gitignored because
+   the numbers are per-rig; on this rig the stock arm read **58.41 steps/s** at `mem_busy` 32%,
+   and the 23 tok/s spawn above would have classified **slow** against it, so the baseline does
+   discriminate on this profile after all. Calibrate the **flagged** arm now that the flag
+   ships — a stock baseline is a reference for a configuration the stack no longer runs. Note
+   that `llmband --model` is both the baseline key *and* the request model string, so a test
+   container served under a scratch name reads `undecided` (exit 2) however healthy it is;
+   serve it as `qwen3.8-flash-next-vllm` if you want it classified.
 
    A slow draw under the flag is anomalous rather than expected, so treat it as a signal to
    investigate, not just to restart. Remember to recalibrate after adding the flag: a baseline

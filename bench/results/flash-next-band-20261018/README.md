@@ -41,7 +41,28 @@ serial, nowhere near the ~28 tok/s half-speed signature, so neither hit the path
 
 Serial −3.8%, conc=8 +5.2%.
 
-## Reading it
+## Superseded 2026-10-19 — both conclusions below were overturned
+
+This file is kept as the record of what was measured on 2026-10-18. Its data stands; the
+inferences drawn from it do not, and the flag **now ships on this profile**. Two later results
+overturned them:
+
+- **"The flag is not needed here" was a workload artifact.** These completions are ~157 tokens
+  and the flag's price is per decode step. On 4 concurrent 8,192-token generations the same
+  matched design reads 104.0 / 104.3 stock against 173.0 / 171.3 / 172.3 flagged — **1.66×**,
+  two fresh spawns per arm.
+- **"Neither spawn was a slow draw, so there is nothing to recover" could not be concluded from
+  one spawn per arm.** A stock spawn on 2026-10-19 came up at **23.0 tok/s single-stream** and
+  22.6 on `medium-256` serial, against 56-57 on three other stock spawns that day — a ~2.5× slow
+  state on this very workload, in one stock spawn out of five.
+
+Still unestablished: whether that slow state is the same phenomenon as the 27B's band
+(`mem_busy` was not sampled on it, so the discriminator this file leans on is still untested
+against a slow Flash-Next spawn). Note also that the state has since been seen to change **in
+both directions mid-process**, which the band model does not predict. Full write-up:
+`docs/rdna4-decode-bands.md` and `config/CLAUDE.md` item 5.
+
+## Reading it (as written on 2026-10-18)
 
 - **There was no band to fix.** `mem_busy` under load is the discriminator that held on the 27B,
   where the two bands separate at 26% against 46% with no overlap. Here both arms read ~31%.

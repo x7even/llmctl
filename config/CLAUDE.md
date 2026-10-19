@@ -187,27 +187,104 @@ The penalty is a fixed per-step tax, so it **amortises with batch size** — 1.8
 the stored baseline at every level, so the flag itself costs nothing measurable. It is set on the three
 `qwen3.8-27b-*` profiles, and on the template at the bottom of `models.yaml`.
 
-**It is deliberately NOT set on Flash-Next, and that is now a measurement rather than an
-omission.** A matched pair on 2026-10-18 (same profile and image either side, flag confirmed in
-the container with `podman inspect`, `medium-256`, `--no-thinking`, 16 requests per level):
+**It is now set on Flash-Next too, as of 2026-10-19. The 2026-10-18 pair that left it off
+measured honestly and drew the wrong conclusion**, for a reason worth keeping: its stock arm
+happened to spawn in the fast state, so there was no slow draw in front of it to find. That
+pair ran `medium-256`, whose completions are ~157 tokens:
 
 | arm | serial | conc=8 | `mem_busy` | steps/s |
 |---|---|---|---|---|
 | stock | **55.6** | 187.4 | 32.4% | 58.4 |
 | `GPU_MAX_HW_QUEUES=1` | 53.5 | **197.2** | 30.6% | 54.3 |
 
-Serial −3.8%, conc=8 +5.2% — both inside this profile's own session spread, and both arms landed
-at or above the best stored conc=8 figure (182), so neither was a slow draw to begin with. The
-decisive column is `mem_busy`: ~31% on both arms, where the 27B's two bands separate cleanly at
-26% against 46% with no overlap. There is no band to fix here, so the flag is not shipped on
-this profile.
+Serial −3.8%, conc=8 +5.2%, `mem_busy` ~31% on both arms where the 27B's bands separate
+cleanly at 26% against 46%. The conclusion drawn from that — "there is no band to fix on this
+profile" — **is withdrawn.** On 2026-10-19 a stock spawn came up at **23.0 tok/s single-stream**
+at both 2,048 and 131,072 depth, and 22.6 on `medium-256` serial, against 56-57 on three other
+stock spawns the same day. That is a ~2.5× slow state on exactly the short-completion workload
+the earlier pair tested, and a single spawn per arm could not have seen it: **one stock spawn in
+five has now drawn it** (four spawns on 2026-10-19, one on 2026-10-18).
 
-Be careful what this does and does not establish. The stock spawn was already fast, so the pair
-answers "is the flag *needed* on this profile" — no — and not "does the flag work on this
-model", which would need a slow stock draw to recover from and none occurred. **The cause is not
-established.** Flash-Next differs from the 27B in two ways at once: it is a 6B-active MoE rather
-than a dense GDN hybrid, *and* it runs the nightly image rather than v0.26.0. Either could
-explain the absence of a band, and this pair cannot separate them.
+So the flag does two separable things here.
+
+**1. It buys 1.66× on long generations even against a fast stock spawn.** A 157-token completion
+and an 8,192-token one do not spend their decode steps the same way, and the flag's price is per
+step. Same image and profile either side, flag presence confirmed in the container with `podman
+inspect` on both arms, two spawns per arm:
+
+| 4 streams × 8,192-token generations | spawn 1 | spawn 1 again | spawn 2 | per stream |
+|---|---|---|---|---|
+| stock, fast draw | 104.0 | 104.3 | — | 26.1 / 26.2 |
+| stock, slow draw | — | — | 92.5 / 86.0 | 23.2 / 21.6 |
+| `GPU_MAX_HW_QUEUES=1` | **173.0** | **171.3** | **172.3** | **43.6 / 43.2 / 43.1** |
+
+**1.66× against a fast stock spawn, 1.9-2.0× against the slow one**, with the flagged arm
+reproducing across two fresh spawns to within 1%. The mechanism is in the scaling, not the
+single-stream figure: fast stock goes 57.0 → 104.0 from one stream to four (**1.82×**), flagged
+goes 56.4 → 173.0 (**3.07×**). The tax is invisible at conc=1 and has eaten most of the
+concurrency scaling by conc=4 — which is exactly the regime this profile serves, since it is the
+deep-context agent profile.
+
+**2. It avoids the slow draw.** Both flagged spawns came up fast (56.6 / 56.1, and 56.4) where
+one stock spawn in five did not. Two spawns is thin evidence for prevention and is not what the
+flag is justified on — the 1.66× above does not depend on it.
+
+**And it costs nothing where the profile is published**, `medium-256` at `--requests 128`:
+
+| | previously published (stock) | stock, same day | flagged | **now published (flagged)** |
+|---|---|---|---|---|
+| serial | 55.4 | 55.6 | 55.2 / 55.1 | **55.5** |
+| conc=8 | 154.4 | — | 204.3 | **204.1** |
+| conc=16 | 244.5 | 251.3 | 249.9 | **250.6** |
+| conc=32 | 451.0 | 390.7 | 465.9 | **459.6** |
+
+Serial −0.7% and conc=16 −0.6% against the same-day stock spawn, both inside this harness's
+same-server spread; the earlier pair's −3.8% serial does not reproduce (under 1%, three times).
+KV pool unchanged (482,375 stock vs 492,282 and 496,092 flagged, inside spawn spread).
+
+The published column is a third flagged spawn, run with the campaign's methodology
+(`--serial-n 8`, served under the real profile name so `llmband` could classify it) and
+`llmband`-classified **fast** both before (57.78 steps/s vs 58.41 baseline, `mem_busy` 31.9%)
+and after (57.5, 31.7%) the sweep — worth doing on a profile that changes state mid-process.
+
+Three cautions on reading this table. **Compare only cells taken at the same request count.**
+`--requests` alone moves a conc=8 reading by up to a third (`bench/CLAUDE.md`), so the
+2026-10-18 pair's 187.4 stock / 197.2 flagged are `n=16` figures and belong only to each other,
+not in a span with the `n=128` readings here. **conc=32 is not a gain claim** — stock `n=128` readings
+on this profile span 390.7 / 451.0 / 452.9 / 453.3 across four spawns, so the flagged 465.9 and
+459.6 clear the stock maximum by 2.8% and 1.4% against a 16% spread: above it, but not by enough
+to quote. Nor is conc=16 a gain (stock 222.6 / 244.3 / 244.5 / 251.3, flagged 249.9 / 250.6 —
+inside the spread outright). **conc=8 is the one cell that moved**:
+at `n=128` the stock readings are 181.5 from one spawn and 154.4 / 140.1 / 140.5 from a second
+server in that order, against 204.3 and 204.1 from two flagged spawns — every flagged reading
+above every stock one. The two flagged spawns agree to 0.1% where that stock server drifted 10%
+down across three sweeps, which hints the flag steadies the cell too; two readings do not
+establish it, so do not write that down as a finding yet.
+
+What this still does **not** establish:
+
+- **That the slow state is the decode band.** The ratio fits — 2.4×, near the 2.00-2.2× the root
+  `CLAUDE.md` quotes for gated-delta-net hybrids — but `mem_busy` was not sampled on the slow
+  spawn, so the discriminator that separated the 27B's bands is untested here, and the
+  2026-10-18 pair's ~31%-on-both reading stands unexplained. Call it *a slow state consistent
+  with the band, not confirmed by `mem_busy`*.
+- **That the state is drawn at spawn and held.** On this profile it is not. The slow stock spawn
+  above served two long-generation loads and a `medium-256` sweep at 23 tok/s, then read
+  **56.9 / 56.4** on the very next probe — it left the slow state mid-process. Two earlier stock
+  spawns went the other way, 57 → 29. So the state moves in both directions mid-life, which the
+  27B's band does not do, and no trigger has been isolated in either direction. This is the same
+  shape as the published single-stream latency tail (`docs/models.md`) and is plausibly the same
+  phenomenon.
+- **That there are only two states.** Fast stock and flagged are both ~56-57 at one stream and
+  differ by 1.66× at four, so there are at least three operating points here, not two bands.
+
+The honest framing is that the flag is worth 1.66× on this profile's real workload for no
+measurable cost, whatever the mechanism.
+
+**The lesson generalises past this profile:** a `medium-256` matched pair is not sufficient to
+clear this flag off a profile — not on the workload it tests, and not on the spawn it drew,
+since one spawn per arm cannot see a 1-in-5 draw. Price it on the workload the profile exists
+for, and on more than one spawn.
 
 **The 35B and gemma4 profiles have now been measured, and both wanted the flag.** Matched pairs
 on 2026-10-19, same image and profile either side, `medium-256`, `--no-thinking`, varying only

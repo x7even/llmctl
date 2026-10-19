@@ -1,0 +1,75 @@
+{
+  "model": "qwen3.8-flash-next-vllm",
+  "timestamp": "2026-10-19 18:47:23",
+  "rows": [
+    {
+      "label": "medium-256 serial",
+      "concurrency": 1,
+      "n_requests": 8,
+      "errors": 0,
+      "wall_s": 23.57755731898942,
+      "req_per_s": 0.33930571737203585,
+      "prefill_tps": 26.12654023764676,
+      "decode_tps": 55.476484790327866,
+      "latency_mean": 2.9471946648736775,
+      "latency_p90": 3.264996351004811,
+      "latency_p99": 3.264996351004811
+    },
+    {
+      "label": "medium-256 conc=1",
+      "concurrency": 1,
+      "n_requests": 128,
+      "errors": 0,
+      "wall_s": 364.2245262209908,
+      "req_per_s": 0.35143157801058367,
+      "prefill_tps": 27.06023150681494,
+      "decode_tps": 55.0923909715654,
+      "latency_mean": 2.845364301360405,
+      "latency_p90": 3.1425326369935647,
+      "latency_p99": 3.3845739499956835,
+      "vram_peak_gb": null
+    },
+    {
+      "label": "medium-256 conc=8",
+      "concurrency": 8,
+      "n_requests": 128,
+      "errors": 0,
+      "wall_s": 99.21820833999664,
+      "req_per_s": 1.290085783058843,
+      "prefill_tps": 99.33660529553092,
+      "decode_tps": 204.07544480762076,
+      "latency_mean": 6.1046619962507975,
+      "latency_p90": 6.862205475015799,
+      "latency_p99": 7.117684650991578,
+      "vram_peak_gb": null
+    },
+    {
+      "label": "medium-256 conc=16",
+      "concurrency": 16,
+      "n_requests": 128,
+      "errors": 0,
+      "wall_s": 81.64755381498253,
+      "req_per_s": 1.5677138385560754,
+      "prefill_tps": 120.71396556881781,
+      "decode_tps": 250.56476335297023,
+      "latency_mean": 9.993851682127115,
+      "latency_p90": 11.024167311989004,
+      "latency_p99": 11.818528937990777,
+      "vram_peak_gb": null
+    },
+    {
+      "label": "medium-256 conc=32",
+      "concurrency": 32,
+      "n_requests": 128,
+      "errors": 0,
+      "wall_s": 44.060239594982704,
+      "req_per_s": 2.905113571252023,
+      "prefill_tps": 223.6937449864058,
+      "decode_tps": 459.643437851531,
+      "latency_mean": 10.470351236107035,
+      "latency_p90": 11.619693493994419,
+      "latency_p99": 12.919092686992371,
+      "vram_peak_gb": null
+    }
+  ]
+}
