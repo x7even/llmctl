@@ -224,17 +224,34 @@ Shipped on all three, and on `qwen3.6-35b-fast` unmeasured — same weights and 
 
 **Gemma 4 is the counter-example to "it amortises, so it only matters on one stream."** The two
 Qwen MoE profiles behave as the 27B does — the 35B-code curve is fully flat by conc=8 — but
-gemma4 keeps **1.71×** at conc=8, where 522 tok/s nearly matches its own documented conc=16
-figure of 528. A slow draw on that profile costs real fleet throughput, not just latency on an
+gemma4 keeps **1.71×** at conc=8, where 522 tok/s nearly matches the conc=16 figure documented
+for the profile at the time (528 — itself a pre-flag reading; the flagged profile now does
+891 at conc=16). A slow draw on that profile costs real fleet throughput, not just latency on an
 idle server. So the amortisation ratio is a property of the model, not of the band: 1.11/1.89 =
 0.59 on the 27B dense, 1.00/2.11 = 0.47 on the 35B MoE, 2.07/2.86 = 0.72 on the 35B no-MTP, and
 0.75 on gemma4. Do not assume a conc=8 reading is safe because a sibling profile's was.
 
-This also found two bad rows in our own published table: the committed six-profile sweep had
+This also explains two rows in our own published table: the committed six-profile sweep had
 `qwen3.6-35b-code` at 51.3 serial and `gemma4-26b-a4b` at 56.2/300.0, which match the **stock**
-arms above almost exactly. Both were slow-band draws, understating the hardware by ~2.3×. That
-is the mechanism behind "why do the published numbers look slower than what these GPUs do" —
-see `bench/band_audit.py`.
+arms above almost exactly. They were not bad draws — they **predate** `0c05be5`, the commit that
+landed the flag on these two profiles, so each one correctly measured the configuration that was
+shipped on the day it ran. They are superseded, not wrong. That is the mechanism behind "why do
+the published numbers look slower than what these GPUs do" — see `bench/band_audit.py`.
+
+Re-measured on the flagged config at matched `--requests 128`, the gain is not uniform across
+the sweep and does not simply amortise away:
+
+| profile | serial | conc=8 | conc=16 | conc=32 |
+|---|---|---|---|---|
+| `qwen3.6-35b-code` | 2.14× | 1.04× | 1.02× | **1.12×** |
+| `gemma4-26b-a4b` | 2.30× | 1.80× | 1.59× | **1.53×** |
+
+gemma4 keeps more than half its serial gain all the way out to conc=32. The 35B-code curve
+flattens at conc=8 and then **rebounds to 1.12× at conc=32**, which is outside this harness's
+~2% same-server spread — so "it amortises, so it only costs you on one stream" is not even true
+of that profile across the whole sweep. Its conc=8 cell is anomalous in both vintages
+(302 → 585 tok/s from conc=8 to conc=16 while p90 latency barely moves, 5.11 → 5.15 s), so read
+that one level with suspicion rather than averaging it in.
 
 Give any *new* vLLM profile the flag from the start: the downside is bounded (a few percent on
 one stream, per the Flash-Next pair) and the upside is a silent 2×.

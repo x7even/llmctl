@@ -320,6 +320,33 @@ Three things the audit cannot do, so do not over-read it:
 - **It cannot clear a profile with only one reading.** Those are listed as `unaudited`, and
   that is the honest state, not a pass.
 
+#### Provenance for the 2026-10-19 matched set
+
+The seven `*-peak-nothink-matched-20261019.json` files are the published `medium-256` table in
+`README.md` and the root `CLAUDE.md`. Each is one fresh spawn on the shipped config, classified
+with `scripts/llmband` before it was benchmarked, 128 requests per level. Six come back as their
+profile's reference on their pin. Two notes:
+
+- **`qwen3.6-35b-128k-nomtp` reads `unaudited`** -- it is the first `medium-256` baseline for
+  that profile on this pin, so the audit has no peer and correctly says nothing. Its
+  91.8 serial / 457.0 conc=8 land within 1% of the TRITON arm of the attention-backend matched
+  pair, which is the closest thing to a peer that exists.
+- **`qwen3.8-flash-next-vllm` carries a `PER-STEP` flag that is *not* the band.** Its
+  one-stream cell is defective: that profile has an intermittent multi-minute single-stream
+  latency tail (`docs/models.md`), and this cell caught one -- 29.6 tok/s at a p90 of 10.21 s,
+  against 55.4 at a p90 of ~3.0 s from three clean cells on the same server. `llmband`
+  classified that server **fast** throughout, so the flag is reading the tail, not a slow draw.
+  The published serial figure for this profile comes from the two
+  `*-serial-recheck-rep{1,2}-nothink-20261019.json` files, not from the matched file. Its
+  conc=8/16/32 cells are sound and are the published ones.
+
+  Do not read `rep2`'s `ok (1.29x of fastest)` as a clean bill of health. `one_stream()` prefers
+  a `conc=1` cell over a `serial` one, and `rep2`'s `conc=1` cell is the contaminated 42.90
+  reading — it clears only because 1.29 happens to fall under the 1.30 threshold. `rep2`'s
+  *serial* cell is clean at 55.37. The audit has no notion of a spoiled cell, so on this profile
+  check the p90/mean latency ratio as well: clean one-stream cells here read 1.08-1.10 and
+  contaminated ones 1.57-1.84, while the six other profiles in the matched set read 1.09-1.27.
+
 ### Report a distribution, not a peak
 
 `llmpanel` reports the maximum of one-second difference quotients; the

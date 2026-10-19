@@ -260,16 +260,16 @@ See `tui/CLAUDE.md` for architecture and coding conventions.
 
 | Profile | Backend | VRAM | Active params | Notes |
 |---------|---------|------|--------------|-------|
-| `qwen3.8-27b-code` ✓ | vLLM + MTP | ~31 GB + KV | 27B (dense) | **Default.** Thinking (medium effort); 131K ctx; 349 tok/s @ conc=8, 857 @ conc=32 |
+| `qwen3.8-27b-code` ✓ | vLLM + MTP | ~31 GB + KV | 27B (dense) | **Default.** Thinking (medium effort); 131K ctx; 350 tok/s @ conc=8, 843 @ conc=32 |
 | `qwen3.8-27b-think` ✓ | vLLM + TRITON_ATTN | ~31 GB + KV | 27B (dense) | Thinking, no MTP — parallel agent fleets. **The long-context profile:** 33 tok/s at 131K vs 1.4 without the backend flag |
 | `qwen3.8-27b-fast` | vLLM + MTP | ~31 GB + KV | 27B (dense) | Thinking OFF by default |
 | `qwen3.8-flash-next` | llama-server (Vulkan) | ~81 GB | 6B (MoE, 125B) | UD-IQ4_XS GGUF, custom llama.cpp fork; single-user |
-| `qwen3.8-flash-next-vllm` | vLLM TP4+EP (nightly image) | ~19 GB/GPU + ~48 GB pinned PLE in host RAM (~96 GB host RAM recommended) | 6B (MoE, 125B) | W4A16 INT4 + FP8 PLE; 262K ctx, **medium effort by default** (xhigh runs away); 55.3 tok/s serial, ~150-185 @ conc=8 (182 best run), 244 @ conc=16, 453 @ conc=32, flat ~55 out to 258K; needs `--ulimit memlock=-1:-1` and all 4 GPUs; exclusive VRAM |
+| `qwen3.8-flash-next-vllm` | vLLM TP4+EP (nightly image) | ~19 GB/GPU + ~48 GB pinned PLE in host RAM (~96 GB host RAM recommended) | 6B (MoE, 125B) | W4A16 INT4 + FP8 PLE; 262K ctx, **medium effort by default** (xhigh runs away); 55.4 tok/s serial (clean-cell median; **intermittent single-stream latency tail, cause not established** -- see `docs/models.md`), 140-182 @ conc=8 (that cell is not reproducible to better than ~13%), 244 @ conc=16, 451 @ conc=32, flat ~55 out to 258K; needs `--ulimit memlock=-1:-1` and all 4 GPUs; exclusive VRAM |
 | `qwen3.6-27b-code` ✓ | vLLM + MTP | ~31 GB + KV | 27B (dense) | Previous-gen dense 27B, restored 2026-10-19; 131K ctx; matches `qwen3.8-27b-code` at `medium-256`, 6-9% behind it at depth |
 | `qwen3.6-35b-code` | vLLM + MTP | ~35 GB | 3B (MoE) | Previous gen, MTP + thinking |
 | `qwen3.6-35b-128k-nomtp` ✓ | vLLM + TRITON_ATTN | ~35 GB | 3B (MoE) | **The deep-context profile.** 62 tok/s at 130K serial (vs 33 on `27b-think`), 440 at 16K×8, 231 at 64K×4; no short-prompt cost either (TRITON +3.9% at conc=8, matched n=128) |
 | `qwen3.6-35b-fast` | vLLM | ~35 GB | 3B (MoE) | Previous gen, thinking OFF |
-| `gemma4-26b-a4b` ✓ | vLLM BF16 | ~123 GB | 4B (MoE) | 528 tok/s @ conc=16; exclusive VRAM |
+| `gemma4-26b-a4b` ✓ | vLLM BF16 | ~123 GB | 4B (MoE) | **the stack's throughput leader:** 891 tok/s @ conc=16, 1443 @ conc=32; exclusive VRAM |
 | `gemma4-26b-fp8` | vLLM FP8 | — | 4B (MoE) | Long-context Gemma 4 |
 | `gemma4-26b-q8` ✓ | llama-server + mmproj | ~32 GB | 4B (MoE) | **Vision**; alias `gemma4` |
 | `gemma4-12b-q4` ✓ | llama-server + mmproj | ~13 GB | 12B (dense) | Lightest vision; co-loadable |
@@ -288,27 +288,55 @@ Use aliases for common swaps: `llmctl swap qwen3.8` (→ 27b-code), `llmctl swap
 ## Benchmark baselines summary
 
 `medium-256` prompt, decode tok/s, `--no-thinking`, 4× R9700, MTP where noted. **Every row below
-is one run of the same sweep, all six profiles measured on 2026-10-19 inside the same 3h10m
-window** on the shipped image pins — so the columns are comparable with each other, which the previous table's
-mix of 0.22.1 and 0.26.0 figures from four different months was not.
+is one fresh spawn of the shipped profile, all seven re-measured on 2026-10-19 at `--requests 128`**
+(`--serial-n 8` for the serial column) on the shipped image pins — so the columns are comparable
+with each other, which the previous table's mix of 0.22.1 and 0.26.0 figures from four different
+months was not. Each spawn's provenance was recorded before it was benchmarked: container argv,
+`GPU_MAX_HW_QUEUES=1` presence, KV-pool size, the attention backend read out of the log, and
+`scripts/llmband`. Two driver scripts produced it — `qwen3.6-35b-code` and `gemma4-26b-a4b` in
+one, the other five in the other — same harness, same prompt, same day. One exception in the
+serial column: `qwen3.8-flash-next-vllm` has an intermittent single-stream latency tail, so its
+serial figure is the median of the clean one-stream cells (55.4, reproducing the 55.3 measured
+independently on an earlier spawn) rather than the sweep's own 8-sample cell. **That tail is an
+open issue, not a measurement artifact** — see `docs/models.md`.
 
 | Profile | serial | conc=8 | conc=16 | conc=32 |
 |---------|--------|--------|---------|---------|
-| qwen3.6-35b-code (MTP, 3B active) | 51.3 | 291.3 | 572.0 | **950.2** |
-| gemma4-26b-a4b (BF16, 4B active) | 56.2 | 300.0 | 559.4 | 944.4 |
-| qwen3.8-27b-code (MTP, 131K ctx) | 64.9 | 348.8 | 576.5 | 856.5 |
-| qwen3.6-27b-code (MTP, 131K ctx) | 65.9 | 351.1 | 578.5 | 853.0 |
-| qwen3.8-27b-think (TRITON_ATTN, no MTP) | 46.0 | 274.0 | 477.0 | 760.1 |
-| qwen3.8-flash-next-vllm (no MTP, 262K ctx) | 55.3 | 181.5 | 244.3 | 453.3 |
+| gemma4-26b-a4b (BF16, 4B active) | 129.2 | 539.9 | 890.8 | **1442.9** |
+| qwen3.6-35b-128k-nomtp (TRITON_ATTN, no MTP) | 91.8 | 457.0 | 747.4 | 1198.9 |
+| qwen3.6-35b-code (MTP, 3B active) | 109.7 | 302.0 | 584.8 | 1065.7 |
+| qwen3.6-27b-code (MTP, 131K ctx) | 67.7 | 347.3 | 584.6 | 869.5 |
+| qwen3.8-27b-code (MTP, 131K ctx) | 66.0 | 350.4 | 569.4 | 842.7 |
+| qwen3.8-27b-think (TRITON_ATTN, no MTP) | 46.3 | 275.1 | 479.8 | 763.1 |
+| qwen3.8-flash-next-vllm (no MTP, 262K ctx) | 55.4 | 154.4 | 244.5 | 451.0 |
 
-Baselines: `bench/baselines/<profile>-<pin>-peak-nothink-2026101{8,9}.json` (`v0.26.0` on every
-profile but Flash-Next, which is on the nightly pin). Three things to read out
-of it: **conc=32 is worth having** — every profile is still gaining there, the MoE profiles by
-~1.7x over conc=16 and Flash-Next by 1.9x; **the two dense 27B MTP profiles are within ~1% of
-each other at all four levels on this prompt** (at depth `qwen3.8-27b-code` is 6-9% ahead on
-the prewarmed rows), so at short prompts choose between them on output quality; and
-**`27b-think` pays 11-29% at `medium-256`** — 29% serial, 21% at conc=8, 11% at conc=32 — for
-the long-context behaviour it buys, which is the trade `docs/rdna4-long-context.md` describes.
+Baselines: `bench/baselines/<profile>-<pin>-peak-nothink-matched-20261019.json` (`v0.26.0` on
+every profile but Flash-Next, which is on the nightly pin). `llmband` returned **fast** for
+`qwen3.6-27b-code`, `qwen3.8-27b-code` and `qwen3.8-flash-next-vllm`, and **undecided** for
+`qwen3.8-27b-think` and `qwen3.6-35b-128k-nomtp` — it holds no baseline for those two, which is
+what exit 2 means. Both nonetheless land within ~1% of a same-methodology reference
+(`27b-think` reproduces the previous published row at all four levels; `nomtp` matches the
+matched-pair TRITON arm's 91.5 serial / 463.9 conc=8), so neither is an anomalous draw. Four
+things to read out of the table:
+
+- **conc=32 is worth having.** Every profile is still gaining there, by 1.48x to 1.84x over
+  conc=16. Nothing in this table has saturated.
+- **Only two rows moved, and not because the measurement got better.** `gemma4-26b-a4b` gained
+  2.30x serial and 1.53x at conc=32 against the previous table, and `qwen3.6-35b-code` 2.14x and
+  1.12x, while the three carried-over dense rows moved 0.98-1.03x — i.e. not at all. Those two
+  were last measured *before* `0c05be5` landed `GPU_MAX_HW_QUEUES=1` on them, so each correctly
+  described the configuration shipped on the day it ran: superseded, not a bad draw. That is why
+  the published numbers looked slow. Flash-Next is the fourth carried-over row and also MoE; its
+  conc=16/32 cells reproduce to 0.5% and its conc=8 cell is unstable at ±13% (see its own note
+  in `docs/models.md`), so do not read it as part of either group.
+- **`qwen3.6-35b-128k-nomtp` enters this table for the first time, second-fastest at conc=32.**
+  The deep-context profile is also one of the strongest short-prompt profiles here — the
+  opposite of what this file claimed while the retracted 19% TRITON_ATTN cost stood.
+- **The two dense 27B MTP profiles are indistinguishable on this prompt**, 0.9-3.2% apart on one
+  run each, which is inside this harness's spawn-to-spawn spread — so choose between them on
+  output quality, not on this table (at depth `qwen3.8-27b-code` is 6-9% ahead on the prewarmed
+  rows). **`27b-think` pays 9-30% here** — 30% serial, 21% at conc=8, 9% at conc=32 — for the
+  long-context behaviour it buys, the trade `docs/rdna4-long-context.md` describes.
 
 A 256-token prompt measures almost nothing about serving real work. For prefill and decode
 together, at depth and with distributions rather than single figures, see
@@ -427,8 +455,10 @@ pair cannot separate them. Measure per profile rather than generalising in eithe
 keeps **1.71x at conc=8** (305.1 → 522.1), where the 35B-code curve is flat by then (1.00x).
 So "the band only costs you on one stream" is a property of particular models, not of the band;
 on gemma4 a slow draw costs fleet throughput outright. The flag now ships on every vLLM profile
-except Flash-Next. Two of the six rows in the baseline table below were themselves slow draws
-on these profiles — see `bench/band_audit.py` and `bench/CLAUDE.md`.
+except Flash-Next. Two rows of the baseline table above — `gemma4-26b-a4b` and
+`qwen3.6-35b-code` — were measured *before* the flag reached their profiles, so they were
+superseded readings of a configuration the stack no longer ships rather than slow draws on the
+shipped one. See `config/CLAUDE.md` for the dating and `bench/band_audit.py` for the check.
 
 Two local corrections to the upstream framing. **Here the draw is deterministic, not a
 lottery** — stock was slow on every one of five spawns across two launchers, three launch
@@ -540,10 +570,13 @@ Operational consequences:
   misleading "selected via" line. Verified on two spawns whose argv contained no such flag.
   Consequence worth knowing: gemma4 is already on the only depth-scaling kernel on this
   hardware, so unlike the Qwen3.x profiles there is no backend change left to make there.
-- **Do not flip `qwen3.8-27b-code`.** At 256-token prompts MTP wins at every concurrency, by a
-  margin that shrinks as the batch widens: 41% serial, 27% at conc=8, 21% at 16, 13% at 32
-  (64.9/348.8/576.5/856.5 against 46.0/274.0/477.0/760.1, measured as a same-day pair on
-  2026-10-19). So the default keeps MTP and long-context work goes to `27b-think` explicitly.
+- **Do not flip `qwen3.8-27b-code`.** At 256-token prompts the MTP profile wins at every
+  concurrency, by a margin that shrinks as the batch widens: 43% serial, 27% at conc=8, 19% at
+  16, 10% at 32 (66.0/350.4/569.4/842.7 against 46.3/275.1/479.8/763.1, measured as a same-day
+  matched pair on 2026-10-19 at `--requests 128`). Read that as the gap between the two shipped
+  *configurations*, not as MTP's own margin: `27b-think` drops MTP **and** carries TRITON_ATTN,
+  so the pair differs in two variables and this sweep cannot apportion the gap between them.
+  Either way the default keeps MTP and long-context work goes to `27b-think` explicitly.
   The 35B pair splits on MTP alone: `qwen3.6-35b-code` keeps MTP (and so gets ROCM_ATTN by
   auto-selection, since MTP gates the 3D path shut), `qwen3.6-35b-128k-nomtp` drops MTP and
   carries TRITON_ATTN. **Route that pair by depth only** — TRITON_ATTN itself costs nothing at

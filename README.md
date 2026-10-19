@@ -362,16 +362,57 @@ This is the workload the previous version of this table measured, kept so the
 new figures can be compared against the old. It is **not** the headline: a
 256-token prompt cannot see any of the behaviour above.
 
-| Profile | serial | conc=8 | conc=16 | conc=32 | mean latency @32 |
-|---|---|---|---|---|---|
-| `qwen3.8-27b-think` | 46.0 | 274.0 | 477.0 | **760.1** | 7.67 s |
-| `qwen3.8-27b-code` | 64.9 | 348.8 | 576.5 | **856.5** | 6.89 s |
-| `qwen3.8-flash-next-vllm` | 55.3 | 181.5 | 244.3 | **453.3** | 10.89 s |
-| `qwen3.6-27b-code` | 65.9 | 351.1 | 578.5 | **853.0** | 5.76 s |
-| `qwen3.6-35b-code` | 51.3 | 291.3 | 572.0 | **950.2** | 4.76 s |
-| `gemma4-26b-a4b` | 56.2 | 300.0 | 559.4 | **944.4** | 4.96 s |
+| Profile | serial | conc=8 | conc=16 | conc=32 | prefill @32 | mean latency @32 |
+|---|---|---|---|---|---|---|
+| `gemma4-26b-a4b` | 129.2 | 539.9 | 890.8 | **1442.9** | 727 | 3.32 s |
+| `qwen3.6-35b-128k-nomtp` | 91.8 | 457.0 | 747.4 | **1198.9** | 553 | 4.15 s |
+| `qwen3.6-35b-code` | 109.7 | 302.0 | 584.8 | **1065.7** | 481 | 4.71 s |
+| `qwen3.6-27b-code` | 67.7 | 347.3 | 584.6 | **869.5** | 401 | 5.80 s |
+| `qwen3.8-27b-code` | 66.0 | 350.4 | 569.4 | **842.7** | 326 | 6.98 s |
+| `qwen3.8-27b-think` | 46.3 | 275.1 | 479.8 | **763.1** | 300 | 7.65 s |
+| `qwen3.8-flash-next-vllm` | 55.4 | 154.4 | 244.5 | **451.0** | 218 | 10.58 s |
 
-Zero errors on every cell above. 128 requests per level, `--no-thinking`.
+Zero errors on every cell above. 128 requests per level (8 for the serial
+column), `--no-thinking`, one fresh spawn per profile, all seven re-measured on
+2026-10-19. `prefill @32` is the whole-batch rate -- the cell's prompt tokens
+over its slowest TTFT -- so it shares no denominator with the decode columns and
+is not a per-stream speed.
+
+Two rows are far faster than the previous version of this table showed, and the
+reason is dating rather than measurement. `gemma4-26b-a4b` (2.30x serial, 1.53x
+at conc=32) and `qwen3.6-35b-code` (2.14x serial, 1.12x at conc=32) were last
+measured before `GPU_MAX_HW_QUEUES=1` shipped on those two profiles, so they
+correctly described a configuration the stack no longer runs. They are
+superseded, not wrong. The three carried-over dense rows moved by 0.98-1.03x,
+which is to say not at all, and `qwen3.6-35b-128k-nomtp` appears here for the
+first time.
+
+`qwen3.8-flash-next-vllm` is the one row to read with care, in two ways.
+
+Its conc=16 and conc=32 cells reproduce earlier readings to within 0.5%, but
+conc=8 does not reproduce to better than about 13%: 181.5, then 154.4, 140.1 and
+140.5 -- the last three all at `--requests 128` on one server, in that order --
+so read this cell as a 140-182 band, not as a figure.
+
+Its one-stream cells are intermittently spoiled by a latency tail. Five were
+measured on one server: three clean, at 55.48, 55.38 and 55.37 tok/s with p90
+around 3.0 s and a spread of 0.2%, and two contaminated, at 42.90 (p90 5.72 s)
+and 29.6 (p90 10.21 s). The episodes last minutes and do not trend -- a clean
+cell ran immediately before the 42.90 one and a normal conc=8 cell immediately
+after it -- and `scripts/llmband` classified the server fast throughout. The
+table gives the clean-cell median, which matches the 55.3 measured
+independently on an earlier spawn. **The cause is not established and this is an
+open issue**: on an interactive single-stream profile a multi-second stall is
+user-visible, so it is worth more than a footnote.
+
+No other profile in this table showed the same shape, but that is weak evidence
+on its own: each got a single 8-sample one-stream cell, which is far too short to
+rule out an episode that lasts minutes. What the data does support is that the
+p90/mean latency ratio separates the two states cleanly -- 1.09 to 1.27 across
+all six other profiles, and 1.08 to 1.10 on Flash-Next's clean cells, against
+1.57 and 1.84 on its two contaminated ones. So none of the six looked
+contaminated in the cell that was measured, and that ratio is the cheap check to
+run on any future one-stream baseline.
 
 **Note how the ranking inverts.** `qwen3.8-27b-think` is the *slowest* profile
 here and the *fastest* by a wide margin at depth. A single-number table cannot
@@ -398,9 +439,9 @@ their throughput (differences sit inside session noise).
 | If you are | Use | Why |
 |---|---|---|
 | running agents on deep context (16K+), especially several at once | **`qwen3.8-27b-think`** | scales to 32 streams at 16K and holds up at 130K; the MTP default peaks at ~8 streams at depth and then falls |
-| running many agents on short prompts | `qwen3.8-27b-code` | fastest at `medium-256` and at 4K; MTP wins where prompts are shallow |
+| running many agents on short prompts | `qwen3.8-27b-code` | the fastest of the two dense 27B profiles here, though only by 0.9-3.2% — effectively a tie with `qwen3.6-27b-code`. MTP is what earns it: 43% serial and 10% at conc=32 over `qwen3.8-27b-think`, which drops MTP and switches attention backend. `gemma4-26b-a4b`, `qwen3.6-35b-128k-nomtp` and `qwen3.6-35b-code` all beat it on aggregate throughput at conc=32, with far fewer active parameters per token |
 | serving one or two clients at very long context | `qwen3.8-flash-next-vllm` | per-stream decode is flat (~55 tok/s) from 4K to 250K |
-| after raw short-prompt aggregate | `qwen3.6-35b-code` or `gemma4-26b-a4b` | both clear 940 tok/s at conc=32 |
+| after raw short-prompt aggregate | `gemma4-26b-a4b` or `qwen3.6-35b-128k-nomtp` | 1443 and 1199 tok/s at conc=32, the two fastest cells measured here |
 | doing vision work | `gemma4-26b-q8` / `gemma4-12b-q4` | the GGUF + mmproj profiles |
 
 ### Reproducing any row
@@ -467,6 +508,21 @@ of the run is ramp. The same 2,048 x 32 shape on `qwen3.6-27b-code`
 dilutes harder: run average 642.3 against a saturated median of 1008
 and a peak of 1105, i.e. 1.57x of ramp against only 1.10x of noise.
 Deeper prompts and wider batches push it further the same way.
+
+One consequence worth stating, because a high panel reading is easy to
+mistake for an error: the refreshed `medium-256` table above has the two
+fastest profiles averaging 1443 and 1199 tok/s over the whole run at
+conc=32. A peak reading sits above a run average by both mechanisms
+described here, so four-figure peaks are the normal reading for a wide
+batch on this stack rather than an anomaly.
+
+Do not convert one into the other with the 1.33-1.44x figures above.
+Those came from `depth_bench` runs that launch their streams once, so
+their ramp share is a property of that harness; `concurrent_bench`
+pushes 128 requests through 32 slots and ramps differently. The ratio
+tells you which direction the gap runs, not its size on a different
+harness. Of the three statistics the peak is the least informative, so
+quote the median.
 
 Two caveats worth knowing before quoting a floor:
 

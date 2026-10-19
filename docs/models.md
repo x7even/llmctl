@@ -288,13 +288,39 @@ thin headroom. Do not go to 0.97 on this profile.
 
 | Metric | Result |
 |--------|--------|
-| Decode, serial / conc=8 / conc=16 (tok/s aggregate) | 55.7 / ~150-185 (182 best run) / 216 |
+| Decode, serial / conc=8 / conc=16 / conc=32 (tok/s aggregate) | 55.4 / 140-182 (see below) / 244 / 451 |
 | Decode vs context depth, 1K to 258K | flat, 57 to 55 tok/s |
 | Code tests, `reasoning_effort=medium` | 29-32/32 (two runs of 8 samples x 4 tasks: 29/32 with an explicit flag, 32/32 with the server-side default; sampling noise) |
 | Code tests, template default (xhigh) | 4/32 at a 32K cap, 3/8 at 256K (runaway thinking) |
 
-conc=8 is noisy on this config (149, 157, 165 and 185 were all seen across runs, including
-157 in the same-config 262K A/B), so 182 and the earlier 149 are not distinguishable. The
+conc=8 is the unstable cell on this config. Readings of 149, 157, 165 and 185 were seen across
+earlier runs (including 157 in the same-config 262K A/B), and on 2026-10-19 one server gave
+154.4, then 140.1, then 140.5 in that order, all at `--requests 128`. So the variation is not
+only spawn-to-spawn. Treat this cell as 140-182 and do not read a difference between any two
+values inside that band. conc=16 and conc=32, by contrast, reproduce across spawns to within
+0.5%.
+
+**Open issue: an intermittent single-stream latency tail.** This profile's one-stream cells are
+not reliably reproducible, and the failure is in the latency distribution rather than in the
+rate. Five one-stream cells on one server on 2026-10-19:
+
+| cell | n | decode tok/s | mean lat | p90 lat |
+|---|---|---|---|---|
+| serial | 32 | 55.48 | 2.82 s | 3.03 s |
+| conc=1 | 128 | 55.38 | 2.81 s | 3.09 s |
+| serial | 32 | 55.37 | 2.79 s | 3.06 s |
+| conc=1 | 128 | **42.90** | 3.64 s | **5.72 s** |
+| serial | 8 | **29.60** | 5.54 s | **10.21 s** |
+
+The three clean cells agree to 0.2% and reproduce the 55.3 measured independently on an earlier
+spawn, so 55.4 is the profile's single-stream rate. The other two are the same server minutes
+later or earlier, with a tail that stretches rather than a mode that shifts. The episodes do not
+trend — a clean n=32 cell ran immediately before the 42.90 one, and a normal conc=8 cell
+immediately after it — and `scripts/llmband` classified the server fast throughout, so this is
+not the decode band. **Cause not established.** It matters more than a benchmarking footnote
+suggests: this is the interactive profile, and a request that takes 10 s instead of 2.8 s is
+visible to whoever is waiting for it. Worth a dedicated investigation, with host memory state
+(this profile pins ~48 GiB of host RAM) as one thing to rule in or out. The
 0.4.1 serial/conc=16 numbers come from local runs, not a saved
 baseline; `bench/baselines/qwen3.8-flash-next-vllm-*.json` holds the earlier 55 / 149 / 232. Unlike the dense 27B, Flash-Next does not slow down with context depth, which makes
 the 262K window usable in practice. Medium effort is the server default because xhigh
@@ -338,18 +364,22 @@ Official `Qwen/Qwen3.6-27B-FP8`. MTP (`num_speculative_tokens: 2`), 131,072 toke
 **`--max-num-batched-tokens 16384` is load-bearing.** Without it the MTP drafter OOMs during
 startup profiling on this checkpoint. It is plain memory exhaustion, not fragmentation.
 
-**Benchmark (vLLM 0.26.0, no-thinking, MTP, `medium-256`, 2026-10-19):**
+**Benchmark (vLLM 0.26.0, no-thinking, MTP, `medium-256`, 2026-10-19, `--requests 128`):**
 
 | | conc=1 | conc=8 | conc=16 | conc=32 |
 |--|--------|--------|---------|---------|
-| decode tok/s | 65.9 | 351.1 | 578.5 | **853.0** |
-| p90 latency s | 2.84 | 4.19 | 4.94 | 6.54 |
+| decode tok/s | 67.7 | 347.3 | 584.6 | **869.5** |
+| p90 latency s | 2.94 | 4.17 | 4.99 | 6.72 |
 
-Baseline: `bench/baselines/qwen3.6-27b-code-v0.26.0-peak-nothink-20261019.json`.
+Baseline: `bench/baselines/qwen3.6-27b-code-v0.26.0-peak-nothink-matched-20261019.json`,
+a fresh spawn classified **fast** by `scripts/llmband` before it was benchmarked. The earlier
+`-peak-nothink-20261019.json` reading of the same profile sits within 1-3% of every cell here,
+which is this harness's same-server spread.
 
 **It is not faster than `qwen3.8-27b-code`** — equal at shallow prompts, a few percent behind
-at depth. On the `medium-256` sweep the two are within ~1% at every concurrency: 65.9/351.1/
-578.5/853.0 against 64.9/348.8/576.5/856.5. At depth the 3.8 profile is slightly ahead rather
+at depth. On the `medium-256` sweep the two are indistinguishable — 0.9% to 3.2% apart depending
+on the level (67.7/347.3/584.6/869.5 against 66.0/350.4/569.4/842.7) — and with one
+run per arm that is no basis for calling either one ahead. At depth the 3.8 profile is slightly ahead rather
 than equal — the prewarmed decode rows, which are the comparable ones, read 168.0 against 178.8
 tok/s at 16,384 x 8 (-6%) and 37.0 against 40.6 at 65,536 x 4 (-9%), with the cold rows 2-3%
 apart. Nothing in that spread is a reason to pick one over the other; the 2026-10-05 comparison
@@ -750,9 +780,15 @@ against a baseline four vLLM versions back, not a matched 0.24.0→0.26.0 delta,
 isn't read as a regression from this bump specifically.
 
 **Use for:** High-concurrency agent workloads. vLLM's PagedAttention and MoE architecture
-(4B active params per token) combine to give outstanding batching efficiency — **528 tok/s
-at conc=16** on medium-256 prompts, which exceeds the pre-MTP `qwen3.6-35b-code` baseline
-(481 tok/s; a fresh MTP-enabled baseline for 35b-code is pending).
+(4B active params per token) combine to give outstanding batching efficiency — on the
+2026-10-19 matched sweep this is **the fastest profile on the stack at every concurrency
+level**: 891 tok/s at conc=16 and 1443 at conc=32 on medium-256 prompts.
+
+The 528 tok/s figure this section used to quote was measured before
+`GPU_MAX_HW_QUEUES=1` shipped on this profile, and gemma4 is the one profile where a slow
+band draw costs fleet throughput rather than just single-stream latency (it keeps 1.71× of
+the flag's gain all the way to conc=8). The dated 2026-06-13 sweep below is kept as the
+historical record, not as a current figure.
 Use this profile when many parallel requests are hitting Gemma 4 simultaneously.
 
 **First boot:** vLLM triggers Inductor/Triton compile on first start (~3–5 min with warm
@@ -838,6 +874,12 @@ Three of four Gemma 4 profiles have benchmark data. Medium-256 prompt, decode to
 | `gemma4-12b-q4` | llama-server | Q4_K_M GGUF | 13 GB | 36.1 | 108.9 | 94.8 |
 | — | — | — | — | — | — | — |
 | `qwen3.6-35b-code` (pre-MTP baseline, no-think) | vLLM | FP8 | 35 GB | 43 | 261 | 481 |
+
+**Superseded for the two vLLM rows.** Every figure in this table predates
+`GPU_MAX_HW_QUEUES=1`. On the 2026-10-19 matched sweep `gemma4-26b-a4b` reads
+129.2 / 539.9 / 890.8 at conc=1/8/16 and `qwen3.6-35b-code` reads 109.7 / 302.0 / 584.8. The
+llama-server rows are unaffected by that flag and still stand. The table is left as measured
+so the pre-flag record survives.
 | `qwen3.6-35b-fast` (no-think, no-MTP) | vLLM | FP8 | 35 GB | 69 | 222 | — |
 | `qwen3.6-35b-q4ks` | llama-server | Q4_K_S | 20 GB | ~80 | ~175 | — |
 
