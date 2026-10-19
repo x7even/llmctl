@@ -995,8 +995,8 @@ func (a *app) renderInference() string {
 }
 
 func (a *app) renderGPU() string {
-	if !a.data.ROCMAvail {
-		return stDim.Render(" rocm-smi unavailable")
+	if !a.data.GPUAvail {
+		return stDim.Render(" amd-smi/rocm-smi unavailable")
 	}
 	if len(a.data.GPUs) == 0 {
 		return stDim.Render(" No GPU data")

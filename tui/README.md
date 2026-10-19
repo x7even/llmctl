@@ -123,7 +123,7 @@ already be running (`llmctl up`).
 | `a` | Toggle show-all (see "Hardware filtering" below) |
 
 **Hardware filtering.** At startup and on `r`, llmpanel detects the GPU count (sysfs VRAM
-size, `rocm-smi` as fallback, or `--gpu-count` / `LLMSTACK_GPU_COUNT`) and host RAM, and checks
+size, `amd-smi` then `rocm-smi` as fallback, or `--gpu-count` / `LLMSTACK_GPU_COUNT`) and host RAM, and checks
 every profile's `metadata.requires` (schema: `config/CLAUDE.md`) with the same rules as
 `llmctl` and `scripts/configure`.
 
@@ -196,8 +196,9 @@ inference fields show `—`.
 
 ### GPU
 
-Polls `rocm-smi --showmeminfo vram --showuse --showtemp` in a background
-goroutine on every tick to avoid blocking the UI.
+Polls `amd-smi metric --mem-usage --usage --temperature --json` (falling back to
+`rocm-smi --showmeminfo vram --showuse --showtemp`, which ROCm 10 no longer ships) in a
+background goroutine on every tick to avoid blocking the UI.
 
 Shows per-GPU:
 - Index
@@ -206,7 +207,7 @@ Shows per-GPU:
 - GPU compute utilisation % (colour-coded)
 - Junction temperature in °C (colour-coded)
 
-Shows `rocm-smi unavailable` if the binary is not found.
+Shows `amd-smi/rocm-smi unavailable` if neither binary is found.
 
 ### Models
 
@@ -247,10 +248,10 @@ read history; `G` snaps back to the bottom.
 | Active model | `GET /running` | 2 s |
 | Profile list | `GET /v1/models` | 2 s |
 | vLLM metrics | `GET http://127.0.0.1:<port>/metrics` | 1 s |
-| GPU stats | `rocm-smi` subprocess | 3 s |
+| GPU stats | `amd-smi` (else `rocm-smi`) subprocess | 3 s |
 | Log file | `os.ReadFile` | — |
 
-All fetches run concurrently with the rocm-smi call. A single slow source does
+All fetches run concurrently with the GPU-stats call. A single slow source does
 not block the others.
 
 ---

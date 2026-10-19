@@ -45,7 +45,7 @@ type HW struct {
 	GPUCount       int       // discrete GPUs with >= 8 GiB VRAM; UnknownGPUs if undetected
 	VRAMGiB        []float64 // per counted GPU, when known (empty for override / rocm-smi --listdevices)
 	HostRAMGiB     float64   // /proc/meminfo MemTotal in GiB; <= 0 = unknown
-	Source         string    // "override" | "sysfs" | "rocm-smi" | "none"
+	Source         string    // "override" | "sysfs" | "amd-smi" | "rocm-smi" | "none"
 	IgnoredDevices int       // devices under 8 GiB VRAM that were not counted (iGPU)
 }
 
@@ -75,7 +75,7 @@ func DetectHW(override int) HW { return HWProbe{}.Detect(override) }
 //   - override >= 0: GPUCount = override, Source "override", host RAM still read.
 //   - else count discrete GPUs under DRMRoot/card<N>, de-duplicated by the
 //     resolved `device` path, whose mem_info_vram_total is >= 8 GiB.
-//   - rocm-smi is consulted only when no sysfs device exposes VRAM info at all.
+//   - amd-smi (then rocm-smi) is consulted only when no sysfs device exposes VRAM info at all.
 //   - nothing found: GPUCount UnknownGPUs, Source "none".
 func (p HWProbe) Detect(override int) HW {
 	meminfoPath := p.MeminfoPath
@@ -104,8 +104,7 @@ func (p HWProbe) Detect(override int) HW {
 		if run == nil {
 			run = runCmd
 		}
-		sizes, found = rocmSMIVRAMSizes(run)
-		source = "rocm-smi"
+		sizes, found, source = smiVRAMSizes(run)
 	}
 	if !found {
 		return hw
@@ -169,50 +168,34 @@ func runCmd(argv []string) (string, error) {
 	return string(out), err
 }
 
-var (
-	reRocmVRAM = regexp.MustCompile(`GPU\[(\d+)\][^\n]*?VRAM Total Memory \(B\):\s*(\d+)`)
-	reRocmGPU  = regexp.MustCompile(`(?m)^GPU\[(\d+)\]`)
-)
+var reRocmGPU = regexp.MustCompile(`(?m)^GPU\[(\d+)\]`)
 
-// rocmSMIVRAMSizes prefers `rocm-smi --showmeminfo vram` (sizes let us drop
-// iGPUs) and falls back to `--listdevices` (sizes unknown, reported as -1).
-func rocmSMIVRAMSizes(run func([]string) (string, error)) (sizes []int64, found bool) {
-	out, err := run([]string{"rocm-smi", "--showmeminfo", "vram"})
-	if err != nil {
-		out = ""
-	}
-	byIdx := map[int]int64{}
-	for _, m := range reRocmVRAM.FindAllStringSubmatch(out, -1) {
-		idx, _ := strconv.Atoi(m[1])
-		v, _ := strconv.ParseInt(m[2], 10, 64)
-		byIdx[idx] = v
-	}
-	if len(byIdx) > 0 {
-		keys := make([]int, 0, len(byIdx))
-		for k := range byIdx {
-			keys = append(keys, k)
+// smiVRAMSizes asks readGPUs (amd-smi first, then rocm-smi) for per-GPU VRAM, which lets detection drop iGPUs.
+// When neither reports sizes it falls back to `rocm-smi --listdevices` (sizes unknown, reported as -1).
+// source is the tool that answered.
+func smiVRAMSizes(run func([]string) (string, error)) (sizes []int64, found bool, source string) {
+	gpus, tool := readGPUs(run)
+	if len(gpus) > 0 {
+		for _, g := range gpus {
+			sizes = append(sizes, g.VRAMTotal)
 		}
-		sort.Ints(keys)
-		for _, k := range keys {
-			sizes = append(sizes, byIdx[k])
-		}
-		return sizes, true
+		return sizes, true, tool
 	}
-	out, err = run([]string{"rocm-smi", "--listdevices"})
+	out, err := run([]string{"rocm-smi", "--listdevices"})
 	if err != nil {
-		return nil, false
+		return nil, false, "none"
 	}
 	idx := map[string]bool{}
 	for _, m := range reRocmGPU.FindAllStringSubmatch(out, -1) {
 		idx[m[1]] = true
 	}
 	if len(idx) == 0 {
-		return nil, false
+		return nil, false, "none"
 	}
 	for range idx {
 		sizes = append(sizes, -1)
 	}
-	return sizes, true
+	return sizes, true, "rocm-smi"
 }
 
 var reMemTotal = regexp.MustCompile(`(?m)^MemTotal:\s+(\d+)\s*kB`)

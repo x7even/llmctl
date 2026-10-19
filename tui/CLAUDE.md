@@ -33,7 +33,7 @@ committed (`git ls-files bin` lists only `llmctl` and `llmproxy`).
 ```
 main.go      Entry point, CLI flags, initial config load
 app.go       Bubbletea model (Init/Update/View), panel routing, key bindings
-data.go      Polling logic: /v1/models, /metrics, rocm-smi, YAML config
+data.go      Polling logic: /v1/models, /metrics, GPU stats (gpustat.go), YAML config
 config.go    models.yaml parser, profile structs (incl. metadata.requires)
 hw.go        Hardware detection + Supports(); port of scripts/llmhw.py (shared fixtures)
 hwpanel.go   Models-panel hardware logic: verdicts, filtering, reasons, swap guard
@@ -48,7 +48,7 @@ Ticker (poll interval)
 data.go: fetchAll()
     ├── GET /v1/models       → loaded model list
     ├── GET /metrics         → vLLM Prometheus metrics (tok/s, TTFT, KV%)
-    ├── exec rocm-smi        → per-GPU VRAM and temp
+    ├── exec amd-smi (else rocm-smi) → per-GPU VRAM and temp
     └── read models.yaml     → profile list for Models panel
     │
     ▼
@@ -58,7 +58,7 @@ app.go: Update() receives DataMsg
 View() renders 5 panels
 
 Startup and `r` (not the ticker):
-    hw.go: DetectHW(override)   → app.hw          (sysfs, rocm-smi fallback, --gpu-count)
+    hw.go: DetectHW(override)   → app.hw          (sysfs, amd-smi/rocm-smi fallback, --gpu-count)
     hw.go: Supports(requires,hw) → app.verdicts[profile]   (one per profile)
     app.profiles() = models.yaml order filtered by verdicts (all of them when showAll)
 ```
@@ -105,7 +105,7 @@ Each panel renders independently; fullscreen (`f`) expands the focused panel.
 | # | Panel | Primary data source |
 |---|-------|-------------------|
 | 1 | Inference | vLLM `/metrics` endpoint |
-| 2 | GPU | `rocm-smi --showmeminfo vram` |
+| 2 | GPU | `amd-smi metric --json` (else `rocm-smi --showmeminfo vram`) |
 | 3 | Models | models.yaml profiles + `/v1/models` |
 | 4 | Config | models.yaml YAML for selected profile |
 | 5 | Logs | tail of `~/.local/share/llmstack/llama-swap.log` |
@@ -121,14 +121,14 @@ variables for runtime state — only for constants and config defaults.
 
 ### Error display
 
-Surface errors in the affected panel rather than crashing. If `rocm-smi` is
-unavailable, GPU panel shows "rocm-smi unavailable" gracefully. If `/metrics`
+Surface errors in the affected panel rather than crashing. If both `amd-smi` and
+`rocm-smi` are unavailable, GPU panel shows "amd-smi/rocm-smi unavailable" gracefully. If `/metrics`
 returns 404 (llama-server doesn't expose Prometheus), show "--" for metrics.
 
 ### Poll interval
 
 Default 1 s. User-cyclable with `p` key: 500ms → 1s → 2s → 5s → 15s.
-`rocm-smi` is the most expensive call — it's a subprocess exec. Do not poll
+The GPU-stats call (`amd-smi`/`rocm-smi`) is the most expensive call — it's a subprocess exec. Do not poll
 faster than 500ms.
 
 ### Config hot-reload
