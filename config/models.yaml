@@ -387,6 +387,7 @@ models:
         -v __LLMSTACK_DIR__/.vllm-cache:/root/.cache/vllm
         -v __LLMSTACK_DIR__/.triton-cache:/root/.triton/cache
         -e HSA_ENABLE_SDMA=0
+        -e GPU_MAX_HW_QUEUES=1
         -e TORCH_BLAS_PREFER_HIPBLASLT=1
         --entrypoint=""
         docker.io/vllm/vllm-openai-rocm:v0.26.0
@@ -431,6 +432,25 @@ models:
     concurrencyLimit: 64
     aliases:
       - 35b-nomtp
+    # Two flags here are load-bearing, both measured on this profile 2026-10-19,
+    # fast-band against fast-band (docs/rdna4-long-context.md):
+    #
+    #   -e GPU_MAX_HW_QUEUES=1   2.87x serial / 2.07x conc=8 on medium-256.
+    #   --attention-backend TRITON_ATTN   no MTP here, so the 3D split-KV path is
+    #     open and this is the only kernel on gfx1201 that parallelises over
+    #     context length. Aggregate tok/s vs the auto-selected ROCM_ATTN:
+    #       2,048x1  59.2 -> 97.1     16,384x1   18.4 -> 91.5
+    #       16,384x8 131.9 -> 439.8   65,536x4   20.7 -> 231.1  (prewarmed)
+    #       129,984x1 2.2 -> 62.4  = 28x, and decay across the window 26.9x -> 1.56x
+    #     Retrieval gated: needle_check 3 depths x 5 positions, 15/15.
+    #
+    # The cost is churn, not depth: with arrivals mid-run (32 requests through 8
+    # slots) TRITON is 19% SLOWER at medium-256 conc=8, because a newcomer's
+    # prefill chunk in the batch drops every co-batched decoder to the 2D grid.
+    # Deep contexts are where it pays. Short bursty traffic belongs on 35b-code.
+    #
+    # --max-num-seqs must stay at 32: above the nearest --cudagraph-capture-sizes
+    # entry the 3D path closes silently, with nothing in the log.
     # llama-swap forwards the client's model string upstream; vLLM only
     # answers to --served-model-name, so without this every alias 404s.
     useModelName: qwen3.6-35b-128k-nomtp
@@ -449,6 +469,7 @@ models:
         -v __LLMSTACK_DIR__/.vllm-cache:/root/.cache/vllm
         -v __LLMSTACK_DIR__/.triton-cache:/root/.triton/cache
         -e HSA_ENABLE_SDMA=0
+        -e GPU_MAX_HW_QUEUES=1
         -e TORCH_BLAS_PREFER_HIPBLASLT=1
         --entrypoint=""
         docker.io/vllm/vllm-openai-rocm:v0.26.0
@@ -456,6 +477,7 @@ models:
         --host 127.0.0.1
         --port ${PORT}
         --served-model-name qwen3.6-35b-128k-nomtp
+        --attention-backend TRITON_ATTN
         --dtype auto
         --tensor-parallel-size 4
         --enable-expert-parallel
@@ -511,6 +533,7 @@ models:
         -v __LLMSTACK_DIR__/.vllm-cache:/root/.cache/vllm
         -v __LLMSTACK_DIR__/.triton-cache:/root/.triton/cache
         -e HSA_ENABLE_SDMA=0
+        -e GPU_MAX_HW_QUEUES=1
         -e TORCH_BLAS_PREFER_HIPBLASLT=1
         --entrypoint=""
         docker.io/vllm/vllm-openai-rocm:v0.26.0
@@ -812,6 +835,7 @@ models:
         -v __LLMSTACK_DIR__/.vllm-cache:/root/.cache/vllm
         -v __LLMSTACK_DIR__/.triton-cache:/root/.triton/cache
         -e HSA_ENABLE_SDMA=0
+        -e GPU_MAX_HW_QUEUES=1
         -e TORCH_BLAS_PREFER_HIPBLASLT=1
         --entrypoint=""
         docker.io/vllm/vllm-openai-rocm:v0.26.0

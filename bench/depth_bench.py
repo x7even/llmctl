@@ -382,11 +382,25 @@ class MetricsSampler:
 
 def run_cell(url, model, depth_words, conc, gen, timeout, no_thinking, headers,
              shared_prefix, seed_base, prewarm=False,
-             metrics_url=None, metrics_interval=1.0):
-    """Run `conc` concurrent requests at one depth. Returns the aggregate row."""
+             metrics_url=None, metrics_interval=1.0, requests=None):
+    """Run requests at one depth through `conc` slots. Returns the aggregate row.
+
+    `requests` defaults to `conc`, i.e. every stream starts at once and nothing
+    arrives later -- the no-churn case. Setting it higher pushes that many
+    requests through `conc` slots, so a new request enters whenever one
+    finishes. That distinction is not cosmetic on this hardware: TRITON_ATTN's
+    3D split-KV path is chosen per *batch*, and a step carrying a newcomer's
+    prefill chunk drops every co-batched decoder to the 2D grid
+    (docs/rdna4-long-context.md, gate 4). A no-churn cell therefore measures
+    that kernel's best case. Measured on the 35B MoE at medium-256, where
+    arrivals are constant, TRITON was 19% SLOWER at conc=8 than ROCM_ATTN while
+    the no-churn depth grid had it 1.4-28x faster -- so quote the regime, not
+    just the depth and width.
+    """
+    n_req = conc if requests is None else max(requests, conc)
     msgs = [
         build_messages(depth_words, seed=(seed_base if shared_prefix else seed_base + i))
-        for i in range(conc)
+        for i in range(n_req)
     ]
 
     # Without this, every stream in a deep cell pays a full unique prefill, and
@@ -422,7 +436,8 @@ def run_cell(url, model, depth_words, conc, gen, timeout, no_thinking, headers,
     errors = [r["error"] for r in results if "error" in r]
     ok = [r for r in results if "error" not in r]
     if not ok:
-        row = {"errors": errors, "ok": 0, "requested": conc}
+        row = {"errors": errors, "ok": 0, "requested": n_req,
+               "slots": conc}
         if sampler:
             # A cell that completed nothing is exactly when the live
             # series matters most: it distinguishes a server that was
@@ -441,7 +456,8 @@ def run_cell(url, model, depth_words, conc, gen, timeout, no_thinking, headers,
 
     row = {
         "ok": len(ok),
-        "requested": conc,
+        "requested": n_req,
+        "slots": conc,
         "errors": errors,
         "prompt_tokens": int(statistics.median(r["prompt_tokens"] for r in ok)),
         "completion_tokens": int(statistics.median(r["completion_tokens"] for r in ok)),
@@ -497,6 +513,15 @@ def main(argv=None):
                     help="target prompt_tokens per request, comma separated")
     ap.add_argument("--concurrency", default="1",
                     help="comma separated concurrency levels")
+    ap.add_argument("--requests", type=int, default=None,
+                    help="total requests per cell, pushed through --concurrency "
+                         "slots, so a new one arrives whenever one finishes. "
+                         "Default: equal to the concurrency level, i.e. all "
+                         "streams start together and nothing arrives later. Raise "
+                         "it to measure the churn regime a real agent fleet runs "
+                         "in -- arrivals inject prefill chunks into other "
+                         "streams' decode steps, which closes TRITON_ATTN's 3D "
+                         "split-KV path for that step (see run_cell)")
     ap.add_argument("--prewarm", action="store_true",
                     help="populate the prefix cache serially before each cell, so it "
                          "measures steady-state decode instead of prefill contention")
@@ -543,6 +568,9 @@ def main(argv=None):
     print("url        : %s" % args.url)
     print("depths     : %s" % depths)
     print("concurrency: %s" % concs)
+    print("requests   : %s" % ("%d per cell (CHURN: arrivals mid-run)"
+                               % args.requests if args.requests
+                               else "= concurrency (no churn)"))
     print("gen        : %d tokens/request (ignore_eos)" % args.gen)
     print("prompts    : %s%s" % ("SHARED (prefix-cache regime)" if args.shared_prefix
                                  else "unique per request",
@@ -597,7 +625,8 @@ def main(argv=None):
                            seed_for(args.seed, args.run_nonce, depth, conc),
                            prewarm=args.prewarm,
                            metrics_url=args.metrics_url,
-                           metrics_interval=args.metrics_interval)
+                           metrics_interval=args.metrics_interval,
+                           requests=args.requests)
             row["depth_requested"] = depth
             row["concurrency"] = conc
             rows.append(row)
@@ -629,6 +658,7 @@ def main(argv=None):
             # be compared against anything.
             "prewarm": args.prewarm,
             "shared_prefix": args.shared_prefix,
+            "requests_per_cell": args.requests,
             # Recorded so a saved file can be checked for freshness later.
             # Prompts are a pure function of these two, so two runs sharing
             # them re-send text the engine may still have cached: the second
