@@ -41,15 +41,17 @@ scripts/configure
 # 4. Start the router
 llmctl up
 
-# 5. Load a model and wait until ready
+# 5. Load a model cmd and wait until ready OR from the TUI using llmpanel
 llmctl swap qwen3.8-27b-code
+# OR
+llmpanel #select a model
 
 # 6. Make a request
 curl http://localhost:8080/v1/chat/completions \
   -H "Content-Type: application/json" \
   -d '{"model":"qwen3.8-27b-code","messages":[{"role":"user","content":"Write a Python quicksort"}]}'
 
-# 7. Open the TUI control panel (optional)
+# 7. Open the TUI control panel (optional) to monitor / observe utilization & throughput
 llmpanel
 ```
 
@@ -75,7 +77,7 @@ llmpanel
 
 ---
 
-## Model profiles
+## Model profiles (ready made)
 
 | Profile | Backend | VRAM | Context | Best for |
 |---------|---------|------|---------|---------|
@@ -94,7 +96,8 @@ llmpanel
 | `gemma4-12b-q4` | llama-server Vulkan | ~13 GB | 32K | Lightest vision option; co-loadable with any profile |
 
 Older Qwen profiles (3.6-35B 32K/64K/512K/AWQ/GGUF, Qwen3-Coder-30B,
-Qwen3.5-122B) were removed from the shipped config; their benchmark data is kept in
+Note You can customize & add your own model profiles these are just the ones the stack quick ships. Most profiles are tuned for concurrent (agentic) workloads.
+
 `docs/models.md` and the profiles can be restored from git history.
 
 **Aliases** (short names that route to the same profile):
@@ -598,6 +601,8 @@ llmctl pick
 
 `llmpanel` is a [roctop-style](https://github.com/x7even/roctop) TUI that combines monitoring and control in one
 terminal window.
+<img width="1457" height="707" alt="image" src="https://github.com/user-attachments/assets/57efccd0-94f4-498e-8d8c-af23cf7c2fdf" />
+
 
 ```bash
 llmpanel [--url URL] [--interval DURATION] [--config PATH] [--log PATH] [--gpu-count N]
