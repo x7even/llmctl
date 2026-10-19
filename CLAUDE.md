@@ -263,7 +263,7 @@ See `tui/CLAUDE.md` for architecture and coding conventions.
 | `qwen3.8-27b-fast` | vLLM + MTP | ~31 GB + KV | 27B (dense) | Thinking OFF by default |
 | `qwen3.8-flash-next` | llama-server (Vulkan) | ~81 GB | 6B (MoE, 125B) | UD-IQ4_XS GGUF, custom llama.cpp fork; single-user |
 | `qwen3.8-flash-next-vllm` | vLLM TP4+EP (nightly image) | ~19 GB/GPU + ~48 GB pinned PLE in host RAM (~96 GB host RAM recommended) | 6B (MoE, 125B) | W4A16 INT4 + FP8 PLE; 262K ctx, **medium effort by default** (xhigh runs away); 55.3 tok/s serial, ~150-185 @ conc=8 (182 best run), 244 @ conc=16, 453 @ conc=32, flat ~55 out to 258K; needs `--ulimit memlock=-1:-1` and all 4 GPUs; exclusive VRAM |
-| `qwen3.6-27b-code` ✓ | vLLM + MTP | ~31 GB + KV | 27B (dense) | Previous-gen dense 27B, restored 2026-10-19; 131K ctx; within ~1% of `qwen3.8-27b-code` at every measured cell |
+| `qwen3.6-27b-code` ✓ | vLLM + MTP | ~31 GB + KV | 27B (dense) | Previous-gen dense 27B, restored 2026-10-19; 131K ctx; matches `qwen3.8-27b-code` at `medium-256`, 6-9% behind it at depth |
 | `qwen3.6-35b-code` | vLLM + MTP | ~35 GB | 3B (MoE) | Previous gen, MTP + thinking |
 | `qwen3.6-35b-128k-nomtp` | vLLM | ~35 GB | 3B (MoE) | Previous gen, thinking, no MTP |
 | `qwen3.6-35b-fast` | vLLM | ~35 GB | 3B (MoE) | Previous gen, thinking OFF |
@@ -286,8 +286,8 @@ Use aliases for common swaps: `llmctl swap qwen3.8` (→ 27b-code), `llmctl swap
 ## Benchmark baselines summary
 
 `medium-256` prompt, decode tok/s, `--no-thinking`, 4× R9700, MTP where noted. **Every row below
-is one run of the same sweep, all six profiles measured on 2026-10-19 within three hours** on the
-shipped image pins — so the columns are comparable with each other, which the previous table's
+is one run of the same sweep, all six profiles measured on 2026-10-19 inside the same 3h10m
+window** on the shipped image pins — so the columns are comparable with each other, which the previous table's
 mix of 0.22.1 and 0.26.0 figures from four different months was not.
 
 | Profile | serial | conc=8 | conc=16 | conc=32 |
@@ -301,10 +301,11 @@ mix of 0.22.1 and 0.26.0 figures from four different months was not.
 
 Baselines: `bench/baselines/<profile>-peak-nothink-2026101{8,9}.json`. Three things to read out
 of it: **conc=32 is worth having** — every profile is still gaining there, the MoE profiles by
-~1.7x over conc=16 and Flash-Next by 1.9x; **the two dense 27B MTP profiles are interchangeable
-on throughput**, ~1% apart at all four levels, so choose between them on output quality; and
-**`27b-think` pays 11-21% at `medium-256`** (21% at conc=8, 11% at conc=32) for the
-long-context behaviour it buys, which is the trade `docs/rdna4-long-context.md` describes.
+~1.7x over conc=16 and Flash-Next by 1.9x; **the two dense 27B MTP profiles are within ~1% of
+each other at all four levels on this prompt** (at depth `qwen3.8-27b-code` is 6-9% ahead on
+the prewarmed rows), so at short prompts choose between them on output quality; and
+**`27b-think` pays 11-29% at `medium-256`** — 29% serial, 21% at conc=8, 11% at conc=32 — for
+the long-context behaviour it buys, which is the trade `docs/rdna4-long-context.md` describes.
 
 A 256-token prompt measures almost nothing about serving real work. For prefill and decode
 together, at depth and with distributions rather than single figures, see
@@ -484,9 +485,10 @@ Operational consequences:
   an invalid name **silently falls back to auto-selection**. Always confirm with
   `podman logs <container> | grep ATTN` — the pass line is
   `Using TRITON_ATTN backend (selected via --attention-backend)`.
-- **Do not flip `qwen3.8-27b-code`.** At 256-token prompts MTP wins 17-30% (conc=8: 348.8 vs
-  274.0 on the same-day 2026-10-19 pair, 1.27x; 41% serial, 64.9 vs 46.0), so the default keeps
-  MTP and long-context work goes to `27b-think` explicitly.
+- **Do not flip `qwen3.8-27b-code`.** At 256-token prompts MTP wins at every concurrency, by a
+  margin that shrinks as the batch widens: 41% serial, 27% at conc=8, 21% at 16, 13% at 32
+  (64.9/348.8/576.5/856.5 against 46.0/274.0/477.0/760.1, measured as a same-day pair on
+  2026-10-19). So the default keeps MTP and long-context work goes to `27b-think` explicitly.
 - **Benchmark depth, and check retrieval.** `bench/depth_bench.py` sweeps depth x concurrency
   (`--prewarm` for steady-state decode); `concurrent_bench.py` at `medium-256` cannot see any
   of this. A split-KV kernel that mis-combines its softmax segments benchmarks perfectly while
