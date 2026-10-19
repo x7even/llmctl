@@ -6,7 +6,7 @@ import (
 	"testing"
 )
 
-// sample mirrors a real Navi 48 (R9700) dump from amdgpu 6.16.6: sections separated by NUL padding,
+// sample mirrors a real Navi 48 (R9700) dump from amdgpu 6.16.x: sections separated by NUL padding,
 // mixed Mhz/MHz casing, and the voltage range line in lowercase "mv".
 const sample = "OD_SCLK_OFFSET:\n0Mhz\n\x00\x00\x00\x00OD_MCLK:\n0: 97Mhz\n1: 1259MHz\n\x00\x00\x00\x00" +
 	"OD_VDDGFX_OFFSET:\n-30mV\n\x00\x00\x00\x00\x00" +

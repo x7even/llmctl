@@ -23,15 +23,13 @@ import (
 )
 
 const (
+	// confPath holds everything the boot and resume units apply: CAP_W, and the optional
+	// UV_MV / SCLK_MHZ / MCLK_MHZ tuning. None of it has a built-in default -- with nothing
+	// configured gpucap changes no power, voltage or clock setting at all. `sudo gpucap set
+	// <watts>` writes CAP_W; `sudo gpucap undervolt|sclk|mclk <value>` writes the others.
 	confPath = "/etc/gpucap.conf"
 
-	// defaultCap is the cap in watts used when /etc/gpucap.conf does not exist or has no
-	// CAP_W line. 230 is just the value for the machine this was written for.
-	// To make a different cap persist across reboots, either run `sudo gpucap set <watts>`
-	// (writes CAP_W to /etc/gpucap.conf, which is what the boot/resume units read), or change
-	// this value (and the matching CAP_W in install.sh) and rebuild.
-	defaultCap = 230
-
+	// The three limits below only ever *refuse* a value; none of them applies anything.
 	// defaultUVLimit is the deepest undervolt (mV, magnitude) gpucap accepts unless UV_LIMIT_MV in
 	// /etc/gpucap.conf raises it. The driver range is usually wider (about -200 mV) but offsets that
 	// deep are rarely stable; typical stable values are -30 to -80 mV and this varies per chip.
@@ -90,9 +88,10 @@ func waitCards(timeout time.Duration) []card {
 }
 
 type conf struct {
-	capW    int // power cap in watts
-	uvMV    int // GFX voltage offset in mV; 0 = stock, negative = undervolt
-	uvLimit int // deepest undervolt allowed, mV magnitude
+	capW    int  // power cap in watts
+	capSet  bool // true only if confPath carried a usable CAP_W; false means no cap is configured
+	uvMV    int  // GFX voltage offset in mV; 0 = stock, negative = undervolt
+	uvLimit int  // deepest undervolt allowed, mV magnitude
 
 	sclkMHz   int // core clock offset in MHz; 0 = stock
 	mclkMHz   int // memory max clock in MHz; 0 = stock
@@ -100,12 +99,20 @@ type conf struct {
 	mclkLimit int // highest memory max clock allowed, MHz
 }
 
+// loadConf reads confPath. An unreadable, empty or malformed file is not an error and not a
+// reason to guess: it yields a conf that asks for nothing, so apply changes nothing.
 func loadConf() conf {
-	c := conf{capW: defaultCap, uvLimit: defaultUVLimit, sclkLimit: defaultSclkLimit, mclkLimit: defaultMclkLimit}
 	b, err := os.ReadFile(confPath)
 	if err != nil {
-		return c
+		return parseConf(nil)
 	}
+	return parseConf(b)
+}
+
+// parseConf is loadConf without the file, so the no-config and malformed-config behaviour can be
+// tested. Unparseable lines are skipped rather than defaulted.
+func parseConf(b []byte) conf {
+	c := conf{uvLimit: defaultUVLimit, sclkLimit: defaultSclkLimit, mclkLimit: defaultMclkLimit}
 	for _, l := range strings.Split(string(b), "\n") {
 		k, v, ok := strings.Cut(strings.TrimSpace(l), "=")
 		if !ok {
@@ -117,7 +124,11 @@ func loadConf() conf {
 		}
 		switch strings.TrimSpace(k) {
 		case "CAP_W":
-			c.capW = n
+			// a cap counts as configured only if it is a usable positive number; 0, a negative
+			// or a typo leaves capSet false, and then nothing is applied
+			if n > 0 {
+				c.capW, c.capSet = n, true
+			}
 		case "UV_MV":
 			c.uvMV = n
 		case "UV_LIMIT_MV":
@@ -142,10 +153,45 @@ func loadConf() conf {
 }
 
 func saveConf(c conf) error {
-	return os.WriteFile(confPath, []byte(fmt.Sprintf(
-		"CAP_W=%d\nUV_MV=%d\nSCLK_MHZ=%d\nMCLK_MHZ=%d\nUV_LIMIT_MV=%d\nSCLK_LIMIT_MHZ=%d\nMCLK_LIMIT_MHZ=%d\n",
-		c.capW, c.uvMV, c.sclkMHz, c.mclkMHz, c.uvLimit, c.sclkLimit, c.mclkLimit)), 0o644)
+	return os.WriteFile(confPath, []byte(confText(c)), 0o644)
 }
+
+// confText renders a conf back to confPath's format. CAP_W is written only when a cap is actually
+// configured: writing CAP_W=0 here would turn `sudo gpucap undervolt -50` on a host that has no
+// cap into a host with a bogus cap line, and would overwrite an operator's unparseable one.
+func confText(c conf) string {
+	var b strings.Builder
+	if c.capSet {
+		fmt.Fprintf(&b, "CAP_W=%d\n", c.capW)
+	}
+	fmt.Fprintf(&b, "UV_MV=%d\nSCLK_MHZ=%d\nMCLK_MHZ=%d\nUV_LIMIT_MV=%d\nSCLK_LIMIT_MHZ=%d\nMCLK_LIMIT_MHZ=%d\n",
+		c.uvMV, c.sclkMHz, c.mclkMHz, c.uvLimit, c.sclkLimit, c.mclkLimit)
+	return b.String()
+}
+
+// odRequested reports whether the config asks for any voltage or clock tuning. Zero means "not
+// requested", so a host that never asked for tuning gets no pp_od_clk_voltage write at boot --
+// which matters, because such a write resets offsets some other tool may have set.
+func (c conf) odRequested() bool {
+	return c.uvMV != 0 || c.sclkMHz != 0 || c.mclkMHz != 0
+}
+
+// applyPlan is what `gpucap apply` will do with a given config: set a power cap, write voltage
+// and clock settings, both, or -- when nothing is configured -- neither.
+type applyPlan struct {
+	cap bool
+	od  bool
+}
+
+// planApply decides that from the config alone, touching no hardware, so it can be tested.
+// override is true when a watts argument was given on the command line.
+func planApply(c conf, override bool) applyPlan {
+	return applyPlan{cap: c.capSet || override, od: c.odRequested()}
+}
+
+// nothing reports that there is nothing configured to do, in which case apply must change no
+// setting at all and still exit 0, so the oneshot units do not fail on a host that wants none.
+func (p applyPlan) nothing() bool { return !p.cap && !p.od }
 
 // odEnabled reports whether amdgpu's OverDrive feature bit is set in the running kernel.
 func odEnabled() bool {
@@ -305,10 +351,14 @@ func mclkStr(mhz int) string {
 
 func status(cards []card, view string) {
 	cf := loadConf()
-	fmt.Printf("configured: cap %dW, voltage %dmV, core %+dMHz, memory max %s (%s)\n", cf.capW, cf.uvMV, cf.sclkMHz, mclkStr(cf.mclkMHz), confPath)
+	capStr := "none"
+	if cf.capSet {
+		capStr = fmt.Sprintf("%dW", cf.capW)
+	}
+	fmt.Printf("configured: cap %s, voltage %dmV, core %+dMHz, memory max %s (%s)\n", capStr, cf.uvMV, cf.sclkMHz, mclkStr(cf.mclkMHz), confPath)
 	fmt.Printf("limits:     voltage -%dmV, core +%dMHz, memory max %dMHz\n", cf.uvLimit, cf.sclkLimit, cf.mclkLimit)
 	if !odEnabled() {
-		fmt.Println("voltage offset: OverDrive not enabled (run install.sh and reboot)")
+		fmt.Println("voltage offset: OverDrive not enabled (sudo ./install.sh --enable-overdrive, then reboot)")
 	}
 	var cols []column
 	for _, c := range columns {
@@ -389,7 +439,14 @@ GUIDANCE
               Settings are saved and re-applied at boot: remove them from /etc/gpucap.conf
               (UV_MV, SCLK_MHZ, MCLK_MHZ) to stop that. A reboot resets the hardware to stock.
   Requires    root for set/undervolt/sclk/mclk/apply. Voltage and clock tuning also need amdgpu's
-              OverDrive bit; install.sh enables it and needs one reboot.
+              OverDrive bit; sudo ./install.sh --enable-overdrive sets it, and needs one reboot.
+
+DEFAULTS
+  There are none. With no usable CAP_W and no UV_MV/SCLK_MHZ/MCLK_MHZ in /etc/gpucap.conf,
+  gpucap apply changes no power, voltage or clock setting and exits 0 -- so installing gpucap
+  tunes nothing until you ask it to. Zeros in the config mean "not requested" and are not
+  written to the hardware either; an explicit sudo gpucap undervolt 0 is how you reset an
+  offset you had set, and a reboot returns the hardware to stock regardless.
 
 FILES
   /etc/gpucap.conf        CAP_W, UV_MV, SCLK_MHZ, MCLK_MHZ and the *_LIMIT settings
@@ -475,7 +532,7 @@ func main() {
 			die(err)
 		}
 		cf := loadConf()
-		cf.capW = w
+		cf.capW, cf.capSet = w, true
 		if err := saveConf(cf); err != nil {
 			die(err)
 		}
@@ -484,20 +541,33 @@ func main() {
 		setOD(cmd)
 	case "apply":
 		cf := loadConf()
-		w := cf.capW
+		w, override := cf.capW, false
 		if len(os.Args) > 2 {
-			w = parseWatts(os.Args[2])
+			w, override = parseWatts(os.Args[2]), true
+		}
+		p := planApply(cf, override)
+		if p.nothing() {
+			// nothing configured: touch no power, voltage or clock setting, and exit 0 so the
+			// oneshot units stay in the success state on a host that deliberately has none
+			fmt.Printf("nothing configured in %s (no usable CAP_W, UV_MV, SCLK_MHZ or MCLK_MHZ); nothing changed - set a cap with: sudo gpucap set <watts>\n", confPath)
+			return
 		}
 		cards := waitCards(60 * time.Second)
 		if len(cards) == 0 {
 			die(fmt.Errorf("no amdgpu cards found"))
 		}
-		if err := apply(cards, w); err != nil {
-			die(err)
+		if p.cap {
+			if err := apply(cards, w); err != nil {
+				die(err)
+			}
+		} else {
+			fmt.Printf("no usable CAP_W in %s: power limit left as found\n", confPath)
 		}
 		// failed voltage/clock settings must not fail the unit and hide that the cap was applied
-		if err := applyOD(cards, cf.od(), false); err != nil {
-			fmt.Fprintln(os.Stderr, "warning:", err)
+		if p.od {
+			if err := applyOD(cards, cf.od(), false); err != nil {
+				fmt.Fprintln(os.Stderr, "warning:", err)
+			}
 		}
 	default:
 		fmt.Fprintf(os.Stderr, "unknown command %q; run gpucap --help\n", cmd)
