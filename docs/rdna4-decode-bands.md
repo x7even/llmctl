@@ -7,8 +7,11 @@ measurement tells you which band you are in — but nothing in the startup log t
 Clocks, temperatures, power, VRAM, graph-capture sizes and the log lines themselves are
 identical in both bands.
 
-A server that spawns into the slow band is a silent ~20% (dense) to ~50% (hybrid/MoE) loss
-of throughput until it is restarted.
+A server that spawns into the slow band is a silent loss of throughput until it is restarted,
+and the loss is large: ~20% on a dense model at the mild end, and **65% (a 2.87x step-rate
+ratio) on a 35B MoE** at the measured worst, which is itself only a floor — see "A 2.9x slow
+draw on a 35B MoE" below. The single-stream figure is the biggest one; the penalty is a fixed
+per-step tax and so shrinks as the batch widens.
 
 Upstream: ROCm/legacy-rocm-build#6347 (= ROCm/TheRock#9228). Related dispatch-path issues on
 the same architecture: #6685 (= #9297, `hipStreamWaitEvent` adds ~17 µs to small kernels) and
@@ -204,6 +207,55 @@ The upstream ratios (1.21–1.28 dense, 1.73 MoE, 2.00–2.2 GDN hybrid) remain 
 rig's 27B is a GDN hybrid — `qwen3_5`, 64 layers, `full_attention_interval: 4`, so 16 full
 attention layers and 48 gated-delta-net — which is upstream's worst row, and the measured 1.89x
 lands squarely on it.
+
+### A 2.9x slow draw on a 35B MoE — the largest ratio measured here
+
+Measured 2026-10-19 on `qwen3.6-35b-128k-nomtp` (Qwen3.6-35B-A3B-FP8, 3B active of 35B, plain
+MoE — **not** a GDN hybrid — no MTP and no speculative decoding, `acc/step` 1.00 in every
+cell, TP4+EP, vLLM 0.26.0). Two spawns, same config apart from `-e GPU_MAX_HW_QUEUES=1`, both
+read with `concurrent_bench.py --prompt medium-256 --sweep 1,8 --no-thinking` — the same
+harness and prompt as the stored 2026-07-27 baseline, so all three columns sit on one scale:
+
+| `medium-256` decode tok/s | stock (slow draw) | `GPU_MAX_HW_QUEUES=1` | ratio | stored 2026-07-27 |
+|---|---|---|---|---|
+| serial, n=3 | 30.7 | 87.7 | **2.86x** | 78.6 |
+| conc=1, n=32 | 30.7 | 88.0 | **2.87x** | 88.3 |
+| conc=8, n=32 | 208.1 | 431.1 | 2.07x | 351.2 |
+
+- **The flagged arm lands within 0.3% of the stored n=32 figure.** That is what makes this a band
+  draw and not a regression: the fast arm reproduces a number measured three months earlier on
+  the same image pin, so nothing in between got slower — one spawn drew badly. Without a
+  reference on the same harness there would have been no way to tell those two apart.
+- **2.87x exceeds every upstream ratio**, including the 2.00–2.2 GDN-hybrid worst case, on a
+  model that belongs to upstream's 1.73 MoE row. Architecture class does not predict the ratio,
+  and the "~20% dense to ~50% hybrid/MoE" framing at the top of this page is a **floor, not a
+  range**.
+- **The amortisation holds.** 2.87x on a single stream falls to 2.07x at conc=8, the same shape
+  as the 27B's 1.89x → 1.11x. It is a fixed per-step tax, so quote the concurrency you mean.
+
+**The flag's benefit decays with context depth.** The same two spawns, on `depth_bench.py` cells:
+
+| cell | stock | `GPU_MAX_HW_QUEUES=1` | ratio |
+|---|---|---|---|
+| 2,048 x 1 | 26.6 | 59.2 | 2.23x |
+| 2,048 x 8 | 186.8 | 341.3 | 1.83x |
+| 16,384 x 1 | 12.7 | 18.4 | 1.45x |
+| 16,384 x 8 | 85.4 | 106.9 | 1.25x |
+| 65,536 x 1 | 3.6 | 4.6 | 1.28x |
+
+The tax is per *step*, so it is a shrinking share of a step that spends ever more of its time in
+attention over a longer KV. By 64K the dispatch overhead the flag removes is almost irrelevant
+beside parallelism starvation (`docs/rdna4-long-context.md`), and the flag recovers 1.28x of a
+much larger loss. **Fixing the band does not fix depth**, and the two have to be measured
+separately; a profile can be in the fast band and still be collapsing at 64K.
+
+> **A depth sweep cannot classify its own band.** Arm A here ran a full nine-cell depth grid
+> before any band check, and its 2,048 x 1 reading of 26.6 tok/s falling to 3.6 at 65,536
+> looked like a 7.4x long-context collapse worth a large fix. The fast arm reads 59.2 and 4.6 in
+> the same two cells — so the collapse is real but *steeper* in the fast band (12.9x), and
+> every absolute figure in that grid was a record of one bad spawn. The band check has to come
+> first, and it has to use the same harness and prompt as whatever reference it will be compared
+> against. `depth_bench.py` is not that harness.
 
 ### One local correction to the upstream framing: here the draw is deterministic
 
