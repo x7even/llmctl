@@ -294,7 +294,7 @@ startup profiling on this checkpoint. It is plain memory exhaustion, not fragmen
 | decode tok/s | 65.9 | 351.1 | 578.5 | **853.0** |
 | p90 latency s | 2.84 | 4.19 | 4.94 | 6.54 |
 
-Baseline: `bench/baselines/qwen3.6-27b-code-peak-nothink-20261019.json`.
+Baseline: `bench/baselines/qwen3.6-27b-code-v0.26.0-peak-nothink-20261019.json`.
 
 **It is not faster than `qwen3.8-27b-code`** — equal at shallow prompts, a few percent behind
 at depth. On the `medium-256` sweep the two are within ~1% at every concurrency: 65.9/351.1/

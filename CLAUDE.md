@@ -299,7 +299,8 @@ mix of 0.22.1 and 0.26.0 figures from four different months was not.
 | qwen3.8-27b-think (TRITON_ATTN, no MTP) | 46.0 | 274.0 | 477.0 | 760.1 |
 | qwen3.8-flash-next-vllm (no MTP, 262K ctx) | 55.3 | 181.5 | 244.3 | 453.3 |
 
-Baselines: `bench/baselines/<profile>-peak-nothink-2026101{8,9}.json`. Three things to read out
+Baselines: `bench/baselines/<profile>-<pin>-peak-nothink-2026101{8,9}.json` (`v0.26.0` on every
+profile but Flash-Next, which is on the nightly pin). Three things to read out
 of it: **conc=32 is worth having** — every profile is still gaining there, the MoE profiles by
 ~1.7x over conc=16 and Flash-Next by 1.9x; **the two dense 27B MTP profiles are within ~1% of
 each other at all four levels on this prompt** (at depth `qwen3.8-27b-code` is 6-9% ahead on

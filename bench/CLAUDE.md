@@ -10,6 +10,7 @@
 | `depth_bench.py` | Context-depth × concurrency matrix: streams, so prefill (TTFT) and decode are measured separately |
 | `needle_check.py` | Long-context **retrieval** check: can the model still see the context it is decoding over |
 | `opt_probe.py` | Targeted probe for optimization impact (before/after comparison) |
+| `band_audit.py` | Checks `baselines/` for files recorded in the slow decode band (exit 1 if any) |
 | `codetests/run_codetests.py` | Code-correctness suite: model writes code, hidden tests grade it (`validate` / `run` / `regrade`) |
 
 ### Depth matters, and `concurrent_bench.py` cannot see it
@@ -241,6 +242,44 @@ fixed per-step tax, so it amortises with batch width and shrinks against the lon
 deep context produces. A band check at one cell does not transfer to another, and a slow-band
 ratio must never be quoted as a speedup for a fix measured in the fast band.
 
+### Part of the stored corpus was recorded in the slow band — audit before quoting
+
+`-e GPU_MAX_HW_QUEUES=1` shipped on 2026-10-18. Every baseline taken before that was a stock
+spawn, so some of `baselines/` records the slow band, and a figure copied out of one of those
+files into a doc or a README understates the hardware by up to ~2x at one stream. This is the
+answer to "why do the published numbers look slower than what the GPUs actually do".
+
+```bash
+python3 bench/band_audit.py          # exit 1 if any file needs attention
+python3 bench/band_audit.py --quiet  # just those files
+```
+
+Two confirmed, both arms of the 2026-10-05 Qwen3.8-vs-3.6 comparison:
+
+| file | one-stream | conc=8 |
+|---|---|---|
+| `qwen3.6-27b-code-v0.26.0-nothink-20261005.json` | 1.92x down | 1.11x down |
+| `qwen3.8-27b-code-v0.26.0-nothink-20261005.json` | 1.90x down | 1.17x down |
+| the 27B band curve, for comparison | 1.89x | 1.11x |
+
+Because *both* arms were slow, that comparison's relative verdict ("throughput equal") still
+holds — but every absolute number in it is a slow-band figure.
+
+Three things the audit cannot do, so do not over-read it:
+
+- **The curve does not name the cause.** Any fixed per-step overhead is largest at one stream
+  and amortises with batch width. vLLM 0.31.0's Model Runner V2 draws the same shape (~45% at
+  one stream, nothing by conc=2-4), which is why the 0.31.0 files are flagged too — there the
+  cause is known and is not the band (`docs/upgrade-plan-2026-10.md`). A flag means "read the
+  provenance", not "this was the band".
+- **It needs a comparable peer**, which means the same profile, the same image pin and
+  no-thinking on both sides. Thinking inflates tok/s, so a thinking-on file is a different
+  measurement: comparing this October's no-thinking 35B sweep against `qwen3.6-35b-code.json`
+  (2026-05, thinking on) manufactured a 2.2x shortfall that was entirely the thinking block.
+  **Put the image pin in every baseline filename** or the file can never be audited.
+- **It cannot clear a profile with only one reading.** Those are listed as `unaudited`, and
+  that is the honest state, not a pass.
+
 ### Report a distribution, not a peak
 
 `llmpanel` reports the maximum of one-second difference quotients; the
@@ -345,6 +384,13 @@ level gives stable statistics. 32 is better for publication-quality comparisons.
 qwen3.8-27b-code-v0.26.0-nothink.json     ← good
 qwen3.8-27b-code.json                      ← ambiguous
 ```
+
+The image pin is not optional. `band_audit.py` only compares files within one profile *and*
+one pin — comparing across pins would report a version regression as a slow-band draw — so a
+baseline whose name omits the pin can never be audited. Six files committed on 2026-10-19 had
+to be renamed for exactly this reason, and the rename is what revealed that the 2026-10-05
+`qwen3.6-27b-code` baseline was a slow-band record. Flash-Next's pin is its nightly SHA
+(`-nightly-8cbd5d0-`).
 
 ---
 
