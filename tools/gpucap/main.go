@@ -2,7 +2,8 @@
 //
 //	gpucap status          show cap/min/max/draw per card
 //	gpucap set <watts>     write config and apply now (needs root)
-//	gpucap apply [watts]   apply configured (or given) cap; used by systemd
+//	gpucap apply [watts]   apply configured (or given) cap; used by systemd.
+//	                       With no cap configured and none given it changes nothing.
 package main
 
 import (
@@ -14,16 +15,9 @@ import (
 	"time"
 )
 
-const (
-	confPath = "/etc/gpucap.conf"
-
-	// defaultCap is the cap in watts used when /etc/gpucap.conf does not exist or has no
-	// CAP_W line. 230 is just the value for the machine this was written for.
-	// To make a different cap persist across reboots, either run `sudo gpucap set <watts>`
-	// (writes CAP_W to /etc/gpucap.conf, which is what the boot/resume units read), or change
-	// this value (and the matching CAP_W in install.sh) and rebuild.
-	defaultCap = 230
-)
+// confPath holds CAP_W, the cap in watts the boot/resume units apply. There is no built-in
+// default: with no CAP_W configured nothing is capped. `sudo gpucap set <watts>` writes it.
+const confPath = "/etc/gpucap.conf"
 
 type card struct {
 	name  string
@@ -69,20 +63,21 @@ func waitCards(timeout time.Duration) []card {
 	}
 }
 
-func loadConf() int {
+// loadConf reports the configured cap, and false if there is no usable CAP_W line.
+func loadConf() (int, bool) {
 	b, err := os.ReadFile(confPath)
 	if err != nil {
-		return defaultCap
+		return 0, false
 	}
 	for _, l := range strings.Split(string(b), "\n") {
 		k, v, ok := strings.Cut(strings.TrimSpace(l), "=")
 		if ok && strings.TrimSpace(k) == "CAP_W" {
-			if w, err := strconv.Atoi(strings.TrimSpace(v)); err == nil {
-				return w
+			if w, err := strconv.Atoi(strings.TrimSpace(v)); err == nil && w > 0 {
+				return w, true
 			}
 		}
 	}
-	return defaultCap
+	return 0, false
 }
 
 func apply(cards []card, watts int) error {
@@ -119,7 +114,11 @@ func apply(cards []card, watts int) error {
 }
 
 func status(cards []card) {
-	fmt.Printf("configured: %dW (%s)\n", loadConf(), confPath)
+	if w, ok := loadConf(); ok {
+		fmt.Printf("configured: %dW (%s)\n", w, confPath)
+	} else {
+		fmt.Printf("configured: none (no usable CAP_W in %s) - set one with: sudo gpucap set <watts>\n", confPath)
+	}
 	for _, c := range cards {
 		cap, _ := readInt(c.hwmon + "/power1_cap")
 		minU, _ := readInt(c.hwmon + "/power1_cap_min")
@@ -173,9 +172,14 @@ func main() {
 		}
 		fmt.Printf("saved %dW to %s\n", w, confPath)
 	case "apply":
-		w := loadConf()
+		w, ok := loadConf()
 		if len(os.Args) > 2 {
-			w = parseWatts(os.Args[2])
+			w, ok = parseWatts(os.Args[2]), true
+		}
+		if !ok {
+			// no cap configured: touch nothing, and exit 0 so the oneshot unit stays happy
+			fmt.Printf("no cap configured (no usable CAP_W in %s); nothing changed - set one with: sudo gpucap set <watts>\n", confPath)
+			return
 		}
 		cards := waitCards(60 * time.Second)
 		if len(cards) == 0 {
