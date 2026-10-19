@@ -338,7 +338,8 @@ things to read out of the table:
   rows). **`27b-think` pays 9-30% here** — 30% serial, 21% at conc=8, 9% at conc=32 — for the
   long-context behaviour it buys, the trade `docs/rdna4-long-context.md` describes.
 
-A 256-token prompt measures almost nothing about serving real work. For prefill and decode
+`medium-256` is a 41-word prompt with a 256-token completion cap, and it measures
+almost nothing about serving real work. For prefill and decode
 together, at depth and with distributions rather than single figures, see
 `docs/benchmark-results-full.md` (every measured cell) and `docs/models.md` (per-profile
 history, including the earlier vintages these rows replace).
@@ -570,7 +571,7 @@ Operational consequences:
   misleading "selected via" line. Verified on two spawns whose argv contained no such flag.
   Consequence worth knowing: gemma4 is already on the only depth-scaling kernel on this
   hardware, so unlike the Qwen3.x profiles there is no backend change left to make there.
-- **Do not flip `qwen3.8-27b-code`.** At 256-token prompts the MTP profile wins at every
+- **Do not flip `qwen3.8-27b-code`.** On the `medium-256` sweep the MTP profile wins at every
   concurrency, by a margin that shrinks as the batch widens: 43% serial, 27% at conc=8, 19% at
   16, 10% at 32 (66.0/350.4/569.4/842.7 against 46.3/275.1/479.8/763.1, measured as a same-day
   matched pair on 2026-10-19 at `--requests 128`). Read that as the gap between the two shipped
@@ -607,6 +608,8 @@ tui/                 Go source for llmpanel (Bubbletea)
 bench/               Benchmark scripts + saved baselines
 tests/smoke.sh       Integration smoke test (both backends)
 scripts/configure    GPU-count auto-detector; patches models.yaml
+docs/benchmarks.md   The benchmark campaign behind the README table: caveats, depth x concurrency,
+                     prefill, reproduction commands, how to read a live llmpanel peak
 docs/models.md       Full benchmark data + per-profile architecture notes
 docs/benchmark-results-full.md  Every measured cell (prefill+decode+concurrency) with steady-state distributions; generated, do not hand-edit
 docs/gpu-counts.md   Running with fewer than 4 GPUs (valid TP sizes, per-profile limits, auto-fit)

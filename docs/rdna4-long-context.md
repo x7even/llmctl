@@ -467,7 +467,7 @@ the default workload, not a measurement question; the measurements are above.
 This is left as the user's call because the two benchmarks that bear on it disagree, and
 each is right about its own workload.
 
-`medium-256` (a 256-token prompt, `--requests 32`, free generation) says keep MTP. The
+`medium-256` (a 41-word prompt capped at 256 completion tokens, `--requests 32`) says keep MTP. The
 no-MTP + TRITON configuration loses at every concurrency:
 
 | conc | `27b-code` (MTP, shipped) | no-MTP + TRITON | ratio |
@@ -488,7 +488,7 @@ from 4K upwards:
 | 65,536 | 8 | 36.6 | 143.4 | 3.92× |
 
 Both are real; they measure different regimes, and neither is a general claim. `medium-256`
-is a 256-token prompt, which is far below any agent's working context — `bench/CLAUDE.md`
+is a 41-word prompt, which is far below any agent's working context — `bench/CLAUDE.md`
 says plainly that it tells you nothing about depth. The depth cells are prefix-cache hits
 with a fixed 128-token generation, so they isolate decode and exclude the unique-prefill
 contention a real fleet pays.
