@@ -279,42 +279,81 @@ the throughput figures in this section are not slow-draw artifacts.
 
 ---
 
-## A different engine death with the same symptom
+## The same engine death, reached two ways
 
-`qwen3.6-27b-code` lost 11 of 32 requests at `32768 x conc=32` with the same
-client-visible signature — `no content tokens received`, `agg_decode_tok_s`
-0.0, the same 11-of-32 count. It is **not** this bug. There is no
-`Tried to allocate` and no `torch.OutOfMemoryError` anywhere in its journal
-window. What killed it was:
+**This section previously claimed `qwen3.6-27b-code` had a second, distinct
+defect. That claim is withdrawn — it is this bug.**
+
+The original observation was that `qwen3.6-27b-code` lost 11 of 32 at
+`32768 x conc=32` with the same client-visible signature, and that its journal
+window held no `Tried to allocate` and no `torch.OutOfMemoryError` — only:
 
 ```
 (EngineCore) ERROR [core.py:1332] EngineCore encountered a fatal error.
 (EngineCore) ERROR [core.py:1332] TimeoutError: RPC call to sample_tokens timed out.
 ```
 
-preceded by roughly half an hour of
-`No available shared memory broadcast block found in 60 seconds` from the same
-EngineCore, and followed by `EngineDeadError` reaching the client.
+Re-measured on 2026-10-19 at `4096 x conc=32` with 1,024-token outputs, the same
+profile lost 31 of 32 and the journal shows both errors, in an order that
+explains the first reading:
 
-So the symptom `no content tokens received` means **"the engine died"**, not
-"the engine ran out of memory". Two distinct defects produce it on this
-hardware, and they need different fixes:
+```
+t+0       (Worker_TP2)  torch.OutOfMemoryError: ... Tried to allocate 630.00 MiB
+t+4m44s   (EngineCore)  TimeoutError: RPC call to sample_tokens timed out.
+```
 
-| | `qwen3.8-27b-code` | `qwen3.6-27b-code` |
-|---|---|---|
-| cell | `8192 x 32` | `32768 x 32` |
-| fatal error | `torch.OutOfMemoryError` in all 4 workers | `TimeoutError: RPC call to sample_tokens` |
-| journal has `Tried to allocate` | yes | **no** |
-| status | fix measured below | **root cause not established** |
+The OOM is **first**, and it is on **one rank**. The surviving three ranks then
+block in the collective waiting for a worker that is never coming back, and the
+executor's watchdog fires 4m44s later. So `RPC call to sample_tokens timed out`
+is the *downstream* symptom of a single-rank OOM, not an independent cause, and
+630 MiB against the 3.8's 638 MiB is the same drafter buffer at the same
+32768-token chunk.
 
-Do not assume the batched-tokens change below helps the second one. A smaller
-prefill chunk means more steps per batch, which could as easily make an RPC
-timeout worse. It is unmeasured on that profile; `32768 x 32` on
-`qwen3.6-27b-code` is the cell that would tell.
+What this does not settle: the earlier `32768 x 32` window genuinely showed no
+allocation failure. Either that grep window was too narrow to catch a rank that
+died before it was opened, or at that cell the collective stalls before any rank
+reaches the drafter allocation. The single-rank mechanism accounts for both
+orderings, so there is no second root cause to find — but if you need the
+`32768 x 32` ordering specifically, capture the journal from before the pass
+starts.
+
+**The trigger is batch width, not depth.** It fires at 4,096 tokens per prompt.
+Depth is not what exhausts the allocator; 32 concurrent prefills sharing one
+`--max-num-batched-tokens` chunk is.
+
+`--max-num-batched-tokens 16384` is therefore applied to `qwen3.6-27b-code` as
+well, as of 2026-10-19. `qwen3.6-35b-code` is still at 32768 and still
+unmeasured at that cell — it is a 3B-active MoE rather than a dense 27B, so its
+drafter buffer is a different shape and the flag should not be copied there on
+this evidence.
+
+### Do not put the shm-broadcast line in a death regex
+
+`No available shared memory broadcast block found in 60 seconds` is **not** a
+death signature. vLLM prints it whenever a step stalls longer than a minute, and
+a deep wide burst stalls legitimately.
+
+This cost a false alarm worth recording. A detector keying on that line reported
+`ENGINE DIED` on `qwen3.8-27b-code` at `16384 x conc=32`, which was wrong on
+every count: the window held **zero** hard signatures, 29 of 32 requests
+completed, and all three failures were client-side
+`HTTPConnectionPool ... Read timed out` against a 1,200 s client timeout with an
+observed `e2e_s_max` of 1,324 s. The engine was alive and grinding the whole
+time. Had it been believed, the conclusion would have been that the fix in this
+document does not hold — the opposite of the truth.
+
+Key on hard signatures only:
+
+```
+torch\.OutOfMemoryError|Tried to allocate|EngineDeadError|RPC call to [a-z_]+ timed out
+```
+
+and read the row's own `errors` strings before calling a lost cell an engine
+death. A client timeout and an engine death produce the same missing requests.
 
 **Operationally: always read the container's own stdout before attributing a
-lost-request cell to memory.** Both defects look identical from the client and
-from `/health`.
+lost-request cell to memory**, and read the client's error strings before
+attributing it to the engine at all.
 
 ### What the change costs on the workload the profile is actually for
 

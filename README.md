@@ -80,19 +80,20 @@ llmpanel
 | Profile | Backend | VRAM | Context | Best for |
 |---------|---------|------|---------|---------|
 | `qwen3.8-27b-code` | vLLM TP=4 + MTP | ~31 GB + KV | 131K | **Default.** Claude Code, OpenCode, agentic coding; thinking on (medium effort) |
-| `qwen3.8-27b-think` | vLLM TP=4 | ~31 GB + KV | 131K | Same model without MTP — better for parallel agent fleets |
+| `qwen3.8-27b-think` | vLLM TP=4 + TRITON_ATTN | ~31 GB + KV | 131K | **The deep-context and agent-fleet profile.** Same weights, no MTP, `--attention-backend TRITON_ATTN` — keeps scaling with concurrency at 16K+, where the MTP default peaks at ~8 streams and then falls back |
 | `qwen3.8-27b-fast` | vLLM TP=4 + MTP | ~31 GB + KV | 131K | Thinking off by default — quick answers, bulk work |
-| `qwen3.8-flash-next` | llama-server Vulkan | ~81 GB | 262K (2 slots) | Qwen3.8-Flash-Next 125B (6B active), UD-IQ4_XS GGUF; single-user. For concurrent agents use `qwen3.8-flash-next-vllm` |
-| `qwen3.8-flash-next-vllm` | vLLM TP=4 + EP (nightly image) | ~19 GB/GPU + ~48 GB pinned host RAM (~96 GB host RAM) | 262K | Same model, W4A16 INT4; decode scales with concurrency (**~150-185 tok/s conc=8**, 182 in the best run, vs ~34 for GGUF at 4 streams), flat ~55 tok/s out to 258K context; defaults to medium reasoning effort. Exclusive VRAM; needs all 4 GPUs |
+| `qwen3.8-flash-next` | llama-server Vulkan | ~81 GB | 262K (2 slots) | Qwen3.8-Flash-Next 125B (6B active), UD-IQ4_XS GGUF; single-user — throughput plateaus early, so for concurrent agents use `qwen3.8-flash-next-vllm` |
+| `qwen3.8-flash-next-vllm` | vLLM TP=4 + EP (nightly image) | ~19 GB/GPU + ~48 GB pinned host RAM (~96 GB host RAM) | 262K | Same model, W4A16 INT4. Decode scales with concurrency and stays flat all the way out to its full 262K window — the one profile here whose speed barely cares how deep the prompt is. Defaults to medium reasoning effort. Exclusive VRAM; needs all 4 GPUs |
+| `qwen3.6-27b-code` | vLLM TP=4 + MTP | ~31 GB + KV | 131K | Previous-generation dense 27B (FP8) — MTP + thinking; fast on short prompts |
 | `qwen3.6-35b-code` | vLLM TP=4 + MTP | ~35 GB | 131K | Previous generation (MoE, 3B active) — MTP + thinking |
-| `qwen3.6-35b-128k-nomtp` | vLLM TP=4 | ~35 GB | 131K | Previous generation — thinking, no MTP, high concurrency |
+| `qwen3.6-35b-128k-nomtp` | vLLM TP=4 | ~35 GB | 131K | Previous generation — thinking, no MTP. Not yet measured at depth, and does not set `--attention-backend TRITON_ATTN`, so the deep-context fix in `docs/rdna4-long-context.md` is **not** applied to it |
 | `qwen3.6-35b-fast` | vLLM TP=4 | ~35 GB | 262K | Previous generation — thinking disabled by default |
-| `gemma4-26b-a4b` | vLLM TP=4, BF16 | ~123 GB | 128K | High-concurrency; **528 tok/s conc=16**; vision; exclusive VRAM |
+| `gemma4-26b-a4b` | vLLM TP=4, BF16 | ~123 GB | 128K | Highest raw aggregate throughput on short prompts; vision; exclusive VRAM |
 | `gemma4-26b-fp8` | vLLM TP=4, FP8 | — | 262K | Long-context Gemma 4 agent serving |
-| `gemma4-26b-q8` | llama-server Vulkan | ~32 GB | 32K | Vision-capable; 154 tok/s conc=8; co-loadable |
+| `gemma4-26b-q8` | llama-server Vulkan | ~32 GB | 32K | Vision-capable; co-loadable |
 | `gemma4-12b-q4` | llama-server Vulkan | ~13 GB | 32K | Lightest vision option; co-loadable with any profile |
 
-Older Qwen profiles (3.6-27B, 3.6-35B 32K/64K/128K/512K/AWQ/GGUF, Qwen3-Coder-30B,
+Older Qwen profiles (3.6-35B 32K/64K/512K/AWQ/GGUF, Qwen3-Coder-30B,
 Qwen3.5-122B) were removed from the shipped config; their benchmark data is kept in
 `docs/models.md` and the profiles can be restored from git history.
 
@@ -105,6 +106,7 @@ Qwen3.5-122B) were removed from the shipped config; their benchmark data is kept
 | `27b-fast`, `qwen3.8-nothink` | `qwen3.8-27b-fast` |
 | `flash-next`, `qwen3.8-flash` | `qwen3.8-flash-next` |
 | `flash-next-vllm` | `qwen3.8-flash-next-vllm` |
+| `27b-code`, `qwen3.6-27b` | `qwen3.6-27b-code` |
 | `qwen3.6`, `qwen3.6-35b`, `qwen3.6-35b-fp8` | `qwen3.6-35b-code` |
 | `35b-nomtp` | `qwen3.6-35b-128k-nomtp` |
 | `qwen3.6-fast`, `qwen3.6-nothin` | `qwen3.6-35b-fast` |
@@ -115,27 +117,293 @@ See `docs/models.md` for benchmark data, architecture details, and tuning notes.
 
 ---
 
-## Benchmarks at a glance
+## Benchmarks
 
-Measured on 4× R9700 (128 GB total), no-thinking unless noted, MTP enabled where noted (Qwen3.8 on vLLM 0.26.0; older rows on vLLM 0.22.1).
-Metric: decode tok/s.
+All figures below were measured on the same hardware (4× R9700, 128 GB total)
+across a single campaign, on the pinned `v0.26.0` image (`qwen3.8-flash-next-vllm`
+on its nightly pin), with **output length pinned at 1,024 tokens** and
+`--no-thinking`. Pinning the output matters: without it a faster model writes
+longer answers and the latency column silently compares answer lengths instead
+of speeds.
 
-| Profile | serial | conc=4 | conc=8 | conc=16 |
-|---------|--------|--------|--------|---------|
-| `qwen3.8-27b-code` (medium-256, MTP)² | 66 | 194 | **361** | 549 |
-| `qwen3.8-flash-next-vllm` (nightly image, TP4+EP)² | 56 | — | **~150-185** | 216 |
-| `gemma4-26b-a4b` (medium-256, BF16, thinking on¹)² | 53 | 167 | 287 | **528** |
-| `qwen3.6-35b-code` (xlarge-2048, MTP)² | 43 | 155 | **335** | 651 |
-| `qwen3.6-35b-code` (medium-256, MTP)² | 43 | 145 | **261** | 481 |
-| `qwen3.6-35b-fp8` no-MTP (medium-256)² | 69 | — | **222** | — |
-| `gemma4-26b-q8` (medium-256, Q8 GGUF, thinking on¹) | 66 | 117 | **154** | — |
-| `gemma4-12b-q4` (medium-256, Q4 GGUF, thinking on¹) | 36 | 81 | **109** | — |
+### Read these three caveats first, or the numbers will mislead you
 
-¹ Gemma 4 IT activates extended reasoning by default. The table numbers come from the original thinking-on baselines (2026-06-13). No-thinking baselines (2026-06-18) show that `chat_template_kwargs: {enable_thinking: false}` successfully suppresses `<think>` output, but does NOT meaningfully improve throughput — differences between thinking-on and no-thinking runs are within session-to-session noise (~0–6%). Both baseline sets are kept in `bench/baselines/`; see `bench/CLAUDE.md` for the dual-baseline convention.
+**1. Aggregate throughput is not responsiveness.** A box can deliver 500 tok/s
+in total while every individual client reads at 15 and waits two minutes for a
+first token. Both columns are given for every cell. Pick the one that matches
+what you are building: `aggregate` for a batch fleet, `per-stream` and `TTFT
+p90` for anything a human waits on.
 
-² vLLM profiles (non-GGUF) use PagedAttention and continuous batching, enabling dramatically better concurrency scaling — throughput grows near-linearly from serial to conc=16 and beyond. GGUF profiles (llama-server Vulkan) plateau early due to fixed-thread batching; serial latency is comparable but concurrent throughput is several times lower at the same concurrency level.
+**2. Cold and prewarmed are different workloads, and the gap is large.** Cold,
+every stream pays its own prefill. Prewarmed, the prefix cache is hot and TTFT
+collapses. Both are published separately below. Never compare across them.
 
-See `docs/models.md` for full tables across all prompt sizes and concurrency levels.
+**3. On this GPU a server's decode band is drawn at spawn.** A profile can come
+up in a slow band and serve its whole life at roughly half speed with nothing in
+the log to say so. Every table states the band and how it was established. A
+figure without a band is not a measurement — see `docs/rdna4-decode-bands.md`.
+
+### Depth is the axis the old table was missing, and it dominates
+
+Prompt depth costs far more than prompt count, and the two 27B profiles diverge
+completely as it grows. Cold, at 16,384 tokens:
+
+| conc | `qwen3.8-27b-code` (MTP) | `qwen3.8-27b-think` (no MTP, TRITON_ATTN) |
+|---|---|---|
+| 1 | 34.9 agg | 45.0 agg |
+| 8 | 66.3 agg | 136.1 agg |
+| 16 | 46.9 agg | 162.1 agg |
+| 32 | 22.5 agg, **29/32** (3 lost: client timeout, engine alive) | 180.9 agg |
+
+`27b-code`'s aggregate **peaks at concurrency 8 and then falls**, while
+`27b-think` rises monotonically to 32. At 65,536 tokens cold, `27b-code` goes
+further and scales *negatively* — four streams deliver less in total than one:
+
+| | conc=1 | conc=4 |
+|---|---|---|
+| `qwen3.8-27b-code` aggregate | 11.6 | 9.6 |
+| `qwen3.8-27b-think` aggregate | 39.0 | 49.3 |
+
+**That reversal is specific to a cold burst.** Prewarmed, `27b-code` scales up
+normally at the same depth (see its prewarmed table below), so the failure is in
+paying many deep prefills at once, not in deep decode as such.
+
+**Do not attribute the whole gap to MTP.** The two profiles differ in three
+settings at once — MTP, attention backend (`auto` vs `TRITON_ATTN`) and prefill
+chunk (16384 vs 32768) — and the wide cold cells include the documented prefill
+trade. The cells that isolate decode are the deep single-stream ones, where
+`27b-think` reads 39.0 against 11.6 at 65,536 and 33.1 against 5.5 at 130,000.
+The mechanism is documented in `docs/rdna4-long-context.md`: MTP closes
+`TRITON_ATTN`'s 3D split-KV path, which is the only kernel here that
+parallelises over context length.
+
+### Per-profile depth × concurrency
+
+#### `qwen3.8-27b-think`
+
+Decode band: **fast (inferred)** — no stored reference; its 46.9 tok/s at 4K and 33.1 at 130K match the documented TRITON_ATTN 46.3 -> 33.4.
+
+Cold — every stream pays its own prefill:
+
+| depth | conc | ok | TTFT mean | TTFT p90 | prefill tok/s | per-stream tok/s | **aggregate tok/s** |
+|---|---|---|---|---|---|---|---|
+| 4,096 | 1 | 1/1 | 0.9 s | 0.9 s | 4504 | 46.9 | **46.9** |
+| 4,096 | 8 | 8/8 | 6.4 s | 7.2 s | 4560 | 35.4 | **237.1** |
+| 4,096 | 32 | 32/32 | 22.7 s | 28.8 s | 4554 | 22.3 | **476.9** |
+| 16,384 | 1 | 1/1 | 4.1 s | 4.1 s | 3965 | 45.0 | **45.0** |
+| 16,384 | 8 | 8/8 | 25.1 s | 33.2 s | 3945 | 27.4 | **136.1** |
+| 16,384 | 16 | 16/16 | 45.0 s | 66.6 s | 3937 | 18.8 | **162.1** |
+| 16,384 | 32 | 32/32 | 79.7 s | 133.0 s | 3931 | 11.3 | **180.9** |
+| 65,536 | 1 | 1/1 | 25.4 s | 25.4 s | 2584 | 39.0 | **39.0** |
+| 65,536 | 4 | 4/4 | 81.1 s | 101.3 s | 2590 | 23.3 | **49.3** |
+| 129,984 | 1 | 1/1 | 73.7 s | 73.7 s | 1763 | 33.1 | **33.1** |
+
+Prewarmed — prefix cache hot, steady-state decode:
+
+| depth | conc | TTFT mean | per-stream tok/s | **aggregate tok/s** |
+|---|---|---|---|---|
+| 16,384 | 1 | 0.26 s | 44.9 | **44.9** |
+| 16,384 | 8 | 1.56 s | 32.8 | **251.9** |
+| 65,536 | 1 | 0.41 s | 39.0 | **39.0** |
+| 65,536 | 4 | 1.07 s | 32.5 | **127.1** |
+
+*(A prefill column is deliberately omitted here: with the cache hot it would
+read 160,000–270,000 tok/s, which is cache reuse, not compute.)*
+
+#### `qwen3.8-27b-code`
+
+Decode band: **fast** — llmband.
+
+Cold — every stream pays its own prefill:
+
+| depth | conc | ok | TTFT mean | TTFT p90 | prefill tok/s | per-stream tok/s | **aggregate tok/s** |
+|---|---|---|---|---|---|---|---|
+| 4,096 | 1 | 1/1 | 0.9 s | 0.9 s | 4482 | 62.7 | **62.7** |
+| 4,096 | 8 | 8/8 | 7.0 s | 8.7 s | 3756 | 45.5 | **323.9** |
+| 4,096 | 32 | 32/32 | 25.5 s | 44.8 s | 2922 | 18.0 | **369.6** |
+| 16,384 | 1 | 1/1 | 4.0 s | 4.0 s | 4110 | 34.9 | **34.9** |
+| 16,384 | 8 | 8/8 | 55.0 s | 92.4 s | 1418 | 16.4 | **66.3** |
+| 16,384 | 16 | 16/16 | 147.2 s | 294.0 s | 881 | 7.2 | **46.9** |
+| 16,384 | 32 | **29/32** ⚠ | 397.4 s | 1006.2 s | 416 | 1.5 | 22.5 |
+| 65,536 | 1 | 1/1 | 28.4 s | 28.4 s | 2310 | 11.6 | **11.6** |
+| 65,536 | 4 | 4/4 | 202.5 s | 368.0 s | 713 | 5.4 | **9.6** |
+| 129,984 | 1 | 1/1 | 90.4 s | 90.4 s | 1438 | 5.5 | **5.5** |
+
+- ⚠ **16,384 × 32** — 3 of 32 requests lost: client timeout -- the benchmark's own read timeout expired; the server kept serving the other streams
+
+Prewarmed — prefix cache hot, steady-state decode:
+
+| depth | conc | TTFT mean | per-stream tok/s | **aggregate tok/s** |
+|---|---|---|---|---|
+| 16,384 | 1 | 0.46 s | 34.9 | **34.9** |
+| 16,384 | 8 | 3.20 s | 26.3 | **178.8** |
+| 65,536 | 1 | 1.23 s | 11.8 | **11.8** |
+| 65,536 | 4 | 4.76 s | 10.8 | **40.6** |
+
+*(A prefill column is deliberately omitted here: with the cache hot it would
+read 160,000–270,000 tok/s, which is cache reuse, not compute.)*
+
+#### `qwen3.8-flash-next-vllm`
+
+Decode band: **fast** — llmband.
+
+Cold — every stream pays its own prefill:
+
+| depth | conc | ok | TTFT mean | TTFT p90 | prefill tok/s | per-stream tok/s | **aggregate tok/s** |
+|---|---|---|---|---|---|---|---|
+| 4,096 | 1 | 1/1 | 1.5 s | 1.5 s | 2688 | 56.4 | **56.4** |
+| 4,096 | 8 | 8/8 | 11.6 s | 14.8 s | 2218 | 22.4 | **145.9** |
+| 4,096 | 32 | 32/32 | 28.2 s | 47.6 s | 2745 | 12.6 | **297.2** |
+| 16,384 | 1 | 1/1 | 6.2 s | 6.2 s | 2652 | 55.6 | **55.6** |
+| 16,384 | 8 | 8/8 | 30.7 s | 48.0 s | 2732 | 17.9 | **99.8** |
+| 16,384 | 16 | 16/16 | 54.9 s | 94.7 s | 2720 | 10.6 | **108.7** |
+| 65,536 | 1 | 1/1 | 24.5 s | 24.5 s | 2673 | 55.3 | **55.3** |
+| 65,536 | 4 | 4/4 | 64.9 s | 98.7 s | 2658 | 13.7 | **34.4** |
+| 131,072 | 1 | 1/1 | 49.8 s | 49.8 s | 2633 | 56.4 | **56.4** |
+| 249,856 | 1 | 1/1 | 98.8 s | 98.8 s | 2528 | 55.5 | **55.5** |
+
+Prewarmed — prefix cache hot, steady-state decode:
+
+| depth | conc | TTFT mean | per-stream tok/s | **aggregate tok/s** |
+|---|---|---|---|---|
+| 16,384 | 1 | 0.33 s | 56.9 | **56.9** |
+| 16,384 | 8 | 1.96 s | 24.2 | **186.1** |
+| 65,536 | 1 | 0.33 s | 56.7 | **56.7** |
+| 65,536 | 4 | 0.82 s | 21.6 | **85.6** |
+
+*(A prefill column is deliberately omitted here: with the cache hot it would
+read 160,000–270,000 tok/s, which is cache reuse, not compute.)*
+
+#### `qwen3.6-27b-code`
+
+Decode band: **fast** — llmband.
+
+Cold — every stream pays its own prefill:
+
+| depth | conc | ok | TTFT mean | TTFT p90 | prefill tok/s | per-stream tok/s | **aggregate tok/s** |
+|---|---|---|---|---|---|---|---|
+| 4,096 | 1 | 1/1 | 0.9 s | 0.9 s | 4473 | 61.1 | **61.1** |
+| 4,096 | 8 | 8/8 | 7.0 s | 8.9 s | 3683 | 45.7 | **304.2** |
+| 4,096 | 32 | 32/32 | 25.5 s | 45.6 s | 2779 | 17.5 | **368.9** |
+| 16,384 | 1 | 1/1 | 4.0 s | 4.0 s | 4112 | 34.7 | **34.7** |
+| 16,384 | 8 | 8/8 | 54.9 s | 92.4 s | 1419 | 16.6 | **64.5** |
+
+#### `qwen3.6-35b-code`
+
+Decode band: **unclassified** — no stored reference; its conc=16 legacy figure is above the stored baseline, so not a slow draw.
+
+Cold — every stream pays its own prefill:
+
+| depth | conc | ok | TTFT mean | TTFT p90 | prefill tok/s | per-stream tok/s | **aggregate tok/s** |
+|---|---|---|---|---|---|---|---|
+| 4,096 | 1 | 1/1 | 0.4 s | 0.4 s | 11377 | 53.8 | **53.8** |
+| 4,096 | 8 | 8/8 | 2.6 s | 3.0 s | 11097 | 50.7 | **327.0** |
+| 4,096 | 32 | 32/32 | 8.7 s | 12.9 s | 9724 | 30.5 | **726.5** |
+| 16,384 | 1 | 1/1 | 1.4 s | 1.4 s | 11944 | 32.5 | **32.5** |
+| 16,384 | 8 | 8/8 | 15.6 s | 23.3 s | 5620 | 29.7 | **155.5** |
+| 65,536 | 1 | 1/1 | 9.7 s | 9.7 s | 6790 | 13.2 | **13.2** |
+| 65,536 | 4 | 4/4 | 93.5 s | 150.3 s | 1745 | 9.8 | **19.8** |
+
+#### `gemma4-26b-a4b`
+
+Decode band: **unclassified** — no stored reference; its conc=16 legacy figure is above the stored baseline, so not a slow draw.
+
+Cold — every stream pays its own prefill:
+
+| depth | conc | ok | TTFT mean | TTFT p90 | prefill tok/s | per-stream tok/s | **aggregate tok/s** |
+|---|---|---|---|---|---|---|---|
+| 4,096 | 1 | 1/1 | 0.5 s | 0.5 s | 7947 | 53.9 | **53.9** |
+| 4,096 | 8 | 8/8 | 4.4 s | 4.9 s | 6629 | 36.6 | **256.7** |
+| 4,096 | 32 | 32/32 | 9.8 s | 16.0 s | 8177 | 20.3 | **544.0** |
+| 16,384 | 1 | 1/1 | 3.9 s | 3.9 s | 4203 | 43.3 | **43.3** |
+| 16,384 | 8 | 8/8 | 18.8 s | 30.8 s | 4255 | 22.8 | **133.5** |
+| 65,536 | 1 | 1/1 | 45.8 s | 45.8 s | 1430 | 33.0 | **33.0** |
+| 65,536 | 4 | 4/4 | 113.9 s | 182.1 s | 1440 | 13.4 | **23.5** |
+
+### What happens to prefill as the batch widens
+
+`prefill tok/s` is batch prompt tokens divided by the slowest TTFT in the cell,
+so it is a whole-batch rate, not a per-stream budget. Measured, it splits cleanly
+by whether the profile runs MTP, at 16,384 tokens cold:
+
+| profile | MTP | conc=1 | conc=8 | conc=16 | conc=32 |
+|---|---|---|---|---|---|
+| `qwen3.8-27b-think` | no | 3965 | 3945 | 3937 | 3931 |
+| `qwen3.8-27b-code` | yes | 4110 | 1418 | 881 | — |
+| `qwen3.8-flash-next-vllm` | no | 2652 | 2732 | 2720 | — |
+| `qwen3.6-27b-code` | yes | 4112 | 1419 | — | — |
+| `qwen3.6-35b-code` | yes | 11944 | 5620 | — | — |
+| `gemma4-26b-a4b` | no | 4203 | 4255 | — | — |
+
+The non-MTP profiles hold flat as the batch widens; the MTP ones fall away. That
+is the measured pattern — this table does not claim a mechanism for it.
+
+### Short-prompt peak throughput (the legacy `medium-256` sweep)
+
+This is the workload the previous version of this table measured, kept so the
+new figures can be compared against the old. It is **not** the headline: a
+256-token prompt cannot see any of the behaviour above.
+
+| Profile | serial | conc=8 | conc=16 | conc=32 | mean latency @32 |
+|---|---|---|---|---|---|
+| `qwen3.8-27b-think` | 46.0 | 274.0 | 477.0 | **760.1** | 7.67 s |
+| `qwen3.8-27b-code` | 64.9 | 348.8 | 576.5 | **856.5** | 6.89 s |
+| `qwen3.8-flash-next-vllm` | 55.3 | 181.5 | 244.3 | **453.3** | 10.89 s |
+| `qwen3.6-35b-code` | 51.3 | 291.3 | 572.0 | **950.2** | 4.76 s |
+| `gemma4-26b-a4b` | 56.2 | 300.0 | 559.4 | **944.4** | 4.96 s |
+
+Zero errors on every cell above. 128 requests per level, `--no-thinking`.
+
+**Note how the ranking inverts.** `qwen3.8-27b-think` is the *slowest* profile
+here and the *fastest* by a wide margin at depth. A single-number table cannot
+express that, which is why this section leads with the depth grid.
+
+#### Profiles this campaign did not re-measure
+
+The two vision profiles run on llama-server (Vulkan), not vLLM, and were
+left out of the sweep above. Their last figures are older and were taken
+with thinking **on** and on a different vLLM-era baseline, so they are not
+comparable with the tables above and are not reproduced here:
+
+- `gemma4-26b-q8` — Q8 GGUF + mmproj, ~32 GB, the vision workhorse
+- `gemma4-12b-q4` — Q4 GGUF + mmproj, ~13 GB, lightest vision option,
+  co-loadable alongside any vLLM profile
+
+Both are in `docs/models.md` with their original numbers. Gemma 4 IT turns
+on extended reasoning by default; `chat_template_kwargs: {enable_thinking:
+false}` does suppress `<think>` output but does not meaningfully change
+their throughput (differences sit inside session noise).
+
+### Which profile to use
+
+| If you are | Use | Why |
+|---|---|---|
+| running agents on deep context (16K+), especially several at once | **`qwen3.8-27b-think`** | scales to 32 streams at 16K and holds up at 130K; the MTP default peaks at ~8 streams at depth and then falls |
+| running many agents on short prompts | `qwen3.8-27b-code` | fastest at `medium-256` and at 4K; MTP wins where prompts are shallow |
+| serving one or two clients at very long context | `qwen3.8-flash-next-vllm` | per-stream decode is flat (~55 tok/s) from 4K to 250K |
+| after raw short-prompt aggregate | `qwen3.6-35b-code` or `gemma4-26b-a4b` | both clear 940 tok/s at conc=32 |
+| doing vision work | `gemma4-26b-q8` / `gemma4-12b-q4` | the GGUF + mmproj profiles |
+
+### Reproducing any row
+
+```bash
+# depth x concurrency, output pinned -- the primary harness
+python3 bench/depth_bench.py --model <profile> \
+    --depths 16384 --concurrency 1,8,16,32 --gen 1024 --no-thinking
+
+# add --prewarm for the steady-state (hot prefix cache) numbers
+
+# classify the decode band BEFORE trusting any of it
+scripts/llmband --model <profile>        # 0 fast / 1 slow / 2 undecided
+
+# long-context correctness gate -- a split-KV kernel that mis-combines its
+# softmax segments benchmarks perfectly while losing the context
+python3 bench/needle_check.py --model <profile>
+```
+
+Full per-profile data and architecture notes: `docs/models.md`.
+
+
 
 ---
 

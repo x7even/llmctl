@@ -474,7 +474,7 @@ llama.cpp auto-discovers the remaining parts.
 |------|-------------|----------------|
 | `--max-num-seqs` | Max concurrent sequences in flight | Lower if OOM; raise if throughput limited and VRAM free |
 | `--gpu-memory-utilization` | Fraction of VRAM reserved for KV cache | Lower if OOM; keep at 0.95–0.97 normally. Exception: `qwen3.8-flash-next-vllm` stays at 0.90 (0.97 stalls under concurrent 100K prompts; see docs/models.md) |
-| `--max-num-batched-tokens` | Prefill chunk size, and the size of an MTP drafter's per-batch buffer | **16384 on MTP profiles serving Qwen3.8-27B** (`qwen3.8-27b-code`, `qwen3.8-27b-fast`); 32768 elsewhere. See below |
+| `--max-num-batched-tokens` | Prefill chunk size, and the size of an MTP drafter's per-batch buffer | **16384 on the dense-27B MTP profiles** (`qwen3.8-27b-code`, `qwen3.8-27b-fast`, `qwen3.6-27b-code`); 32768 elsewhere. See below |
 | `--kv-cache-dtype fp8` | Store KV tensors in FP8 | **Not a default — see below.** Only `qwen3.6-35b-fast` sets it today |
 | `concurrencyLimit` | Queue depth before 429 | Set to `--max-num-seqs` or slightly above |
 | `ttl` | Seconds before auto-unload | 0 = never; useful for infrequently used profiles |
@@ -612,13 +612,29 @@ speculative config. `qwen3.8-27b-think` is deliberately left at 32768: it has
 no MTP drafter, so there is no buffer to shrink, and it is the long-context
 profile whose whole job is deep prompts.
 
-**Not applied to `qwen3.6-27b-code` or `qwen3.6-35b-code`**, which also run MTP.
-Their drafter buffers are the same shape in principle, but neither has been
-measured, and `qwen3.6-27b-code`'s own engine death at `32768 x conc=32` is a
-*different* defect — `TimeoutError: RPC call to sample_tokens timed out`, with
-no OOM anywhere in its log. A smaller prefill chunk means more steps per batch,
-which could make an RPC timeout worse rather than better. Measure before
-copying this flag across.
+**Also applied to `qwen3.6-27b-code` as of 2026-10-19, and the reason is a
+correction.** This section used to call that profile's engine death a
+*different* defect — `TimeoutError: RPC call to sample_tokens timed out` with no
+OOM anywhere in its log — and said to measure before copying the flag across.
+Measuring falsified it. Driven into `4096 x conc=32` with 1,024-token outputs it
+loses 31 of 32 requests, and the journal shows the order plainly:
+
+```
+t+0       Worker_TP2  torch.OutOfMemoryError: ... Tried to allocate 630.00 MiB
+t+4m44s   EngineCore  TimeoutError: RPC call to sample_tokens timed out.
+```
+
+The OOM is first and it is on **one rank**; the timeout arrives 4m44s later,
+because the surviving ranks block in the collective until the watchdog fires.
+So there is one defect, not two, and the RPC timeout is its downstream symptom
+rather than an independent cause. 630 MiB against the 3.8's 638 MiB is the same
+drafter buffer at the same 32768-token chunk. Note also that it fires at **4,096
+tokens** per prompt, not only at 32,768 — depth is not what triggers it, batch
+width is.
+
+**`qwen3.6-35b-code` is still at 32768 and still unmeasured** at that cell. It
+is a 3B-active MoE rather than a 27B dense model, so its drafter buffer has a
+different shape; do not copy the flag there on this evidence.
 
 `--gpu-memory-utilization` is not the lever here. The step that fails is outside
 that budget — it budgets the KV pool, while activations and workspaces grow

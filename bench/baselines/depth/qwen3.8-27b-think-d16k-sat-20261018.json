@@ -1,0 +1,33 @@
+{
+  "model": "qwen3.8-27b-think",
+  "url": "http://127.0.0.1:8080/v1/chat/completions",
+  "label": "campaign6-20261018 d16k-sat gen=1024 band=unclassified",
+  "gen": 1024,
+  "no_thinking": true,
+  "prewarm": false,
+  "shared_prefix": false,
+  "seed": 1234,
+  "run_nonce": 1792368051,
+  "words_per_token": 1.0002463661000247,
+  "timestamp": "2026-10-19T01:18:23",
+  "rows": [
+    {
+      "ok": 32,
+      "requested": 32,
+      "errors": [],
+      "prompt_tokens": 16387,
+      "completion_tokens": 1024,
+      "agg_decode_tok_s": 180.93481227822681,
+      "per_stream_tok_s_mean": 11.26219354485235,
+      "per_stream_tok_s_min": 5.67561969080884,
+      "ttft_s_mean": 79.65811013549774,
+      "ttft_s_p90": 132.9510239980009,
+      "e2e_s_max": 185.05146655099816,
+      "accepted_per_step": 1.000030577299413,
+      "prefill_tok_s": 3931.3080977600976,
+      "prefill_tok_s_per_stream_mean": 385.66076526474876,
+      "depth_requested": 16384,
+      "concurrency": 32
+    }
+  ]
+}

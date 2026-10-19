@@ -1,0 +1,51 @@
+{
+  "model": "qwen3.8-flash-next-vllm",
+  "url": "http://127.0.0.1:8080/v1/chat/completions",
+  "label": "campaign6-20261018 d64k-warm gen=1024 band=fast",
+  "gen": 1024,
+  "no_thinking": true,
+  "prewarm": true,
+  "shared_prefix": false,
+  "seed": 1234,
+  "run_nonce": 1792368051,
+  "words_per_token": 1.0002463661000247,
+  "timestamp": "2026-10-19T01:48:58",
+  "rows": [
+    {
+      "ok": 1,
+      "requested": 1,
+      "errors": [],
+      "prompt_tokens": 65551,
+      "completion_tokens": 1024,
+      "agg_decode_tok_s": 56.692399533582275,
+      "per_stream_tok_s_mean": 56.692399533582275,
+      "per_stream_tok_s_min": 56.692399533582275,
+      "ttft_s_mean": 0.331537470992771,
+      "ttft_s_p90": 0.331537470992771,
+      "e2e_s_max": 18.37628435798979,
+      "accepted_per_step": 1.0,
+      "prefill_tok_s": 197718.22413831862,
+      "prefill_tok_s_per_stream_mean": 197718.22413831862,
+      "depth_requested": 65536,
+      "concurrency": 1
+    },
+    {
+      "ok": 4,
+      "requested": 4,
+      "errors": [],
+      "prompt_tokens": 65551,
+      "completion_tokens": 1024,
+      "agg_decode_tok_s": 85.56805671279359,
+      "per_stream_tok_s_mean": 21.622275736556748,
+      "per_stream_tok_s_min": 21.432427499385945,
+      "ttft_s_mean": 0.8188084749963309,
+      "ttft_s_p90": 0.983148473998881,
+      "e2e_s_max": 48.15864045800117,
+      "accepted_per_step": 1.0,
+      "prefill_tok_s": 266698.272879889,
+      "prefill_tok_s_per_stream_mean": 99085.17312531284,
+      "depth_requested": 65536,
+      "concurrency": 4
+    }
+  ]
+}

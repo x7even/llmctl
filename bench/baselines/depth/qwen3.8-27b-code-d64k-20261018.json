@@ -1,0 +1,51 @@
+{
+  "model": "qwen3.8-27b-code",
+  "url": "http://127.0.0.1:8080/v1/chat/completions",
+  "label": "campaign6-20261018 d64k gen=1024 band=fast",
+  "gen": 1024,
+  "no_thinking": true,
+  "prewarm": false,
+  "shared_prefix": false,
+  "seed": 1234,
+  "run_nonce": 1792368051,
+  "words_per_token": 1.0002463661000247,
+  "timestamp": "2026-10-19T00:15:44",
+  "rows": [
+    {
+      "ok": 1,
+      "requested": 1,
+      "errors": [],
+      "prompt_tokens": 65551,
+      "completion_tokens": 1024,
+      "agg_decode_tok_s": 11.58135776580444,
+      "per_stream_tok_s_mean": 11.58135776580444,
+      "per_stream_tok_s_min": 11.58135776580444,
+      "ttft_s_mean": 28.37219574500341,
+      "ttft_s_p90": 28.37219574500341,
+      "e2e_s_max": 116.70380769300391,
+      "accepted_per_step": 2.787465940054496,
+      "prefill_tok_s": 2310.395733525281,
+      "prefill_tok_s_per_stream_mean": 2310.395733525281,
+      "depth_requested": 65536,
+      "concurrency": 1
+    },
+    {
+      "ok": 4,
+      "requested": 4,
+      "errors": [],
+      "prompt_tokens": 65551,
+      "completion_tokens": 1024,
+      "agg_decode_tok_s": 9.60974003541748,
+      "per_stream_tok_s_mean": 5.376366932081692,
+      "per_stream_tok_s_min": 2.4426667628315504,
+      "ttft_s_mean": 202.4657860240004,
+      "ttft_s_p90": 367.9883104180044,
+      "e2e_s_max": 464.88607473000593,
+      "accepted_per_step": 2.8067302050528777,
+      "prefill_tok_s": 712.5335033119879,
+      "prefill_tok_s_per_stream_mean": 644.6403359768025,
+      "depth_requested": 65536,
+      "concurrency": 4
+    }
+  ]
+}
