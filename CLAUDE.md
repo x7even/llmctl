@@ -500,6 +500,7 @@ bench/               Benchmark scripts + saved baselines
 tests/smoke.sh       Integration smoke test (both backends)
 scripts/configure    GPU-count auto-detector; patches models.yaml
 docs/models.md       Full benchmark data + per-profile architecture notes
+docs/benchmark-results-full.md  Every measured cell (prefill+decode+concurrency) with steady-state distributions; generated, do not hand-edit
 docs/gpu-counts.md   Running with fewer than 4 GPUs (valid TP sizes, per-profile limits, auto-fit)
 docs/llmctl.md       Full CLI reference
 docs/workarounds.md  Active bugs + workarounds (vLLM SSE null name)
@@ -513,6 +514,7 @@ scripts/pcie-link-check  Checks every GPU's PCIe link reaches its rated speed UN
 scripts/llmhw.py     Hardware/requirements checker used by configure, llmctl and llmpanel
 bench/codetests/     Code-correctness suite (11 tasks, 5 of them the harder set) run by run_codetests.py
 bench/depth_bench.py Context-depth x concurrency sweep (--prewarm for steady-state decode)
+bench/report_full_table.py  Regenerates docs/benchmark-results-full.{md,csv} from bench/baselines/
 bench/needle_check.py Long-context retrieval, sweeping needle position — the correctness gate for kernel changes
 .vllm-cache/         Persistent Inductor compilation cache (gitignored)
 .triton-cache/       Persistent Triton kernel cache (gitignored)
