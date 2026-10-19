@@ -198,7 +198,8 @@ llmctl pick
 
 `llmpanel` is a [roctop-style](https://github.com/x7even/roctop) TUI that combines monitoring and control in one
 terminal window.
-<img width="1465" height="782" alt="image" src="https://github.com/user-attachments/assets/03c28d7c-d070-4c77-a2a4-94081133a0cf" />
+<img width="1457" height="707" alt="image" src="https://github.com/user-attachments/assets/57efccd0-94f4-498e-8d8c-af23cf7c2fdf" />
+
 
 ```bash
 llmpanel [--url URL] [--interval DURATION] [--config PATH] [--log PATH] [--gpu-count N]
