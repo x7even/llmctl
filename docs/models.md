@@ -47,6 +47,11 @@ run `llmctl logs <profile>` and wait for "Application startup complete." before 
 
 ## Profiles
 
+The per-profile tables below are the headline figures. Every measured cell —
+prefill and decode in one row, cold and prewarmed kept apart, with the
+steady-state decode distribution — is generated into
+`docs/benchmark-results-full.md` by `bench/report_full_table.py`.
+
 ### Qwen3.8-27B FP8 — the default family (`qwen3.8-27b-code` / `-think` / `-fast`)
 
 Official `Qwen/Qwen3.8-27B-FP8` (Apache 2.0, 30.9 GB including the bundled MTP head).
@@ -266,6 +271,55 @@ empty-reply early stops: `docs/hard-code-tasks.md`.
 
 ---
 
+### `qwen3.6-27b-code` — dense 27B with MTP
+
+**Aliases:** `27b-code`, `qwen3.6-27b`
+
+**Use for:** A second dense-27B MTP profile alongside `qwen3.8-27b-code`, kept for the
+checkpoint difference rather than for speed. Restored to the config on 2026-10-19 after
+having been archived.
+
+Official `Qwen/Qwen3.6-27B-FP8`. MTP (`num_speculative_tokens: 2`), 131,072 token context,
+`--max-num-seqs 32`, `--max-num-batched-tokens 16384`, `GPU_MAX_HW_QUEUES=1`,
+`--gpu-memory-utilization 0.95`. TP4 or TP2 only — TP1 OOMs loading weights and TP3 fails on
+16 linear-attention key heads not dividing by 3.
+
+**`--max-num-batched-tokens 16384` is load-bearing.** Without it the MTP drafter OOMs during
+startup profiling on this checkpoint. It is plain memory exhaustion, not fragmentation.
+
+**Benchmark (vLLM 0.26.0, no-thinking, MTP, `medium-256`, 2026-10-19):**
+
+| | conc=1 | conc=8 | conc=16 | conc=32 |
+|--|--------|--------|---------|---------|
+| decode tok/s | 65.9 | 351.1 | 578.5 | **853.0** |
+| p90 latency s | 2.84 | 4.19 | 4.94 | 6.54 |
+
+Baseline: `bench/baselines/qwen3.6-27b-code-peak-nothink-20261019.json`.
+
+**It is not faster than `qwen3.8-27b-code`** — equal at shallow prompts, a few percent behind
+at depth. On the `medium-256` sweep the two are within ~1% at every concurrency: 65.9/351.1/
+578.5/853.0 against 64.9/348.8/576.5/856.5. At depth the 3.8 profile is slightly ahead rather
+than equal — the prewarmed decode rows, which are the comparable ones, read 168.0 against 178.8
+tok/s at 16,384 x 8 (-6%) and 37.0 against 40.6 at 65,536 x 4 (-9%), with the cold rows 2-3%
+apart. Nothing in that spread is a reason to pick one over the other; the 2026-10-05 comparison
+found Qwen3.8 weaker on `expr_eval`
+(`bench/benchmark-qwen3.8-vs-3.6-27b-2026-10-05.md`), and that difference is larger than
+anything in these tables.
+
+**Depth behaviour is the dense-27B profile's weakness**, the same as `qwen3.8-27b-code`'s:
+34.7 tok/s serial at 16K, 12.0 at 64K, and a cold 16,384 x 32 cell that completed only 29 of
+32 requests behind a ~17-minute prefill queue. For deep prompts use `qwen3.8-27b-think`, whose
+`--attention-backend TRITON_ATTN` holds 45.0 tok/s serial at 16K and 39.0 at 64K.
+
+Steady-state distribution at 2,048 x 32 (one-second sampling of
+`vllm:generation_tokens_total`): run average 642.3 tok/s, p10 873.9, median 1007.9, p90 1075.9,
+peak 1104.9 — the median is 1.57x the run average, because the run average also pays for
+the ramp, where the slow seconds are.
+Every measured cell for this profile, prefill and decode together, is in
+`docs/benchmark-results-full.md`.
+
+---
+
 ## Archived profiles (removed from `config/models.yaml`)
 
 The profiles below are no longer shipped in the config. They are documented here because
@@ -390,47 +444,10 @@ parameters per forward pass. This makes it slower but more accurate:
 |---|---|---|---|
 | decode tok/s | 23 | 125 | **153** |
 
-No MTP. For the MTP-enabled variant with higher throughput see `qwen3.6-27b-code` below.
-
----
-
-### `qwen3.6-27b-code` — dense 27B with MTP
-
-**Aliases:** `27b-code`
-
-**Use for:** High-quality code generation where throughput at concurrent load matters;
-same SWE-bench accuracy as `qwen3.6-27b-fp8` (77.2) with significantly higher tok/s
-at conc≥4 due to Multi-Token Prediction.
-
-**Key differences from `qwen3.6-27b-fp8`:**
-- MTP enabled (`--speculative-config '{"method": "mtp", "num_speculative_tokens": 2}'`) —
-  major throughput uplift at conc≥4 where batch verification amortises draft cost.
-- 131,072 token context (vs shorter in the fp8 profile).
-- BF16 KV cache (no `--kv-cache-dtype fp8`) — slightly higher VRAM per token but avoids
-  per-start FP8 KV calibration (~16 min).
-- `--gpu-memory-utilization 0.95`, `--max-num-seqs 32`.
-
-**Benchmark (vLLM 0.22.1, no-thinking, MTP enabled, 2026-06-21):**
-
-| Prompt | serial | conc=2 | conc=4 | conc=8 | conc=16 |
-|--------|--------|--------|--------|--------|---------|
-| short-64    | 65 | 89  | 122 | **303** | 500 |
-| medium-256  | 67 | 115 | 214 | **381** | 629 |
-| long-512    | 74 | 128 | 240 | **412** | 677 |
-| xlarge-2048 | 71 | 127 | 243 | **444** | 720 |
-
-Decode tok/s. Baseline: `bench/baselines/qwen3.6-27b-code-notunableop-20260621.json`.
-p90 latency at conc=8: ~3.7 s (medium), ~7.8 s (long), ~37 s (xlarge).
-
-**MTP impact vs no-MTP (medium-256):**
-
-| | conc=1 | conc=4 | conc=8 | conc=16 |
-|--|--------|--------|--------|---------|
-| qwen3.6-27b-fp8 (no MTP, 2026-05-09) | 26 | 125 | 153 | — |
-| qwen3.6-27b-code (MTP, 2026-06-21)   | 66 | 214 | **381** | 629 |
-
-The ~2.5× gain at conc=8 is primarily MTP — the profiles also differ in context length
-and KV dtype, but MTP is the dominant factor at high concurrency.
+No MTP. For the MTP-enabled variant with higher throughput see
+`qwen3.6-27b-code` under Profiles above — it is in the config, this one is not.
+The ~2.5x gain at conc=8 between these two rows (153 -> 351 on the newer run) is
+primarily MTP; the profiles also differ in context length and KV dtype.
 
 ---
 

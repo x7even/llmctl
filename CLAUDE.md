@@ -258,11 +258,12 @@ See `tui/CLAUDE.md` for architecture and coding conventions.
 
 | Profile | Backend | VRAM | Active params | Notes |
 |---------|---------|------|--------------|-------|
-| `qwen3.8-27b-code` ✓ | vLLM + MTP | ~31 GB + KV | 27B (dense) | **Default.** Thinking (medium effort); 131K ctx; 361 tok/s @ conc=8 |
+| `qwen3.8-27b-code` ✓ | vLLM + MTP | ~31 GB + KV | 27B (dense) | **Default.** Thinking (medium effort); 131K ctx; 349 tok/s @ conc=8, 857 @ conc=32 |
 | `qwen3.8-27b-think` ✓ | vLLM + TRITON_ATTN | ~31 GB + KV | 27B (dense) | Thinking, no MTP — parallel agent fleets. **The long-context profile:** 33 tok/s at 131K vs 1.4 without the backend flag |
 | `qwen3.8-27b-fast` | vLLM + MTP | ~31 GB + KV | 27B (dense) | Thinking OFF by default |
 | `qwen3.8-flash-next` | llama-server (Vulkan) | ~81 GB | 6B (MoE, 125B) | UD-IQ4_XS GGUF, custom llama.cpp fork; single-user |
-| `qwen3.8-flash-next-vllm` | vLLM TP4+EP (nightly image) | ~19 GB/GPU + ~48 GB pinned PLE in host RAM (~96 GB host RAM recommended) | 6B (MoE, 125B) | W4A16 INT4 + FP8 PLE; 262K ctx, **medium effort by default** (xhigh runs away); 55.7 tok/s serial, ~150-185 @ conc=8 (182 best run), 216 @ conc=16, flat ~55 out to 258K; needs `--ulimit memlock=-1:-1` and all 4 GPUs; exclusive VRAM |
+| `qwen3.8-flash-next-vllm` | vLLM TP4+EP (nightly image) | ~19 GB/GPU + ~48 GB pinned PLE in host RAM (~96 GB host RAM recommended) | 6B (MoE, 125B) | W4A16 INT4 + FP8 PLE; 262K ctx, **medium effort by default** (xhigh runs away); 55.3 tok/s serial, ~150-185 @ conc=8 (182 best run), 244 @ conc=16, 453 @ conc=32, flat ~55 out to 258K; needs `--ulimit memlock=-1:-1` and all 4 GPUs; exclusive VRAM |
+| `qwen3.6-27b-code` ✓ | vLLM + MTP | ~31 GB + KV | 27B (dense) | Previous-gen dense 27B, restored 2026-10-19; 131K ctx; within ~1% of `qwen3.8-27b-code` at every measured cell |
 | `qwen3.6-35b-code` | vLLM + MTP | ~35 GB | 3B (MoE) | Previous gen, MTP + thinking |
 | `qwen3.6-35b-128k-nomtp` | vLLM | ~35 GB | 3B (MoE) | Previous gen, thinking, no MTP |
 | `qwen3.6-35b-fast` | vLLM | ~35 GB | 3B (MoE) | Previous gen, thinking OFF |
@@ -272,8 +273,9 @@ See `tui/CLAUDE.md` for architecture and coding conventions.
 | `gemma4-12b-q4` ✓ | llama-server + mmproj | ~13 GB | 12B (dense) | Lightest vision; co-loadable |
 
 Qwen3.8 is the norm; the three Qwen3.6-35B profiles are kept as an MTP / thinking / no-thinking
-reference set. Older profiles (Qwen3.6-27B, Qwen3.6-35B AWQ/512K/GGUF variants, Qwen3-Coder-30B,
-Qwen3.5-122B) were removed from `config/models.yaml`; restore from git history if needed.
+reference set, and `qwen3.6-27b-code` as the previous-generation dense 27B. Older profiles
+(Qwen3.6-35B AWQ/512K/GGUF variants, Qwen3.6-27B BF16/Q4_K_M, Qwen3-Coder-30B, Qwen3.5-122B)
+were removed from `config/models.yaml`; restore from git history if needed.
 
 Use aliases for common swaps: `llmctl swap qwen3.8` (→ 27b-code), `llmctl swap 27b-fast`, `llmctl swap 27b-think`,
 `llmctl swap flash-next`, `llmctl swap flash-next-vllm`, `llmctl swap gemma4` (→ 26B Q8 vision), `llmctl swap gemma4-vllm` (→ 26B vLLM).
@@ -283,20 +285,31 @@ Use aliases for common swaps: `llmctl swap qwen3.8` (→ 27b-code), `llmctl swap
 
 ## Benchmark baselines summary
 
-`medium-256` prompt, decode tok/s, `--no-thinking`, 4× R9700, MTP where noted. Qwen3.8 row measured
-on vLLM 0.26.0 (2026-10); older rows on vLLM 0.22.1.
+`medium-256` prompt, decode tok/s, `--no-thinking`, 4× R9700, MTP where noted. **Every row below
+is one run of the same sweep, all six profiles measured on 2026-10-19 within three hours** on the
+shipped image pins — so the columns are comparable with each other, which the previous table's
+mix of 0.22.1 and 0.26.0 figures from four different months was not.
 
-| Profile | serial | conc=8 | conc=16 |
-|---------|--------|--------|---------|
-| qwen3.8-27b-code (MTP, 131K ctx) | 66 | 361 | 549 |
-| qwen3.8-flash-next-vllm (no MTP, 262K ctx) | 55.7 | ~150-185 (182 best) | 216 |
-| qwen3.6-35b-code (MTP, MI300X defaults) | 43 | 261 | 481 |
-| qwen3.6-35b-fp8 no-MTP | 69 | 222 | — |
-| gemma4-26b-a4b (vLLM BF16) | 53.4 | 287.1 | **528.2** |
-| gemma4-26b-q8 (GGUF, llama-server) | 65.5 | 153.9 | 135.8 |
-| gemma4-12b-q4 (GGUF, llama-server) | 36.1 | 108.9 | 94.8 |
+| Profile | serial | conc=8 | conc=16 | conc=32 |
+|---------|--------|--------|---------|---------|
+| qwen3.6-35b-code (MTP, 3B active) | 51.3 | 291.3 | 572.0 | **950.2** |
+| gemma4-26b-a4b (BF16, 4B active) | 56.2 | 300.0 | 559.4 | 944.4 |
+| qwen3.8-27b-code (MTP, 131K ctx) | 64.9 | 348.8 | 576.5 | 856.5 |
+| qwen3.6-27b-code (MTP, 131K ctx) | 65.9 | 351.1 | 578.5 | 853.0 |
+| qwen3.8-27b-think (TRITON_ATTN, no MTP) | 46.0 | 274.0 | 477.0 | 760.1 |
+| qwen3.8-flash-next-vllm (no MTP, 262K ctx) | 55.3 | 181.5 | 244.3 | 453.3 |
 
-Baselines for removed profiles remain in `docs/models.md` and `bench/baselines/`.
+Baselines: `bench/baselines/<profile>-peak-nothink-2026101{8,9}.json`. Three things to read out
+of it: **conc=32 is worth having** — every profile is still gaining there, the MoE profiles by
+~1.7x over conc=16 and Flash-Next by 1.9x; **the two dense 27B MTP profiles are interchangeable
+on throughput**, ~1% apart at all four levels, so choose between them on output quality; and
+**`27b-think` pays 11-21% at `medium-256`** (21% at conc=8, 11% at conc=32) for the
+long-context behaviour it buys, which is the trade `docs/rdna4-long-context.md` describes.
+
+A 256-token prompt measures almost nothing about serving real work. For prefill and decode
+together, at depth and with distributions rather than single figures, see
+`docs/benchmark-results-full.md` (every measured cell) and `docs/models.md` (per-profile
+history, including the earlier vintages these rows replace).
 
 ### Flash-Next and GPU-count facts (0.4.1)
 
@@ -471,8 +484,9 @@ Operational consequences:
   an invalid name **silently falls back to auto-selection**. Always confirm with
   `podman logs <container> | grep ATTN` — the pass line is
   `Using TRITON_ATTN backend (selected via --attention-backend)`.
-- **Do not flip `qwen3.8-27b-code`.** At 256-token prompts MTP wins 17-30% (conc=8: 361 vs
-  267), so the default keeps MTP and long-context work goes to `27b-think` explicitly.
+- **Do not flip `qwen3.8-27b-code`.** At 256-token prompts MTP wins 17-30% (conc=8: 348.8 vs
+  274.0 on the same-day 2026-10-19 pair, 1.27x; 41% serial, 64.9 vs 46.0), so the default keeps
+  MTP and long-context work goes to `27b-think` explicitly.
 - **Benchmark depth, and check retrieval.** `bench/depth_bench.py` sweeps depth x concurrency
   (`--prewarm` for steady-state decode); `concurrent_bench.py` at `medium-256` cannot see any
   of this. A split-KV kernel that mis-combines its softmax segments benchmarks perfectly while
