@@ -187,27 +187,60 @@ The penalty is a fixed per-step tax, so it **amortises with batch size** — 1.8
 the stored baseline at every level, so the flag itself costs nothing measurable. It is set on the three
 `qwen3.8-27b-*` profiles, and on the template at the bottom of `models.yaml`.
 
-**It is deliberately NOT set on Flash-Next, and that is now a measurement rather than an
-omission.** A matched pair on 2026-10-18 (same profile and image either side, flag confirmed in
-the container with `podman inspect`, `medium-256`, `--no-thinking`, 16 requests per level):
+**It is now set on Flash-Next too, as of 2026-10-19 — and the 2026-10-18 pair that said not
+to was right about what it measured.** That pair ran `medium-256`, whose completions are ~157
+tokens:
 
 | arm | serial | conc=8 | `mem_busy` | steps/s |
 |---|---|---|---|---|
 | stock | **55.6** | 187.4 | 32.4% | 58.4 |
 | `GPU_MAX_HW_QUEUES=1` | 53.5 | **197.2** | 30.6% | 54.3 |
 
-Serial −3.8%, conc=8 +5.2% — both inside this profile's own session spread, and both arms landed
-at or above the best stored conc=8 figure (182), so neither was a slow draw to begin with. The
-decisive column is `mem_busy`: ~31% on both arms, where the 27B's two bands separate cleanly at
-26% against 46% with no overlap. There is no band to fix here, so the flag is not shipped on
-this profile.
+Serial −3.8%, conc=8 +5.2%, `mem_busy` ~31% on both arms where the 27B's bands separate
+cleanly at 26% against 46%. On that evidence there was no band to fix, and the flag was left
+off.
 
-Be careful what this does and does not establish. The stock spawn was already fast, so the pair
-answers "is the flag *needed* on this profile" — no — and not "does the flag work on this
-model", which would need a slow stock draw to recover from and none occurred. **The cause is not
-established.** Flash-Next differs from the 27B in two ways at once: it is a 6B-active MoE rather
-than a dense GDN hybrid, *and* it runs the nightly image rather than v0.26.0. Either could
-explain the absence of a band, and this pair cannot separate them.
+**A 157-token completion and an 8,192-token one do not spend their decode steps the same way,
+and the flag's price is per step.** Re-measured on long generations — same image and profile
+either side, flag presence confirmed in the container with `podman inspect` on both arms, each
+arm's load run twice:
+
+| 4 streams × 8,192-token generations | load 1 | load 2 | per stream |
+|---|---|---|---|
+| stock | 104.0 | 104.3 | 26.1 / 26.2 |
+| `GPU_MAX_HW_QUEUES=1` | **173.0** | **171.3** | **43.6 / 43.2** |
+
+**1.66×**, reproducing within 0.3% in both arms. The mechanism is in the scaling, not the
+single-stream figure: stock goes 57.0 → 104.0 from one stream to four (**1.82×**), flagged goes
+56.4 → 173.0 (**3.07×**). The tax is invisible at conc=1 and has eaten most of the concurrency
+scaling by conc=4 — which is exactly the regime this profile serves, since it is the
+deep-context agent profile.
+
+**And it costs nothing where the profile is published**, `medium-256` at `--requests 128`:
+
+| | published | stock, same day | flagged |
+|---|---|---|---|
+| serial | 55.4 | 55.6 | 55.2 / 55.1 |
+| conc=8 | 154.4 | — | **204.3** |
+| conc=16 | 244.5 | 251.3 | 249.9 |
+| conc=32 | 451.0 | 390.7 | 465.9 |
+
+Serial −0.7% and conc=16 −0.6% against the same-day stock spawn, both inside this harness's
+same-server spread; the earlier pair's −3.8% serial does not reproduce (under 1%, twice).
+conc=8 at 204.3 is the highest figure ever recorded on this profile. KV pool unchanged
+(482,375 stock vs 492,282 flagged, inside spawn spread). **conc=32 is not a gain claim** —
+stock readings on this profile span 359.1 / 390.7 / 441.5 / 451.0, so 465.9 is ~3% above the
+best stock draw, not +19% above the worst.
+
+What this still does **not** establish: that the band model explains it. `mem_busy` was not
+sampled in the long-generation arms, so the discriminator that separated the 27B's bands is
+untested here, and the earlier pair's ~31%-on-both reading stands unexplained. The honest
+framing is that the flag is worth 1.66× on this profile's real workload for no measurable
+cost, whatever the mechanism. The 2026-10-18 conclusion is **scoped, not withdrawn**: there
+is no short-completion band to fix on Flash-Next.
+
+**The lesson generalises past this profile:** a `medium-256` matched pair is not sufficient to
+clear this flag off a profile. Price it on the workload the profile exists for.
 
 **The 35B and gemma4 profiles have now been measured, and both wanted the flag.** Matched pairs
 on 2026-10-19, same image and profile either side, `medium-256`, `--no-thinking`, varying only

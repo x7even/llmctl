@@ -140,8 +140,9 @@ vllm serve /models/...
 #    67.2 / 357.6, within 4% of the stored baseline at every level. A fixed per-step tax, so it
 #    amortises: 1.89x serial, 1.11x at conc=8. Now also measured on the 35B and gemma4 MoE
 #    profiles (2026-10-19), which both wanted it: 2.11x / 2.27x serial, and gemma4 keeps 1.71x
-#    at conc=8. Set on every vLLM profile except Flash-Next, where a matched pair says there is
-#    no band to fix. Details: config/CLAUDE.md item 5.
+#    at conc=8. Now set on every vLLM profile, Flash-Next included: a medium-256 pair there said
+#    no, but long generations say 1.66x (4x8192-token streams, 104 -> 173 tok/s) for no
+#    short-prompt cost. Details: config/CLAUDE.md item 5.
 -e GPU_MAX_HW_QUEUES=1
 ```
 
@@ -441,21 +442,27 @@ every level, for no measurable cost. The penalty is a fixed per-step tax and so 
 batch size**: 1.89x on a single stream, 1.76x at conc=2, 1.11x at conc=8. Quote the level you
 mean; "1.9x" is the single-stream figure, not the fleet figure. The three `qwen3.8-27b-*` profiles ship with it (mandatory item 5 above).
 
-**It is not universal.** Measured on Flash-Next 2026-10-18 and deliberately not shipped there:
-serial 55.6 stock vs 53.5 flagged, conc=8 187.4 vs 197.2, and `mem_busy` ~31% on *both* arms
-where the 27B's bands separate at 26%/46% with no overlap — there is no band to fix on that
-profile. That shows the flag is not *needed* there, not that it fails on that model: the stock
-spawn was already fast, so there was no slow draw to recover. **Cause not established** —
-Flash-Next differs from the 27B in both architecture and image (nightly vs v0.26.0), and one
-pair cannot separate them. Measure per profile rather than generalising in either direction.
+**Flash-Next looked like the exception and is not — the `medium-256` pair that cleared it was
+measuring the wrong workload.** That 2026-10-18 pair read serial 55.6 stock vs 53.5 flagged,
+conc=8 187.4 vs 197.2, `mem_busy` ~31% on *both* arms where the 27B's bands separate at
+26%/46% with no overlap, and the flag was left off. On **long generations** the same matched
+design says the opposite: 4 streams x 8,192-token generations go **104.0/104.3 -> 173.0/171.3
+tok/s (1.66x)**, each arm run twice, reproducing within 0.3%. Stock scales 1.82x from one
+stream to four where flagged scales 3.07x — the per-step tax is invisible at conc=1 and has
+eaten the concurrency scaling by conc=4. Short prompts cost nothing (serial -0.7%, conc=16
+-0.6%, conc=8 204.3 = its best ever) and the KV pool is unchanged, so **it ships on
+Flash-Next as of 2026-10-19**. `mem_busy` was not sampled in the long-generation arms, so
+whether this is the same band is unestablished; the flag is worth 1.66x on this profile's
+real workload either way. **Lesson: a `medium-256` pair is not enough to clear this flag off
+a profile** — price it on the workload the profile exists for.
 
 **The 35B and gemma4 MoE profiles were measured on 2026-10-19 and both wanted the flag**:
 `qwen3.6-35b-code` 46.8 → 98.9 serial (2.11x), `gemma4-26b-a4b` 56.4 → 128.2 (2.27x),
 `qwen3.6-35b-128k-nomtp` 30.7 → 87.7 (2.86x). **Gemma 4 breaks the amortisation rule** — it
 keeps **1.71x at conc=8** (305.1 → 522.1), where the 35B-code curve is flat by then (1.00x).
 So "the band only costs you on one stream" is a property of particular models, not of the band;
-on gemma4 a slow draw costs fleet throughput outright. The flag now ships on every vLLM profile
-except Flash-Next. Two rows of the baseline table above — `gemma4-26b-a4b` and
+on gemma4 a slow draw costs fleet throughput outright. The flag now ships on every vLLM
+profile. Two rows of the baseline table above — `gemma4-26b-a4b` and
 `qwen3.6-35b-code` — were measured *before* the flag reached their profiles, so they were
 superseded readings of a configuration the stack no longer ships rather than slow draws on the
 shipped one. See `config/CLAUDE.md` for the dating and `bench/band_audit.py` for the check.

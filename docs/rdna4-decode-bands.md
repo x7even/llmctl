@@ -461,18 +461,28 @@ the stored baseline at every concurrency level with no measurable cost. The thre
 `qwen3.8-27b-*` profiles ship with it. Everything below is for detecting a slow draw *despite*
 the flag, or on a profile that does not have it.
 
-   **It is not universal, and Flash-Next is the counter-example.** A matched pair on 2026-10-18
-   found no band to fix on `qwen3.8-flash-next-vllm`: serial 55.6 stock against 53.5 flagged,
-   conc=8 187.4 against 197.2, and `mem_busy` ~31% on *both* arms where the 27B's bands separate
-   at 26% / 46% with no overlap. Both arms sat at or above the profile's best stored conc=8
-   figure. So the flag is a candidate per profile, not a blanket fix.
+   **Flash-Next was the counter-example until 2026-10-19, and the reversal is instructive.** A
+   matched pair on 2026-10-18 found no band to fix on `qwen3.8-flash-next-vllm`: serial 55.6
+   stock against 53.5 flagged, conc=8 187.4 against 197.2, and `mem_busy` ~31% on *both* arms
+   where the 27B's bands separate at 26% / 46% with no overlap. Both arms sat at or above the
+   profile's best stored conc=8 figure, so the flag was left off.
 
-   What that pair establishes is narrow: the stock spawn was already fast, so it shows the flag
-   is not *needed* on this profile, not that the flag fails to work on this model — there was no
-   slow draw to recover from. **The cause is not established.** Flash-Next differs from the 27B
-   in two ways simultaneously, model architecture (6B-active MoE against a dense GDN hybrid) and
-   image (nightly against v0.26.0), and one matched pair cannot separate them. The 35B and
-   gemma4 profiles are still unmeasured.
+   **That pair measured `medium-256`, whose completions are ~157 tokens, and the flag's price
+   is per decode step.** Re-measured on long generations — same matched design, each arm's load
+   run twice, flag confirmed with `podman inspect` on both — 4 concurrent 8,192-token
+   generations go **104.0 / 104.3 stock against 173.0 / 171.3 flagged (1.66x)**, 26.1 against
+   43.6 tok/s per stream, reproducing within 0.3% in both arms. The scaling is where it shows:
+   stock goes 57.0 -> 104.0 from one stream to four (1.82x), flagged 56.4 -> 173.0 (3.07x). A
+   re-run `medium-256` sweep at `--requests 128` costs nothing (serial 55.2 / 55.1 against
+   55.6, conc=16 249.9 against 251.3, conc=8 204.3 = the profile's best recorded figure) and
+   the KV pool is unchanged, so the flag now ships on this profile too.
+
+   Whether this is the *same* phenomenon as the 27B's band is **not established**: `mem_busy`
+   was not sampled in the long-generation arms, and the 2026-10-18 pair's ~31%-on-both reading
+   is unexplained. What is established is the engineering conclusion — **a `medium-256` matched
+   pair is not sufficient evidence to leave this flag off a profile.** Price it on the workload
+   the profile exists for. The 35B and gemma4 profiles were measured on 2026-10-19 and both
+   wanted it (see `config/CLAUDE.md` item 5).
 
    Calibrate the profile while you are at it. `config/band-baselines.json` is gitignored
    because the numbers are per-rig, so `llmband` returns `undecided` on Flash-Next until
