@@ -22,7 +22,7 @@ therefore say nothing about how the stack behaves at agent-fleet context depths,
 spread between profiles reached **24×** (see `docs/rdna4-long-context.md`). Use
 `depth_bench.py` for anything depth-related.
 
-Two rules for `depth_bench.py`, both learned by getting them wrong:
+Three rules for `depth_bench.py`, all learned by getting them wrong:
 
 - **Pass `--max-model-len` when going through llama-swap.** The router reports
   `max_model_len: null` for every profile, so the automatic clamp is inert and deep cells fail
@@ -32,6 +32,46 @@ Two rules for `depth_bench.py`, both learned by getting them wrong:
   interleaves those tokens into everyone else's decode steps. Cold 65K × conc=4 measured 181 s
   TTFT against 13.7 s of serial end-to-end. Both regimes are real; the header line says which
   one ran, and an unlabelled number between them is worthless.
+- **A default cell has no arrivals, and that is a best case for some kernels.** Without
+  `--requests`, the harness launches exactly `conc` streams once and waits: nothing enters
+  mid-run. Real fleets arrive continuously, and that can matter to the kernel, not just to
+  the queue: TRITON_ATTN picks its 3D split-KV path per *batch*, so one newcomer's prefill
+  chunk drops every co-batched decoder to the 2D grid (`docs/rdna4-long-context.md`, gate
+  4). Pass `--requests N` (N > conc) to measure the churn regime, and say which regime a
+  figure came from — a no-arrival depth number is a kernel ceiling, not a fleet throughput.
+  **Depth under churn is still unmeasured here**, so the 1.4-28x figures in
+  `docs/rdna4-long-context.md` are ceilings and must not be quoted as fleet numbers.
+
+### Never compare two runs at different `--requests`
+
+A conc=8 reading moves by up to a third with the request count alone, no config change
+involved. Measured 2026-10-19, same profile and same flag either side:
+
+| profile | n=32 | n=128 | shift |
+|---------|------|-------|-------|
+| `qwen3.6-35b-code` | 250.1 | 298.4 | +19% |
+| `qwen3.6-35b-128k-nomtp` | 347.9 | 458.3 | +32% |
+| `gemma4-26b-a4b` | 522.1 | 543.3 | +4% |
+
+32 requests through 8 slots is a ~12 s run, and ramp-up and drain are most of it. That is
+large enough to invent a result: a 19% "cost" was attributed to TRITON_ATTN on this very
+profile from one n=32 run per arm. Re-run matched — one fresh spawn per arm, 3 bench reps
+against each live server, `--requests 128`, `--serial-n 8`, the backend flag the only variable
+— the sign flips and TRITON wins every level:
+
+| cell | ROCM_ATTN (3 reps) | TRITON_ATTN (3 reps) | T/R |
+|---|---|---|---|
+| serial (n=8) | 87.9 / 88.1 / 88.3 | 91.5 / 91.5 / 91.6 | +3.9% |
+| conc=8 (n=128) | 445.5 / 446.7 / 446.7 | 464.1 / 463.9 / 461.3 | +3.9% |
+| conc=32 (n=128) | 1180.2 / 1187.3 / 1174.1 | 1208.6 / 1226.1 / 1203.5 | +2.4% |
+
+Note the spreads: against one live server, reps land within 0.6% at conc=8 and 1.9% at
+conc=32. Run-to-run noise was never the problem — the request count was. So fix the count
+before comparing anything, prefer n=128 for any number that will be published, and run more
+than one rep so the spread is visible rather than assumed.
+
+**Two reps per arm is the floor for any A/B.** Both arms of that test were single runs when it
+first went in, which is how a 19% artifact reached three documents and a profile comment.
 
 ### Retrieval check — mandatory for any attention or kernel change
 

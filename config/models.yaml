@@ -444,10 +444,14 @@ models:
     #       129,984x1 2.2 -> 62.4  = 28x, and decay across the window 26.9x -> 1.56x
     #     Retrieval gated: needle_check 3 depths x 5 positions, 15/15.
     #
-    # The cost is churn, not depth: with arrivals mid-run (32 requests through 8
-    # slots) TRITON is 19% SLOWER at medium-256 conc=8, because a newcomer's
-    # prefill chunk in the batch drops every co-batched decoder to the 2D grid.
-    # Deep contexts are where it pays. Short bursty traffic belongs on 35b-code.
+    # It costs nothing at short prompts. An earlier version of this comment said
+    # TRITON was 19% SLOWER at medium-256 conc=8; that was one bench run per arm
+    # at --requests 32, and the request count alone moves a conc=8 reading by
+    # +4% to +32% here. Matched (fresh spawn per arm, 3 reps, --requests 128,
+    # --serial-n 8) TRITON wins every level: serial 91.5 vs 88.1, conc=8 463.9
+    # vs 446.7, conc=32 1208.6 vs 1180.2, non-overlapping spreads, KV pool
+    # parity verified (1,538,425 vs 1,538,939). Route to this profile on depth;
+    # 35b-code's advantage at short prompts is MTP, not its attention backend.
     #
     # --max-num-seqs must stay at 32: above the nearest --cudagraph-capture-sizes
     # entry the 3D path closes silently, with nothing in the log.

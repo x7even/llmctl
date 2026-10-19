@@ -392,10 +392,13 @@ def run_cell(url, model, depth_words, conc, gen, timeout, no_thinking, headers,
     3D split-KV path is chosen per *batch*, and a step carrying a newcomer's
     prefill chunk drops every co-batched decoder to the 2D grid
     (docs/rdna4-long-context.md, gate 4). A no-churn cell therefore measures
-    that kernel's best case. Measured on the 35B MoE at medium-256, where
-    arrivals are constant, TRITON was 19% SLOWER at conc=8 than ROCM_ATTN while
-    the no-churn depth grid had it 1.4-28x faster -- so quote the regime, not
-    just the depth and width.
+    that kernel's best case, so quote the regime, not just the depth and width.
+
+    Keep the request count fixed when comparing anything. On this hardware a
+    conc=8 reading moves +19% to +32% from the count alone, no config change
+    involved, because 32 requests through 8 slots is a ~12 s run that ramp-up
+    and drain dominate. A TRITON-vs-ROCM "cost" measured that way did not
+    survive matched counts (bench/CLAUDE.md).
     """
     n_req = conc if requests is None else max(requests, conc)
     msgs = [

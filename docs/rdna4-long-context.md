@@ -359,40 +359,49 @@ Correctness gate, the same one `27b-think` had to pass: `bench/needle_check.py`,
 stream against `qwen3.8-27b-think`'s 33.4, which is the expected direction for 3B active
 parameters against 27B dense but had not been measured.
 
-### The cost is churn, not depth — and this pair is what separates it from MTP
+### What it costs at short prompts: nothing — and the first answer here was wrong
 
-TRITON is **19% slower at `medium-256` conc=8** on this profile: 347.9 against ROCM_ATTN's
-431.1, with one stream a wash (serial 82.9 vs 87.7, conc=1 91.3 vs 88.0). The noise floor
-between boots is 1.2%, so that is a real loss, and it sits in the same direction as the
-0.70–0.83× `27b-think` pays at `medium-256`.
+An earlier version of this section said TRITON is **19% slower at `medium-256` conc=8** on
+this profile (347.9 against ROCM_ATTN's 431.1) and called that "TRITON's own cost under churn."
+**Withdrawn.** Both figures were one `concurrent_bench.py` run per arm at `--requests 32`, and
+on this hardware the request count alone moves a conc=8 reading by that much: same profile,
+same config, same flag, `qwen3.6-35b-code` reads 250.1 at n=32 and 298.4 at n=128 (+19%), and
+this profile reads 347.9 at n=32 and 458.3 at n=128 (+32%). 32 requests through 8 slots is a
+~12 s run that ramp-up and drain dominate, so the comparison could not support a kernel
+attribution at all.
 
-The reason is **gate 4, and the harness difference is the evidence.** `concurrent_bench.py`
-pushes 32 requests through 8 slots, so arrivals are continuous and a newcomer's prefill chunk
-rides in the same step as everyone else's decode — which drops every co-batched decoder to the
-2D grid. `depth_bench.py` (before `--requests`) launched exactly `conc` streams once and let
-them run, so **the depth grid above is the no-arrival best case.** At 2,048 tokens with no
-churn TRITON already wins 1.64×, while at 256 tokens with constant churn it loses 19%: the
-crossover is a function of arrival rate at least as much as prompt length.
+Re-measured 2026-10-19 as a matched pair — one fresh spawn per arm, 3 bench reps against each
+live server, `--requests 128`, `--serial-n 8`, `--no-thinking`, this profile's own config with
+`--attention-backend TRITON_ATTN` as the single variable:
 
-What this pair settles that the 27B could not: `bfe8115` attributed `27b-think`'s `medium-256`
-cost to TRITON **and** the loss of MTP together, two variables at once. Both arms here are
-no-MTP, so the 19% is **TRITON's own cost under churn**, with MTP not involved. Whether the
-dense 27B divides the same way is still unmeasured — different architecture.
+| cell | ROCM_ATTN (3 reps) | TRITON_ATTN (3 reps) | T/R |
+|---|---|---|---|
+| serial (n=8) | 87.9 / 88.1 / 88.3 | 91.5 / 91.5 / 91.6 | **+3.9%** |
+| conc=8 (n=128) | 445.5 / 446.7 / 446.7 | 464.1 / 463.9 / 461.3 | **+3.9%** |
+| conc=32 (n=128) | 1180.2 / 1187.3 / 1174.1 | 1208.6 / 1226.1 / 1203.5 | **+2.4%** |
 
-Consequences for how to quote and measure this:
+The spreads do not overlap at any level, and run-to-run noise against one live server is 0.6%
+at conc=8 and 1.9% at conc=32. **TRITON_ATTN is slightly faster at short prompts too**, so this
+profile's backend is not a trade against short-prompt throughput, and there is no crossover to
+locate. KV pool parity is now verified rather than assumed: 1,538,425 tokens on the TRITON
+spawn against 1,538,939 on the ROCM spawn, a 0.03% difference.
 
-- **`depth_bench.py --requests N` now exists** to measure the churn regime (N requests through
-  `--concurrency` slots). The figures in the table above predate it and are no-churn; a
-  fleet-facing number needs `--requests` set well above the slot count.
-- **Do not quote 11× or 28× as fleet numbers.** They are one-stream or no-arrival figures.
-- A profile that serves bursty short requests should stay on ROCM_ATTN. The TRITON profile is
-  for deep contexts, which is also where arrivals are naturally rarer because each request
-  occupies a slot for much longer.
+Two things the retraction does not touch:
 
-Two limits on this measurement, recorded rather than smoothed over: the KV pool size was not
-captured from either arm's container log and both containers are gone, so pool parity is
-**assumed, not verified** (it was identical across backends on the 27B); and `--max-num-seqs`
-stays at 32, because above the nearest capture size the 3D path closes silently.
+- **Gate 4 is a source-code fact.** The 3D split-KV predicate is evaluated per *batch*, so a
+  co-batched prefill chunk does drop deep decoders to the 2D grid. What was never measured is
+  what that costs at depth.
+- **The depth grid above is still a no-arrival best case.** `depth_bench.py` launched exactly
+  `conc` streams once; `--requests N` (added 2026-10-19) measures the churn regime, and
+  **depth under churn remains unmeasured here** — so do not quote 11× or 28× as fleet
+  numbers.
+
+And one thing it reverses. `bfe8115` attributed `27b-think`'s `medium-256` cost to TRITON
+**and** the loss of MTP together, two variables at once; this pair was supposed to separate
+them, and it does — just the other way. With no TRITON cost to find at short prompts, that
+cost points back at losing MTP, which the same-day 27B pair supports directly (MTP wins 41%
+serial, 27% at conc=8, 21% at 16, 13% at 32). `--max-num-seqs` stays at 32 regardless: above
+the nearest capture size the 3D path closes silently.
 
 ---
 
@@ -401,7 +410,7 @@ stays at 32, because above the nearest capture size the 3D path closes silently.
 | profile | MTP | backend | rationale |
 |---|---|---|---|
 | `qwen3.8-27b-think` | no | **TRITON_ATTN** (explicit) | no MTP, so the 3D path is available; 24× at 131K over the auto-selected ROCM_ATTN |
-| `qwen3.6-35b-128k-nomtp` | no | **TRITON_ATTN** (explicit) | no MTP; 28× at 130K, 1.56× decay across the window, and the fastest deep-context profile here — at the cost of 19% at `medium-256` conc=8 |
+| `qwen3.6-35b-128k-nomtp` | no | **TRITON_ATTN** (explicit) | no MTP; 28× at 130K, 1.56× decay across the window, and the fastest deep-context profile here, with no measured short-prompt cost (+3.9% at `medium-256` conc=8, matched n=128) |
 | `qwen3.8-27b-code` | yes | ROCM_ATTN (auto) | MTP gates the 3D path shut, so the flag would do nothing; keeps its short-context MTP advantage |
 | `qwen3.8-27b-fast` | yes | ROCM_ATTN (auto) | as above |
 

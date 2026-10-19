@@ -209,10 +209,35 @@ established.** Flash-Next differs from the 27B in two ways at once: it is a 6B-a
 than a dense GDN hybrid, *and* it runs the nightly image rather than v0.26.0. Either could
 explain the absence of a band, and this pair cannot separate them.
 
-**The 35B and gemma4 profiles remain unmeasured.** Measure before adding it there — the
-Flash-Next result above is the reason to measure rather than assume. Give any *new* vLLM profile
-the flag from the start, since the downside is bounded (a few percent on one stream) and the
-upside is a silent 2×.
+**The 35B and gemma4 profiles have now been measured, and both wanted the flag.** Matched pairs
+on 2026-10-19, same image and profile either side, `medium-256`, `--no-thinking`, varying only
+the env var:
+
+| profile | serial | conc=1 | conc=8 |
+|---|---|---|---|
+| `qwen3.6-35b-code` (3B-active MoE, MTP) | 46.8 → **98.9** (2.11×) | 49.5 → 116.8 (2.36×) | 249.5 → 250.1 (**1.00×**) |
+| `gemma4-26b-a4b` (4B-active MoE, BF16) | 56.4 → **128.2** (2.27×) | 56.4 → 129.6 (2.30×) | 305.1 → **522.1 (1.71×)** |
+| `qwen3.6-35b-128k-nomtp` (FP8, no MTP) | 30.7 → **87.7** (2.86×) | 30.7 → 88.0 (2.87×) | 208.1 → 431.1 (2.07×) |
+
+Shipped on all three, and on `qwen3.6-35b-fast` unmeasured — same weights and backend as
+`-code`, differing only in chat-template defaults.
+
+**Gemma 4 is the counter-example to "it amortises, so it only matters on one stream."** The two
+Qwen MoE profiles behave as the 27B does — the 35B-code curve is fully flat by conc=8 — but
+gemma4 keeps **1.71×** at conc=8, where 522 tok/s nearly matches its own documented conc=16
+figure of 528. A slow draw on that profile costs real fleet throughput, not just latency on an
+idle server. So the amortisation ratio is a property of the model, not of the band: 1.11/1.89 =
+0.59 on the 27B dense, 1.00/2.11 = 0.47 on the 35B MoE, 2.07/2.86 = 0.72 on the 35B no-MTP, and
+0.75 on gemma4. Do not assume a conc=8 reading is safe because a sibling profile's was.
+
+This also found two bad rows in our own published table: the committed six-profile sweep had
+`qwen3.6-35b-code` at 51.3 serial and `gemma4-26b-a4b` at 56.2/300.0, which match the **stock**
+arms above almost exactly. Both were slow-band draws, understating the hardware by ~2.3×. That
+is the mechanism behind "why do the published numbers look slower than what these GPUs do" —
+see `bench/band_audit.py`.
+
+Give any *new* vLLM profile the flag from the start: the downside is bounded (a few percent on
+one stream, per the Flash-Next pair) and the upside is a silent 2×.
 
 Two detection notes, both learned the hard way:
 

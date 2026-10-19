@@ -142,6 +142,57 @@ The 261 figure is the pre-MTP baseline; a fresh conc=8 run with MTP enabled is p
 
 ---
 
+### `qwen3.6-35b-128k-nomtp` — the deep-context profile
+
+**Aliases:** `35b-nomtp`
+
+Same FP8 checkpoint as `-code`, no speculative decoding, `--max-model-len 131072`, TP4 with
+expert parallelism. Carries two load-bearing flags: `-e GPU_MAX_HW_QUEUES=1` and
+`--attention-backend TRITON_ATTN`. Without MTP every decode step has `query_len=1`, which is
+what keeps TRITON_ATTN's 3D split-KV path open — the only kernel on gfx1201 that parallelises
+over context length.
+
+**This is the fastest deep-context profile in the stack.** Measured 2026-10-19, both arms
+fast-band, one variable, `--no-thinking`, gen 128, aggregate tok/s (per-stream in brackets):
+
+| depth × streams | ROCM_ATTN (auto) | TRITON_ATTN (shipped) | ratio |
+|---|---|---|---|
+| 2,048 × 1 | 59.2 | 97.1 | 1.64× |
+| 2,048 × 8 | 341.3 [44.1] | 469.5 [61.5] | 1.38× |
+| 16,384 × 1 | 18.4 | 91.5 | 4.97× |
+| 16,384 × 8 | 106.9 [15.6] | 300.7 [50.1] | 2.81× |
+| 16,384 × 8 *prewarmed* | 131.9 [16.6] | **439.8** [55.4] | 3.33× |
+| 65,536 × 1 | 4.6 | 76.3 | 16.6× |
+| 65,536 × 4 | 16.1 [4.8] | 108.4 [45.9] | 6.73× |
+| 65,536 × 4 *prewarmed* | 20.7 [5.2] | **231.1** [58.3] | 11.2× |
+| 129,984 × 1 | 2.2 | **62.4** | 28.4× |
+
+Decay across the whole window is **1.56×** (97.1 at 2K → 62.4 at 130K) where ROCM_ATTN decays
+26.9×. At 130K on one stream it serves 62.4 tok/s against `qwen3.8-27b-think`'s 33.4 — the
+expected direction for 3B active parameters against 27B dense, now measured. Prefill improves
+too: TTFT at 65,536 × 4 falls 55.21 s → 23.77 s (2.32×), at 16,384 × 8 11.73 → 7.72 s.
+
+Retrieval is gated, not assumed: `bench/needle_check.py`, 3 depths (16K/64K/130K) × 5 needle
+positions, **15/15**. A split-KV kernel that mis-combines its softmax segments benchmarks
+perfectly while silently losing context, so this gate runs on every attention change.
+
+**What it costs at short prompts: nothing measurable.** An earlier version of this entry said
+the profile was 19% slower than `-code`'s configuration at `medium-256` conc=8 (347.9 vs
+431.1). That is withdrawn: both figures were single runs at `--requests 32`, and the request
+count alone moves a conc=8 reading by +4% to +32% here. Re-measured as a matched pair (fresh
+spawn per arm, 3 reps, `--requests 128`, `--serial-n 8`, `--attention-backend` the single
+variable), TRITON_ATTN is **faster** at every level — serial 91.5 vs 88.1, conc=8 463.9 vs
+446.7, conc=32 1208.6 vs 1180.2 — with non-overlapping spreads and verified KV-pool parity.
+
+So route to this profile on depth, not away from it on burstiness. The caveat that survives is
+about quoting: the depth grid above launched exactly `conc` streams once, so it is a no-arrival
+best case, and gate 4 (the 3D predicate is evaluated per *batch*) means a co-batched prefill
+chunk still drops deep decoders to the 2D grid — how much that costs at depth is unmeasured.
+Keep `--max-num-seqs` at 32 — above the nearest CUDA-graph capture size the 3D path closes
+with nothing in the log. Full write-up: `docs/rdna4-long-context.md`.
+
+---
+
 ### `qwen3.6-35b-fast` — low-latency general use
 
 **Aliases:** `qwen3.6-fast`, `qwen3.6-nothin`
@@ -362,8 +413,12 @@ Clones of the code profile with `--max-model-len` bounded to 32K/64K/128K: a sma
 KV pool means faster warmup and more sequence headroom for tool-call/MCP sessions
 that never approach 256K. The `-32k`/`-64k`/`-128k` variants keep MTP.
 
-**`qwen3.6-35b-128k-nomtp`** (alias `35b-nomtp`) drops speculative decoding. Measured
-on vLLM 0.24.0 (2026-07-07, 4× R9700, 1024-in/256-out, seed 42):
+**`qwen3.6-35b-128k-nomtp` is NOT archived** — it is live in `config/models.yaml` and has its
+own section above, which is the one to read. It is mentioned here only because this heading
+covers the family it was cloned from. The table below is a vLLM **0.24.0** measurement from
+2026-07-07 and is superseded: the profile has since gained `GPU_MAX_HW_QUEUES=1` and
+`TRITON_ATTN`, which together take it from ~59 to 97.1 tok/s at 2K and from unusable to 62.4 at
+130K. Kept for the MTP-vs-no-MTP comparison only, which is what it was run for:
 
 | Profile | conc 1 tok/s | conc 8 tok/s | ITL p50 @ conc 8 |
 |---|---|---|---|
