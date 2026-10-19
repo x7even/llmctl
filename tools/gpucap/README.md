@@ -57,9 +57,11 @@ across reboot and resume.
 
 If you installed an earlier version of this tool, it wrote a `CAP_W` of its own choosing into
 `/etc/gpucap.conf`. That file now counts as yours, so that value is what gets re-applied. To be rid of a cap
-you did not pick, `sudo rm /etc/gpucap.conf` (or `sudo gpucap set <watts>` to replace it with your own). The
-cap already in force is applied to the driver at run time, so it stays until the next boot, after which
-nothing re-applies it.
+you did not pick, install this version first (`go build -o gpucap .`, then `sudo ./install.sh`) and only then
+`sudo rm /etc/gpucap.conf` — or `sudo gpucap set <watts>` to replace it with a value of your own. The order
+matters: the older binary falls back to its built-in default whenever the config is unreadable, so deleting
+the file before replacing the binary brings the same cap back on the next boot. A cap is a run-time driver
+setting, so one already in force survives until the next reboot or resume, after which nothing re-applies it.
 
 ## Uninstall
 
