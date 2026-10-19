@@ -114,6 +114,109 @@ with the model's own recipe failing the same way, so it was not adopted.
 
 ---
 
+## Harness traps
+
+Each of these produced a wrong number or a wasted run here at least once.
+
+### `--url` is the FULL endpoint, not a base
+
+`DEFAULT_URL` in `depth_bench.py` and `concurrent_bench.py` is
+`http://127.0.0.1:8080/v1/chat/completions`. Passing `--url http://host:8080/v1`
+makes every POST a 404 and the whole sweep reports zero completions, which
+looks exactly like a dead backend.
+
+### `--run-nonce` is mandatory on a re-run
+
+Without it a second run sends byte-identical prompts, the prefix cache answers
+them, and the prefill figure measures cache reuse. A 32K cell re-run warm
+reported 41,463 prompt tok/s against a true ~4,300 -- a 10x overstatement that
+looks like a breakthrough. Pass a fresh `--run-nonce` for every run against a
+server that has already seen traffic.
+
+### Any prefill figure from a prewarmed cell is cache reuse
+
+`--prewarm` populates the prefix cache on purpose, so the prefill rate in a
+prewarmed row is not a compute rate and must never be published as one.
+160K-267K tok/s figures are the tell. `report_full_table.py` prints `cached`
+in that column rather than a number.
+
+### `prefill_tok_s` is a whole-batch rate
+
+It is batch prompt tokens divided by the slowest stream's TTFT. It is not a
+per-stream speed and is not comparable with decode tok/s. At conc=32 it will
+look enormous beside a decode figure; they are different denominators.
+
+### llama-swap does not proxy `/metrics`
+
+Port 8080 returns nothing for `vllm:*`. The backend's own port must be
+scraped, and it is assigned dynamically (9104, 9106, ... depending on what has
+been loaded since the router started). Discover it:
+
+```bash
+ps -eo args | grep -a 'vllm serve' | grep -oE -- '--port [0-9]+'
+```
+
+`depth_bench.py --metrics-url http://127.0.0.1:<port>/metrics` then samples
+`vllm:generation_tokens_total` once a second and reports the distribution
+alongside the run average.
+
+### `llmctl swap <P>` is a no-op when P is already loaded
+
+If the profile is already up and its pid 1 is alive, swap returns success
+without restarting anything. A config change you just made is therefore NOT in
+effect, and an A/B comparing two configs silently measures one of them twice.
+`llmctl unload` first, then swap, then assert the container Id actually
+changed:
+
+```bash
+before=$(podman ps --filter name=llmstack-vllm-<P> -q | head -1)
+llmctl unload && llmctl swap <P>
+after=$(podman ps --filter name=llmstack-vllm-<P> -q | head -1)
+[ "$after" != "$before" ] || echo "swap was a no-op -- the old container is still serving"
+```
+
+After editing `config/models.yaml`, `llmctl down && llmctl up` as well: the
+router reads the config at startup.
+
+### `No available shared memory broadcast block` is not a death signature
+
+vLLM prints it on any stall over 60 s, including a cold start and a long
+prefill queue. A watchdog that treats it as a crash will kill healthy runs.
+The patterns that do mean the engine is gone:
+
+```
+torch\.OutOfMemoryError|Tried to allocate|EngineDeadError|RPC call to [a-z_]+ timed out
+```
+
+### `llmband` exit 2 usually means "no baseline", not "slow"
+
+`config/band-baselines.json` covers only a few profiles. For an uncalibrated
+one the detector cannot decide and exits 2, with the reason on stdout -- read
+it before concluding a spawn was slow. Calibrate with `--calibrate` against a
+server you have reason to believe is fast.
+
+### A deep, wide cell that reports nothing may be a queue, not a failure
+
+16,384 tokens x 32 streams on a 27B produced a ~17-minute prefill backlog and
+three client-side read timeouts. The server was serving the whole time. Check
+`num_requests_waiting_by_reason{reason="capacity"}` -- a non-zero value means
+the KV budget admits fewer streams than you asked for, so the extra streams
+wait rather than run.
+
+### Report a distribution, not a peak
+
+`llmpanel` reports the maximum of one-second difference quotients; the
+benchmark reports a run average over the whole decode span. On the same cell
+those differ by up to 1.44x, and neither is wrong. Quote the saturated median
+for "what the hardware sustains", the run average for "how long the batch
+takes", and the p10 for the floor -- the `low` is a sampling-boundary artifact
+and a single tick can catch one token. Both surfaces use nearest-rank,
+round-half-up, no interpolation, so their figures are comparable. See the
+README's "Reading a live `llmpanel` peak" section and
+`docs/benchmark-results-full.md`.
+
+---
+
 ## Standard invocation
 
 ### Full sweep (save as baseline)
