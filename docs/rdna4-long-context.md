@@ -319,11 +319,20 @@ explanation someone will reach for again:
   dimension — precisely the missing parallelism — but it is implemented only in the
   FlashInfer, FlashAttention and MLA backends, none of which exist on gfx1201.
 - **`VLLM_ATTENTION_BACKEND`.** This env var **does not exist in vLLM 0.26.0**. The selector
-  is the CLI flag `--attention-backend`, and an invalid name **silently falls through to
-  auto-selection**. Always confirm in the log:
+  is the CLI flag `--attention-backend`. An earlier version of this file said an invalid name
+  silently falls through to auto-selection; **it does not** — both failure modes are loud.
+  `arg_utils.py:2257` parses the flag with `AttentionBackendEnum[value.upper()]`, so a typo
+  raises `KeyError` before the server starts, and `rocm.py`'s `get_attn_backend_cls` raises
+  `Selected backend ... is not valid for this configuration` for a name that is spelled right
+  but incompatible with the model's shapes. `auto` is the only string meaning auto-selection.
+  Confirm what is running in the log:
   `rocm.py:570 Using TRITON_ATTN backend (selected via --attention-backend).`
   Auto-selection on this model logs instead:
   `rocm.py:615 Found incompatible backend(s) [TURBOQUANT] ... Overriding with ROCM_ATTN out of potential backends: ['ROCM_ATTN', 'TRITON_ATTN'].`
+  Read the backend *name* in that first line, not the parenthetical: `rocm.py` prints
+  "selected via --attention-backend" whenever anything set a backend, vLLM itself included.
+  `gemma4-26b-a4b` gets TRITON_ATTN from `model_executor/models/config.py:239` — Gemma 4 has
+  heterogeneous head dimensions and no FA4 here — and logs that line with no flag on its argv.
 
 ---
 

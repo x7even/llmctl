@@ -515,16 +515,31 @@ Operational consequences:
 - **`--max-num-seqs` above 32 silently closes the 3D path.** The threshold snaps to the
   nearest CUDA-graph capture size, which is 32 today. Changing `--max-num-seqs` or the
   capture-size list can undo the whole fix with nothing in the log.
-- **`VLLM_ATTENTION_BACKEND` does not exist in 0.26.0.** Use the CLI `--attention-backend`;
-  an invalid name **silently falls back to auto-selection**, so always verify. **Verify on the
-  container's argv, not on a log line:**
-  `podman inspect <container> --format '{{json .Args}}' | grep -c attention-backend`.
-  The log line `Using TRITON_ATTN backend (selected via --attention-backend)` is suggestive but
-  not proof — `gemma4-26b-a4b` emitted a TRITON_ATTN line on a spawn whose argv contained no
-  such flag (checked with the command above), and the image logs a separate multimodal-encoder
-  backend selection that a loose grep will pick up. `rocm.py` also logs the auto-selection
-  explicitly when it overrides (`Overriding with ROCM_ATTN out of potential backends: [...]`),
-  which is the useful line to read for what the engine actually chose.
+- **`VLLM_ATTENTION_BACKEND` does not exist in 0.26.0.** Use the CLI `--attention-backend`.
+  **A bad name fails loudly, it does not fall back** — an earlier version of this file said it
+  silently reverted to auto-selection, which is not true of this image. Read in the image:
+  `arg_utils.py:2257` routes the flag through `AttentionConfig.validate_backend_before`, which
+  is `AttentionBackendEnum[value.upper()]`, so a typo raises `KeyError` before the server
+  starts; and `rocm.py`'s `get_attn_backend_cls` raises
+  `Selected backend ... is not valid for this configuration` for a name that is spelled right
+  but incompatible with the model's shapes. `auto` is the one string that means auto-selection
+  (the validator maps it to `None`).
+- **Two different questions, two different checks.** What was *passed* is on the container's
+  argv: `podman inspect <container> --format '{{json .Args}}' | grep -c attention-backend`.
+  What is *running* is in the log — `Using <BACKEND> backend` means that backend is active,
+  `Found incompatible backend(s) [...] Overriding with ROCM_ATTN out of potential backends:
+  [...]` means auto-selection rejected something and chose for you. Check argv when you want to
+  know whether the profile shipped the flag; check the log when you want to know what the
+  engine runs. **The `(selected via --attention-backend)` parenthetical misreports the source:**
+  `rocm.py` prints that string whenever *anything* set a backend, including vLLM itself.
+- **`gemma4-26b-a4b` runs TRITON_ATTN without any flag, and that is correct behaviour.**
+  `model_executor/models/config.py:239` forces it for Gemma 4, because the model has
+  heterogeneous head dimensions (per-layer `head_dim` differing from the global one) and the
+  FA4 path that would otherwise handle it is unavailable here — so it logs
+  `Gemma4 model has heterogeneous head dimensions ... forcing TRITON_ATTN backend` and then the
+  misleading "selected via" line. Verified on two spawns whose argv contained no such flag.
+  Consequence worth knowing: gemma4 is already on the only depth-scaling kernel on this
+  hardware, so unlike the Qwen3.x profiles there is no backend change left to make there.
 - **Do not flip `qwen3.8-27b-code`.** At 256-token prompts MTP wins at every concurrency, by a
   margin that shrinks as the batch widens: 41% serial, 27% at conc=8, 21% at 16, 13% at 32
   (64.9/348.8/576.5/856.5 against 46.0/274.0/477.0/760.1, measured as a same-day pair on

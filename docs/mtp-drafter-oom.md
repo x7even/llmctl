@@ -186,9 +186,11 @@ GPUs attached raises
 ValueError: Expected 'True' or 'False' at index 2 in ConfigTokenizer but got 'NotABool'
 ```
 
-It is therefore parsed, not silently dropped. This check is worth doing for any env-var
-knob on this stack — an invalid `--attention-backend` on the same image silently falls back
-to auto-selection instead of erroring.
+It is therefore parsed, not silently dropped. This check is worth doing for any env-var knob
+on this stack, because env vars are where the silent-drop risk lives. CLI flags on this image
+are not: an invalid `--attention-backend` raises rather than falling back to auto-selection
+(an earlier version of this paragraph claimed the opposite — see `CLAUDE.md` for the two
+loud failure paths).
 
 The image's torch is 2.11.0+gitd0c8b1f, which carries all three spellings
 (`PYTORCH_CUDA_ALLOC_CONF`, `PYTORCH_ALLOC_CONF`, `PYTORCH_HIP_ALLOC_CONF`). The
