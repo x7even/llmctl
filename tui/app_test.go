@@ -366,7 +366,7 @@ func TestView_rendersWithActiveModel(t *testing.T) {
 		GPUs: []GPUInfo{
 			{Index: 0, VRAMUsed: 32e9, VRAMTotal: 34e9, UsePercent: 95, Temp: 72},
 		},
-		ROCMAvail: true,
+		GPUAvail: true,
 		FetchedAt: time.Now(),
 	})
 	out := a.View()

@@ -1,0 +1,34 @@
+
+
+============================ ROCm System Management Interface ============================
+====================================== Temperature =======================================
+GPU[0]		: Temperature (Sensor edge) (C): 66.0
+GPU[0]		: Temperature (Sensor junction) (C): 79.0
+GPU[0]		: Temperature (Sensor memory) (C): 82.0
+GPU[1]		: Temperature (Sensor edge) (C): 64.0
+GPU[1]		: Temperature (Sensor junction) (C): 78.0
+GPU[1]		: Temperature (Sensor memory) (C): 81.0
+GPU[2]		: Temperature (Sensor edge) (C): 61.0
+GPU[2]		: Temperature (Sensor junction) (C): 78.0
+GPU[2]		: Temperature (Sensor memory) (C): 78.0
+GPU[3]		: Temperature (Sensor edge) (C): 65.0
+GPU[3]		: Temperature (Sensor junction) (C): 78.0
+GPU[3]		: Temperature (Sensor memory) (C): 80.0
+==========================================================================================
+=================================== % time GPU is busy ===================================
+GPU[0]		: GPU use (%): 100
+GPU[1]		: GPU use (%): 100
+GPU[2]		: GPU use (%): 100
+GPU[3]		: GPU use (%): 100
+==========================================================================================
+================================== Memory Usage (Bytes) ==================================
+GPU[0]		: VRAM Total Memory (B): 34208743424
+GPU[0]		: VRAM Total Used Memory (B): 31208407040
+GPU[1]		: VRAM Total Memory (B): 34208743424
+GPU[1]		: VRAM Total Used Memory (B): 31174914048
+GPU[2]		: VRAM Total Memory (B): 34208743424
+GPU[2]		: VRAM Total Used Memory (B): 31225417728
+GPU[3]		: VRAM Total Memory (B): 34208743424
+GPU[3]		: VRAM Total Used Memory (B): 31225307136
+==========================================================================================
+================================== End of ROCm SMI Log ===================================

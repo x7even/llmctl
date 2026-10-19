@@ -4,7 +4,6 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/http"
-	"os/exec"
 	"regexp"
 	"strconv"
 	"strings"
@@ -43,7 +42,7 @@ type AppData struct {
 	Profiles  []string
 	Metrics   *VLLMMetrics // nil = metrics endpoint not available
 	GPUs      []GPUInfo
-	ROCMAvail bool
+	GPUAvail  bool
 	FetchedAt time.Time
 }
 
@@ -192,68 +191,24 @@ func firstNonNil(ptrs ...*float64) *float64 {
 	return nil
 }
 
-// ── rocm-smi ──────────────────────────────────────────────────────────────────
+// ── GPU stats (amd-smi, rocm-smi fallback; see gpustat.go) ───────────────────────
 
-var numRe = regexp.MustCompile(`[\d.]+`)
-
-func fetchROCM() ([]GPUInfo, bool) {
-	out, err := exec.Command("rocm-smi",
-		"--showmeminfo", "vram", "--showuse", "--showtemp").Output()
-	if err != nil {
-		return nil, false
-	}
-	return parseROCMText(string(out)), true
-}
-
-var rocmLineRe = regexp.MustCompile(`GPU\[(\d+)\]\s*:\s*(.+)`)
-
-func parseROCMText(text string) []GPUInfo {
-	gpuMap := map[int]*GPUInfo{}
-	for _, line := range strings.Split(text, "\n") {
-		m := rocmLineRe.FindStringSubmatch(line)
-		if m == nil {
-			continue
-		}
-		idx, _ := strconv.Atoi(m[1])
-		if gpuMap[idx] == nil {
-			gpuMap[idx] = &GPUInfo{Index: idx}
-		}
-		g := gpuMap[idx]
-		c := strings.TrimSpace(m[2])
-		switch {
-		case strings.Contains(c, "VRAM Total Memory (B):"):
-			g.VRAMTotal, _ = strconv.ParseInt(numRe.FindString(c), 10, 64)
-		case strings.Contains(c, "VRAM Total Used Memory (B):"):
-			g.VRAMUsed, _ = strconv.ParseInt(numRe.FindString(c), 10, 64)
-		case strings.Contains(c, "GPU use (%):"):
-			g.UsePercent, _ = strconv.ParseFloat(numRe.FindString(c), 64)
-		case strings.Contains(c, "Temperature (Sensor junction) (C):"):
-			g.Temp, _ = strconv.ParseFloat(numRe.FindString(c), 64)
-		}
-	}
-	gpus := make([]GPUInfo, 0, len(gpuMap))
-	for i := range gpuMap {
-		gpus = append(gpus, *gpuMap[i])
-	}
-	for i := 1; i < len(gpus); i++ {
-		for j := i; j > 0 && gpus[j].Index < gpus[j-1].Index; j-- {
-			gpus[j], gpus[j-1] = gpus[j-1], gpus[j]
-		}
-	}
-	return gpus
+func fetchGPUs() ([]GPUInfo, bool) {
+	gpus, tool := readGPUs(runCmd)
+	return gpus, tool != "none"
 }
 
 // ── Composite fetch ───────────────────────────────────────────────────────────
 
 func fetchAll(baseURL string) AppData {
-	type rocmResult struct {
+	type gpuResult struct {
 		gpus  []GPUInfo
 		avail bool
 	}
-	ch := make(chan rocmResult, 1)
+	ch := make(chan gpuResult, 1)
 	go func() {
-		g, a := fetchROCM()
-		ch <- rocmResult{g, a}
+		g, a := fetchGPUs()
+		ch <- gpuResult{g, a}
 	}()
 
 	active := fetchRunning(baseURL)
@@ -270,7 +225,7 @@ func fetchAll(baseURL string) AppData {
 		Profiles:  profiles,
 		Metrics:   metrics,
 		GPUs:      rr.gpus,
-		ROCMAvail: rr.avail,
+		GPUAvail:  rr.avail,
 		FetchedAt: time.Now(),
 	}
 }
