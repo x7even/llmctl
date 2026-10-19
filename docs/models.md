@@ -297,8 +297,16 @@ conc=8 is the unstable cell on this config. Readings of 149, 157, 165 and 185 we
 earlier runs (including 157 in the same-config 262K A/B), and on 2026-10-19 one server gave
 154.4, then 140.1, then 140.5 in that order, all at `--requests 128`. So the variation is not
 only spawn-to-spawn. Treat this cell as 140-182 and do not read a difference between any two
-values inside that band. conc=16 and conc=32, by contrast, reproduce across spawns to within
-0.5%.
+values inside that band.
+
+An earlier version of this section said conc=16 and conc=32 "reproduce across spawns to within
+0.5%". **That was two spawns agreeing, and it does not hold.** Across the 2026-10-19 spawns
+conc=32 spans 359.1 / 390.7 / 441.5 / 451.0 / 452.9 stock and 465.9 flagged, and conc=16 spans
+222.6 / 244.5 / 251.3 stock and 249.9 flagged — so conc=32 is a ~±13% cell too, and no two
+figures inside it should be read as a difference either. What *is* reproducible at those levels
+is that they are insensitive to the state the server is in: the 22.6-tok/s-serial spawn below
+still turned in 452.9 at conc=32, near the top of the stock range, so a slow draw costs ~60% on
+one stream, ~9% at conc=16 and nothing measurable at conc=32.
 
 **Open issue: an intermittent single-stream latency tail.** This profile's one-stream cells are
 not reliably reproducible, and the failure is in the latency distribution rather than in the
@@ -316,8 +324,18 @@ The three clean cells agree to 0.2% and reproduce the 55.3 measured independentl
 spawn, so 55.4 is the profile's single-stream rate. The other two are the same server minutes
 later or earlier, with a tail that stretches rather than a mode that shifts. The episodes do not
 trend — a clean n=32 cell ran immediately before the 42.90 one, and a normal conc=8 cell
-immediately after it — and `scripts/llmband` classified the server fast throughout, so this is
-not the decode band. **Cause not established.** It matters more than a benchmarking footnote
+immediately after it — and `scripts/llmband` classified the server fast throughout.
+
+That last point was once read as "so this is not the decode band". **It no longer rules the band
+in or out.** On 2026-10-19 this profile was observed changing state *mid-process*, in both
+directions: a stock spawn that came up slow (23.0 tok/s single-stream) served two long loads and
+a full sweep at that rate and then read 56.9 on the next probe, while two other stock spawns went
+the other way, 57 → 29. A server that flips mid-life can read fast at an `llmband` probe and slow
+in the bench cell minutes later, and a flip *inside* a cell produces exactly the stretched-tail
+shape in the table above rather than a shifted mode. So the tail and the slow-state observations
+are plausibly one phenomenon. **Cause not established**, and `mem_busy` — the discriminator that
+separated the 27B's bands — has still never been sampled on a slow Flash-Next spawn, which is
+the single most useful missing measurement here. It matters more than a benchmarking footnote
 suggests: this is the interactive profile, and a request that takes 10 s instead of 2.8 s is
 visible to whoever is waiting for it. Worth a dedicated investigation, with host memory state
 (this profile pins ~48 GiB of host RAM) as one thing to rule in or out. The

@@ -631,16 +631,23 @@ models:
   #          but gave no throughput gain and cost 40% of KV capacity: left off.
   #          VLLM_ROCM_USE_AITER=0: AITER has no Qwen4Exp path, Triton kernels used.
   #          GPU_MAX_HW_QUEUES=1: shipped 2026-10-19, reversing the 2026-10-18 decision to
-  #          leave it off. That pair measured medium-256 (~157-token completions) and found
-  #          nothing; long generations are a different story. Matched pair, same image and
-  #          profile either side, flag confirmed with podman inspect on both arms, each
-  #          arm's load run twice: 4 concurrent 8,192-token generations go 104.0/104.3 ->
-  #          173.0/171.3 aggregate tok/s (1.66x, 26.1 -> 43.6 per stream). Costs nothing
-  #          where this profile is published: medium-256 n=128 serial 55.6 -> 55.2/55.1,
-  #          conc=16 251.3 -> 249.9, conc=8 204.3 (its best ever), conc=32 465.9; KV pool
-  #          unchanged (482,375 vs 492,282, inside spawn spread). Scaling 1->4 streams is
-  #          1.82x stock against 3.07x flagged: the per-step tax is invisible on one stream
-  #          and eats the concurrency scaling by four. See config/CLAUDE.md item 5.
+  #          leave it off. That pair measured medium-256 (~157-token completions) on one
+  #          spawn per arm and found nothing; it was wrong twice. (a) Long generations:
+  #          matched pair, same image and profile either side, flag confirmed with podman
+  #          inspect on both arms, TWO fresh spawns per arm -- 4 concurrent 8,192-token
+  #          generations go 104.0/104.3 stock -> 173.0/171.3/172.3 flagged aggregate tok/s
+  #          (1.66x, 26.1 -> 43.6 per stream), the flagged arm reproducing across spawns to
+  #          within 1%. Scaling 1->4 streams is 1.82x stock against 3.07x flagged: the
+  #          per-step tax is invisible on one stream and eats the concurrency scaling by
+  #          four. (b) One stock spawn in five has since drawn a ~2.5x slow state (23.0
+  #          tok/s single-stream at 2K and 131K, 22.6 on medium-256 serial, against 56-57 on
+  #          three other stock spawns the same day), so "no band to fix here" was an
+  #          artifact of one spawn per arm. Costs nothing where this profile is published:
+  #          medium-256 n=128 serial 55.6 -> 55.2/55.1, conc=16 251.3 -> 249.9, conc=8 204.3
+  #          (its best ever), conc=32 465.9; KV pool unchanged (482,375 vs 492,282, inside
+  #          spawn spread). Caveats: mem_busy was not sampled on the slow spawn, so whether
+  #          that state IS the band is unestablished, and on this profile the state moves in
+  #          both directions mid-process. See config/CLAUDE.md item 5.
   #          --cudagraph-capture-sizes is 1 2 4 8, NOT the usual 1 2 4 8 16 32: on this
   #          model larger captured sizes slow low-batch decode (medium-256 decode tok/s,
   #          serial/conc8/conc16: sizes<=8 ~52/148/209, <=16 ~37/122/231, <=32 ~27/128/227).
@@ -965,9 +972,12 @@ models:
 # #       draw the slow decode band and serve at ~half speed for its whole life with
 # #       nothing in the logs (27B at TP4: serial 35.6 -> 67.2 tok/s). Now set on every
 # #       vLLM profile. It read neutral on Flash-Next at medium-256, which is why that
-# #       profile went without it until 2026-10-19 -- then long generations said 1.66x
-# #       (4x8192-token streams, 104 -> 173 tok/s). So price it on the workload a
-# #       profile exists for, and give a new profile the flag from the start, then
+# #       profile went without it until 2026-10-19 -- and that reading was an artifact of
+# #       the test, not a property of the profile: long generations said 1.66x (4x8192-token
+# #       streams, 104 -> 173 tok/s, two spawns per arm) and one stock spawn in five has
+# #       since drawn a 2.5x slow state on medium-256 itself. So never clear this flag off a
+# #       profile on one short-prompt pair: price it on the workload the profile exists for,
+# #       over more than one spawn. Give a new profile the flag from the start, then
 # #       classify the spawn with scripts/llmband. docs/rdna4-decode-bands.md.
 # #
 # # Also: --max-num-seqs above 32 closes TRITON_ATTN's 3D split-KV path

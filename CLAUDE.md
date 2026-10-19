@@ -443,19 +443,28 @@ every level, for no measurable cost. The penalty is a fixed per-step tax and so 
 batch size**: 1.89x on a single stream, 1.76x at conc=2, 1.11x at conc=8. Quote the level you
 mean; "1.9x" is the single-stream figure, not the fleet figure. The three `qwen3.8-27b-*` profiles ship with it (mandatory item 5 above).
 
-**Flash-Next looked like the exception and is not — the `medium-256` pair that cleared it was
-measuring the wrong workload.** That 2026-10-18 pair read serial 55.6 stock vs 53.5 flagged,
-conc=8 187.4 vs 197.2, `mem_busy` ~31% on *both* arms where the 27B's bands separate at
-26%/46% with no overlap, and the flag was left off. On **long generations** the same matched
-design says the opposite: 4 streams x 8,192-token generations go **104.0/104.3 -> 173.0/171.3
-tok/s (1.66x)**, each arm run twice, reproducing within 0.3%. Stock scales 1.82x from one
-stream to four where flagged scales 3.07x — the per-step tax is invisible at conc=1 and has
-eaten the concurrency scaling by conc=4. Short prompts cost nothing (serial -0.7%, conc=16
--0.6%, conc=8 204.3 = its best ever) and the KV pool is unchanged, so **it ships on
-Flash-Next as of 2026-10-19**. `mem_busy` was not sampled in the long-generation arms, so
-whether this is the same band is unestablished; the flag is worth 1.66x on this profile's
-real workload either way. **Lesson: a `medium-256` pair is not enough to clear this flag off
-a profile** — price it on the workload the profile exists for.
+**Flash-Next looked like the exception and is not — and the `medium-256` pair that cleared it
+was wrong on two counts.** That 2026-10-18 pair read serial 55.6 stock vs 53.5 flagged, conc=8
+187.4 vs 197.2, `mem_busy` ~31% on *both* arms where the 27B's bands separate at 26%/46% with no
+overlap, and the flag was left off. On **long generations** the same matched design says the
+opposite: 4 streams x 8,192-token generations go **104.0/104.3 stock -> 173.0/171.3/172.3
+flagged (1.66x)**, two fresh spawns per arm, the flagged arm reproducing within 1%. Stock scales
+1.82x from one stream to four where flagged scales 3.07x — the per-step tax is invisible at
+conc=1 and has eaten the concurrency scaling by conc=4. Short prompts cost nothing (serial
+-0.7%, conc=16 -0.6%, conc=8 204.3 = its best ever) and the KV pool is unchanged, so **it ships
+on Flash-Next as of 2026-10-19**.
+
+That pair's "no band to fix here" conclusion is also **withdrawn**: on 2026-10-19 a stock spawn
+came up at **23.0 tok/s single-stream** at both 2K and 131K depth, and 22.6 on `medium-256`
+serial, against 56-57 on three other stock spawns the same day — so **one stock spawn in five**
+has now drawn a ~2.5x slow state, on exactly the short-completion workload that pair tested. One
+spawn per arm cannot see a 1-in-5 draw. Two caveats that matter: `mem_busy` was not sampled on
+the slow spawn, so *whether that slow state is this band is unestablished*, and on this profile
+the state **moves in both directions mid-process** — the slow spawn read 56.9 on the probe after
+two long loads and a sweep, while two earlier stock spawns went 57 -> 29 — which the 27B's band
+does not do. **Lesson: a `medium-256` pair, on one spawn per arm, is not enough to clear this
+flag off a profile** — price it on the workload the profile exists for, over more than one
+spawn.
 
 **The 35B and gemma4 MoE profiles were measured on 2026-10-19 and both wanted the flag**:
 `qwen3.6-35b-code` 46.8 → 98.9 serial (2.11x), `gemma4-26b-a4b` 56.4 → 128.2 (2.27x),

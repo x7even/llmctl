@@ -335,7 +335,10 @@ profile's reference on their pin. Two notes:
   one-stream cell is defective: that profile has an intermittent multi-minute single-stream
   latency tail (`docs/models.md`), and this cell caught one -- 29.6 tok/s at a p90 of 10.21 s,
   against 55.4 at a p90 of ~3.0 s from three clean cells on the same server. `llmband`
-  classified that server **fast** throughout, so the flag is reading the tail, not a slow draw.
+  classified that server **fast** throughout, which was once read as proving the flag was
+  reading the tail rather than a slow draw. It does not prove that: this profile has since been
+  seen changing state mid-process in both directions, so a fast probe and a slow cell minutes
+  apart are consistent with one server. Either way the published cell is not usable.
   The published serial figure for this profile comes from the two
   `*-serial-recheck-rep{1,2}-nothink-20261019.json` files, not from the matched file. Its
   conc=8/16/32 cells are sound and are the published ones.
