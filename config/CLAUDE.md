@@ -602,7 +602,9 @@ Halving the flag halves that buffer to 320 MiB and fixes it. Measured on
   within run-to-run noise.
 - **It costs cold deep-burst prefill**, which is the real trade. At
   `8192 x conc=32` cold it read 17.6 aggregate tok/s and 201.7 s p90 TTFT
-  against ~28.5 and ~133 s on 32768. n=1; the engine survives either way with
+  against ~28.5 and ~133 s on 32768. Reproduced on a second fresh spawn
+  (17.6 / 201.86 s p90, same to three figures), so it is a real price rather
+  than noise; the engine survives either way with
   the flag set.
 
 Applies to the two profiles serving `/models/Qwen3.8-27B-FP8` with a

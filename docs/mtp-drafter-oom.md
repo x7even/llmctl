@@ -254,16 +254,20 @@ keeping headroom away from zero, by different routes. Neither arm isolates
 | `expandable_segments`, 32768 | 785,687 | 5.99x | ~6,070 MiB | 4,415 MiB | ok | 28.5 |
 | stock, **16384** | **1,097,728** | **8.38x** | ~2,990 MiB | 676 MiB | ok | **17.6** |
 
-**That last column is the price, and it needs a second sample.** At `8192 x 32` the two
+**That last column is the price, and it reproduces.** At `8192 x 32` the two
 32768 runs both read ~28.5 agg tok/s with ~74.5 s mean TTFT (28.4 / 74.4 on a surviving
-stock container, 28.5 / 74.7 with the allocator flag), where 16384 read 17.6 with 99.1 s
-mean and 201.7 s p90. That is the halved prefill chunk showing up on the widest cell, and
-16384 is n=1 there. A `1024 x 8` reading of 188.7 against ~350 on both 32768 arms is also
-unexplained and may be a one-off; it is being re-measured.
+stock container, 28.5 / 74.7 with the allocator flag), where 16384 read 17.6 agg with
+99.1 s mean and 201.7 s p90. A second fresh 16384 spawn, FAST band confirmed, read
+**17.6 / 99.19 s / 201.86 s** — the same cell to three figures. That is the halved prefill
+chunk showing up on the widest cold cell, and it is a real price, not noise.
 
-If the prefill cost confirms, it is still the better trade: a dead EngineCore takes every
-client on the stack down and answers `/health` 200 for minutes while doing it. Slower
-admission on a 32-wide cold burst is a cost you can see and plan around.
+The same arm cleared the other open question in the opposite direction: `1024 x 8` read
+**363.9**, against 188.7 on the first 16384 arm and ~350 on both 32768 arms. So the 188.7
+was a one-off and short-prompt throughput is at parity.
+
+The prefill cost is worth paying anyway: a dead EngineCore takes every client on the stack
+down and answers `/health` 200 for minutes while doing it. Slower admission on a 32-wide
+cold burst is a cost you can see and plan around.
 
 The KV figure here read 1,097,728 tokens against 1,079,109 in the triage
 spawn, so call it ~1.08-1.10M, +7-9% over stock, and do not quote a single
