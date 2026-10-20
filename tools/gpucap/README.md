@@ -97,16 +97,18 @@ changes no power, voltage or clock setting:
 - `gpu-power-cap.service` applies your settings at boot.
 - `gpu-power-cap-resume.service` re-applies them after suspend/hibernate.
 
-It writes no config of its own, so a fresh install leaves your GPUs exactly as they were and both units
-succeed with nothing to do. Ask for something when you want it:
+It writes no config of its own and it starts and restarts nothing, so a fresh install leaves your GPUs
+exactly as they were: installing is not applying. The units run at the next boot and after each resume,
+and `sudo gpucap apply` applies the config on demand. Ask for something when you want it:
 
 ```
 sudo gpucap set 300          # a power cap, from then on applied at boot and after resume
 sudo gpucap undervolt -30    # needs sudo ./install.sh --enable-overdrive once, see above
 ```
 
-An existing `/etc/gpucap.conf` is preserved and re-applied as it stands; a line gpucap cannot parse is
-ignored rather than replaced with a guess.
+An existing `/etc/gpucap.conf` is left exactly as it is — not rewritten, and not re-applied by the
+installer either; it is what the units apply from the next boot or resume, or what `sudo gpucap apply`
+applies now. A line gpucap cannot parse is ignored rather than replaced with a guess.
 
 ### Upgrading from an earlier version
 

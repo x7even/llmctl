@@ -1,9 +1,9 @@
 #!/bin/bash
 # Run with sudo from this directory. Replaces the old shell-script service.
 #
-# This installs the tool and its units and changes no power, voltage or clock setting. gpucap has
-# no built-in defaults: with no /etc/gpucap.conf it applies nothing, so a fresh install leaves your
-# GPUs exactly as they are. Ask for something first:
+# This installs the tool and its units and changes no power, voltage or clock setting. It starts
+# nothing and restarts nothing: installing is not applying. gpucap also has no built-in defaults,
+# so with no /etc/gpucap.conf there is nothing to apply either way. Ask for something first:
 #
 #   sudo gpucap set <watts>        a power cap, applied at boot and after resume
 #   sudo gpucap undervolt -<mV>    a GFX voltage offset (needs --enable-overdrive below, once)
@@ -29,23 +29,19 @@ install -m 755 gpucap /usr/local/bin/gpucap
 install -m 644 gpu-power-cap.service gpu-power-cap-resume.service /etc/systemd/system/
 rm -f /usr/local/sbin/gpu-power-cap.sh
 systemctl daemon-reload
-# enabled, not started: with nothing configured there is nothing to apply, and an install must not
-# change a setting on its own. The units run at the next boot and after each resume.
+# enabled, not started, and never restarted: installing a tool must not change a live setting.
+# The units run at the next boot and after each resume. To apply now, ask: sudo gpucap apply.
 systemctl enable gpu-power-cap-resume.service
 systemctl enable gpu-power-cap.service
 
 if [ -e /etc/gpucap.conf ]; then
-  # a config already exists, so it is the operator's: re-apply whatever it asks for and nothing
-  # else. The binary decides -- it ignores anything it cannot parse and applies no defaults, so a
-  # malformed or empty file results in no change rather than a guess made here.
-  echo "found existing /etc/gpucap.conf: preserving it and applying what it asks for"
-  systemctl restart gpu-power-cap.service
+  echo "found existing /etc/gpucap.conf: left exactly as it is, and it is what the units apply"
+  echo "to apply it now rather than at the next boot or resume: sudo gpucap apply"
 else
-  echo "no /etc/gpucap.conf: nothing applied, your power limit, voltage and clocks are untouched"
+  echo "no /etc/gpucap.conf: nothing to apply, your power limit, voltage and clocks are untouched"
   echo "to set a cap:   sudo gpucap set <watts>      (see sudo gpucap --help)"
 fi
-# absolute path: sudo's secure_path may not include /usr/local/bin. `configured: cap none` here
-# means nothing will be applied at boot -- that is the expected state after a plain install.
+# absolute path: sudo's secure_path may not include /usr/local/bin. This only reads.
 /usr/local/bin/gpucap status
 
 if [ "$enable_od" = 1 ]; then
