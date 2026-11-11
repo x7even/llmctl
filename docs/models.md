@@ -81,8 +81,7 @@ Comparison against Qwen3.6-27B: `bench/benchmark-qwen3.8-vs-3.6-27b-2026-10-05.m
 
 #### `qwen3.8-27b-think` serves the full 262 144 context via host-RAM KV offload
 
-`-think` alone runs `--max-model-len 262144`, twice its siblings. The KV cache for that depth
-does not fit in VRAM, so the profile carries:
+`-think` alone runs `--max-model-len 262144`, twice its siblings. It also carries:
 
 ```
 --kv-transfer-config '{"kv_connector":"SimpleCPUOffloadConnector","kv_role":"kv_both",
@@ -94,13 +93,28 @@ does not fit in VRAM, so the profile carries:
 with less RAM, `scripts/configure` will mark the profile unsupported rather than let it start
 and thrash.
 
-**What is and is not established.** This configuration has served continuously for over two
-days at TP4 without incident, and retrieval has not regressed in routine use. That is uptime,
-not a measurement: **no A/B against the 131 072 arm has been recorded**, so there is no figure
-here for what the offload costs in prefill or decode at depth. Before quoting one, run
-`bench/depth_bench.py` and `bench/needle_check.py` against both arms the way
-`docs/fp8-kv-cache.md` did — that write-up is the cautionary case for exactly this shape of
-change, where a 1.89× pool win hid a 6× latency loss that only a matched ladder exposed.
+**The offload is not what makes 262 144 reachable, and why it was added is not recorded.**
+The VRAM pool alone covers the full window with room to spare — this boot reports:
+
+```
+GPU KV cache size: 1,126,219 tokens
+Maximum concurrency for 262,144 tokens per request: 4.30x
+```
+
+So `--max-model-len 262144` would serve 4.3 concurrent full-length streams without any
+connector at all. The 96 GiB sits on top of that pool, not in place of it. The plausible
+motives are a deeper prefix-cache reservoir or more slots for agent fleets, but **no
+rationale was written down at the time, and none is invented here.** Establish one before
+relying on the flag.
+
+**What is and is not established.** Both flags are present in the running container
+(`podman inspect`) and it has been up for over two days at TP4. That is uptime, not a
+measurement: **no A/B against the 131 072 arm has been recorded**, no retrieval check has been
+run on this configuration, and there is no figure here for what the offload costs in prefill
+or decode at depth. Before quoting one, run `bench/depth_bench.py` and `bench/needle_check.py`
+against both arms the way `docs/fp8-kv-cache.md` did — that write-up is the cautionary case for
+exactly this shape of change on this same profile, where a 1.89× pool win hid a 6× latency loss
+that only a matched ladder exposed.
 
 **Known gap:** `config/CLAUDE.md` ("Pinned host RAM") requires any profile that pins a large
 host buffer to run behind `scripts/llm-prestart`, as `qwen3.8-flash-next-vllm` does for its
