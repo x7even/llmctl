@@ -55,7 +55,8 @@ steady-state decode distribution — is generated into
 ### Qwen3.8-27B FP8 — the default family (`qwen3.8-27b-code` / `-think` / `-fast`)
 
 Official `Qwen/Qwen3.8-27B-FP8` (Apache 2.0, 30.9 GB including the bundled MTP head).
-Dense 27B, 262 144 native context (served at 131 072), vision-capable, tool calls via the
+Dense 27B, 262 144 native context (`-code` and `-fast` are served at 131 072; `-think` is
+served at the full 262 144, see below), vision-capable, tool calls via the
 `qwen3_xml` parser, reasoning via the `qwen3` parser. One checkpoint, three profiles:
 
 | Profile | MTP | Thinking default | Use for |
@@ -77,6 +78,34 @@ Decode throughput, `medium-256`, `--no-thinking`, 32 requests per level, vLLM 0.
 
 Comparison against Qwen3.6-27B: `bench/benchmark-qwen3.8-vs-3.6-27b-2026-10-05.md`
 (throughput is equal; Qwen3.8 was weaker on the expression-evaluator task).
+
+#### `qwen3.8-27b-think` serves the full 262 144 context via host-RAM KV offload
+
+`-think` alone runs `--max-model-len 262144`, twice its siblings. The KV cache for that depth
+does not fit in VRAM, so the profile carries:
+
+```
+--kv-transfer-config '{"kv_connector":"SimpleCPUOffloadConnector","kv_role":"kv_both",
+                       "kv_connector_extra_config":{"cpu_bytes_to_use":103079215104}}'
+```
+
+`cpu_bytes_to_use` is 96 GiB exactly, pinned in host RAM, which is why the profile's
+`metadata.requires` declares `host_ram_gib: 128` (96 for the buffer plus headroom). On a host
+with less RAM, `scripts/configure` will mark the profile unsupported rather than let it start
+and thrash.
+
+**What is and is not established.** This configuration has served continuously for over two
+days at TP4 without incident, and retrieval has not regressed in routine use. That is uptime,
+not a measurement: **no A/B against the 131 072 arm has been recorded**, so there is no figure
+here for what the offload costs in prefill or decode at depth. Before quoting one, run
+`bench/depth_bench.py` and `bench/needle_check.py` against both arms the way
+`docs/fp8-kv-cache.md` did — that write-up is the cautionary case for exactly this shape of
+change, where a 1.89× pool win hid a 6× latency loss that only a matched ladder exposed.
+
+**Known gap:** `config/CLAUDE.md` ("Pinned host RAM") requires any profile that pins a large
+host buffer to run behind `scripts/llm-prestart`, as `qwen3.8-flash-next-vllm` does for its
+~48 GiB. This profile pins twice that and currently has **no** prestart wrapper, so starting it
+against a full page cache may leave it slow for the life of the container. Not yet addressed.
 
 ### Qwen3.6-35B — retained previous generation (`qwen3.6-35b-code`, `-128k-nomtp`, `-fast`)
 
