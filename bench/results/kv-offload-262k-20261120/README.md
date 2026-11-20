@@ -15,11 +15,25 @@ these files were gathered. It was stopped afterwards, to load `qwen3.8-flash-nex
 
 ## Separating production traffic from this PR's own needle run
 
-**Neither snapshot is pure production.** The needle run started 06:01 UTC, so the 06:24
-dump already contains 11 of its requests (1 calibration probe at 4,059 tokens, five cells
-at ~131,10x and five at ~196,65x) and the 06:39 dump contains all 16 (the five ~258,11x
-cells included). Both numbers below are therefore stated as *snapshot minus known needle
-requests*, not read off the file raw.
+**Neither snapshot is pure production.** The needle run started 06:01 UTC and ran 16 requests
+(1 calibration probe at 4,059 tokens, then 5 cells each at ~131,10x, ~196,65x and ~258,11x).
+The figures below are therefore *snapshot minus known needle requests*, not read off raw.
+
+The attribution is **exact rather than estimated**, because diffing the two snapshots shows
+which requests landed when:
+
+| histogram band | 06:24 | 06:39 | delta |
+|---|---|---|---|
+| <= 100,000 | 1,388 | 1,388 | 0 |
+| (100,000, 200,000] | 1,344 | 1,344 | 0 |
+| > 200,000 | 2 | 6 | **+4** |
+| total | 2,734 | 2,738 | +4 |
+
+Only 4 requests landed in those 15 minutes and all 4 were >200,000 tokens, i.e. the last four
+258K needle cells — **no production request arrived during the window**. So the 06:24 snapshot
+already contained **12** needle requests (the calibration probe, the 131K and 196K cells, and
+the *first* 258K cell), not 11, and the fifth through eighth followed. Both snapshots agree on
+the production remainder: 2,734 − 12 = 2,738 − 16 = **2,722**.
 
 06:24 snapshot, prompt-length histogram (bucket edges are 100,000 and 200,000):
 
@@ -28,15 +42,17 @@ requests*, not read off the file raw.
 | <= 100,000 tokens | 1,388 | 1 | 1,387 |
 | (100,000, 200,000] | 1,344 | 10 | **1,334** |
 | > 200,000 tokens | 2 | 1 | **1** |
-| total | 2,734 | 11 | 2,723 |
+| total | 2,734 | 12 | **2,722** |
 
-Outcomes, 06:24 snapshot: `stop` 2,671, `length` 63, **`error` 0, `abort` 0**,
-`num_preemptions_total` **0**.
+Outcomes, 06:24 snapshot, read directly from the file: `stop` 2,671, `length` 63,
+**`error` 0, `abort` 0, `repetition` 0**, `num_preemptions_total` **0**. (2,671 + 63 = 2,734,
+so every request ended in one of those two states. At 06:39 `stop` is 2,675, the +4 needle
+cells, and `length` is unchanged.)
 
 So **about 1,334 production requests carried prompts in the (100K, 200K] band, and one
 production request exceeded 200,000 tokens** — unservable at the old 131,072 limit. The
-histogram's edges cannot resolve how many crossed 131,072 exactly; only that the
-population above it is large.
+histogram's edges cannot resolve how many crossed 131,072 exactly; only that the population
+above it is large.
 
 ## The window is justified; the offload is not
 
@@ -51,13 +67,16 @@ population above it is large.
   asked for, because the GPU pool answers ~95% by itself.
 - `num_preemptions_total = 0` across 2,734 requests: the GPU pool never came under the
   pressure the offload exists to relieve.
-- The needle run sharpened this rather than muddying it. Between the two snapshots, 15
-  prompts of 131K-258K added **1.30 million** external-cache queries and **zero**
-  additional hits — 102,704 in both files. Even deliberately deep traffic did not make the
-  CPU tier pay.
 
 96 GiB of pinned host RAM (`cpu_bytes_to_use: 103079215104`, 24.00 GB x 4 ranks = 2006 CPU
 blocks per rank) buys that 0.79%.
+
+**The needle run is not evidence about caching, in either direction.** Between the two
+snapshots its four deep prompts added 774,323 external-cache queries and **zero** hits
+(102,704 in both files) — but they added zero GPU-cache hits too, because a needle haystack is
+randomly generated per cell and shares no prefix with anything. Zero hits is the expected
+result there, not an informative one. The case against the offload rests on the production
+figures above, not on this.
 
 ## What these files do NOT establish
 
