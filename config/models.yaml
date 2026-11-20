@@ -130,7 +130,8 @@ models:
     metadata:
       requires:
         gpus: [2, 4]
-        note: "measured: TP2 works, TP1 OOMs loading the 29 GB FP8 weights, TP3 fails (16 linear-attention heads not divisible by 3)"
+        host_ram_gib: 128
+        note: "measured at 131072 without KV offload: TP2 works, TP1 OOMs loading the 29 GB FP8 weights, TP3 fails (16 linear-attention heads not divisible by 3). Serving 262144 pins 96 GiB of KV in host RAM, so host_ram_gib covers that plus headroom; TP2 is NOT re-measured in this configuration"
     checkEndpoint: /health
     concurrencyLimit: 64
     aliases:
@@ -192,7 +193,7 @@ models:
         --attention-backend TRITON_ATTN
         --dtype auto
         --tensor-parallel-size 4
-        --max-model-len 131072
+        --max-model-len 262144
         --max-num-seqs 32
         --max-num-batched-tokens 32768
         --gpu-memory-utilization 0.95
@@ -203,6 +204,7 @@ models:
         --enable-auto-tool-choice
         --tool-call-parser qwen3_xml
         --default-chat-template-kwargs '{"reasoning_effort": "medium"}'
+        --kv-transfer-config '{"kv_connector":"SimpleCPUOffloadConnector","kv_role":"kv_both","kv_connector_extra_config":{"cpu_bytes_to_use":103079215104}}'
         --cudagraph-capture-sizes 1 2 4 8 16 32
     cmdStop: podman stop llmstack-vllm-${MODEL_ID}
 
