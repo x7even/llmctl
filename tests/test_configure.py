@@ -291,7 +291,7 @@ def test_real_config_profiles_all_have_requires_and_known_values():
     text = (REPO / "config" / "models.yaml").read_text()
     _, profiles, _ = cfg.split_profiles(text)
     names = [n for n, _ in profiles]
-    assert len(names) == 13, names
+    assert len(names) == 14, names
     req = llmhw.parse_requires(text)
     missing = [n for n in names if n not in req]
     assert not missing, f"profiles without metadata.requires: {missing}"
@@ -305,6 +305,8 @@ def test_real_config_profiles_all_have_requires_and_known_values():
     assert req["gemma4-26b-a4b"]["gpus"] == [4] and not req["gemma4-26b-a4b"].get("estimate")
     assert req["gemma4-26b-fp8"]["gpus"] == [2, 4] and not req["gemma4-26b-fp8"].get("estimate")
     assert req["qwen3.8-flash-next-vllm"]["vram_total_gib"] == 75
+    # the text-only clone must carry the same requirements as the vision profile
+    assert req["qwen3.8-flash-next-vllm-text"] == req["qwen3.8-flash-next-vllm"]
     assert not req["qwen3.8-flash-next-vllm"].get("estimate")
     assert req["gemma4-26b-q8"]["min_gpus"] == 1 and req["gemma4-12b-q4"]["min_gpus"] == 1
     for k in ("qwen3.6-35b-code", "qwen3.6-35b-128k-nomtp", "qwen3.6-35b-fast"):

@@ -265,7 +265,8 @@ See `tui/CLAUDE.md` for architecture and coding conventions.
 | `qwen3.8-27b-think` ✓ | vLLM + TRITON_ATTN | ~31 GB + KV | 27B (dense) | Thinking, no MTP — parallel agent fleets. **The long-context profile:** 33 tok/s at 131K vs 1.4 without the backend flag |
 | `qwen3.8-27b-fast` | vLLM + MTP | ~31 GB + KV | 27B (dense) | Thinking OFF by default |
 | `qwen3.8-flash-next` | llama-server (Vulkan) | ~81 GB | 6B (MoE, 125B) | UD-IQ4_XS GGUF, custom llama.cpp fork; single-user |
-| `qwen3.8-flash-next-vllm` | vLLM TP4+EP (nightly image) | ~19 GB/GPU + ~48 GB pinned PLE in host RAM (~96 GB host RAM recommended) | 6B (MoE, 125B) | W4A16 INT4 + FP8 PLE; 262K ctx, **medium effort by default** (xhigh runs away); 55.5 tok/s serial (**intermittent single-stream latency tail, cause not established** -- see `docs/models.md`), 204 @ conc=8, 251 @ conc=16, 460 @ conc=32, flat ~55 out to 258K; gained `GPU_MAX_HW_QUEUES=1` on 2026-10-19 (worth 1.66x on long generations; at `medium-256` it moved conc=8 only, from 140.1-181.5 to 204.1/204.3, and conc=16/32 are inside the unflagged spread); needs `--ulimit memlock=-1:-1` and all 4 GPUs; exclusive VRAM |
+| `qwen3.8-flash-next-vllm` | vLLM TP4+EP (nightly image) | ~19 GB/GPU + ~48 GB pinned PLE in host RAM (~96 GB host RAM recommended) | 6B (MoE, 125B) | W4A16 INT4 + FP8 PLE; **vision on** (images capped at 4,096 tokens, 4 per prompt); 262K ctx, **medium effort by default** (xhigh runs away); 55.5 tok/s serial (**intermittent single-stream latency tail, cause not established** -- see `docs/models.md`), 204 @ conc=8, 251 @ conc=16, 460 @ conc=32, flat ~55 out to 258K; gained `GPU_MAX_HW_QUEUES=1` on 2026-10-19 (worth 1.66x on long generations; at `medium-256` it moved conc=8 only, from 140.1-181.5 to 204.1/204.3, and conc=16/32 are inside the unflagged spread); needs `--ulimit memlock=-1:-1` and all 4 GPUs; exclusive VRAM |
+| `qwen3.8-flash-next-vllm-text` | vLLM TP4+EP (nightly image) | as above | 6B (MoE, 125B) | Same profile with the vision tower off (`--language-model-only`, as shipped before 2026-11-20); for pure-text fleets, where the vision canary measured text ~4.5% faster at conc=8 and ~11% at conc=16 (one spawn pair). Alias `flash-next-vllm-text`; exclusive VRAM with the vision profile, so switching is a full respawn |
 | `qwen3.6-27b-code` ✓ | vLLM + MTP | ~31 GB + KV | 27B (dense) | Previous-gen dense 27B, restored 2026-10-19; 131K ctx; matches `qwen3.8-27b-code` at `medium-256`, 6-9% behind it at depth |
 | `qwen3.6-35b-code` | vLLM + MTP | ~35 GB | 3B (MoE) | Previous gen, MTP + thinking |
 | `qwen3.6-35b-128k-nomtp` ✓ | vLLM + TRITON_ATTN | ~35 GB | 3B (MoE) | **The deep-context profile.** 62 tok/s at 130K serial (vs 33 on `27b-think`), 440 at 16K×8, 231 at 64K×4; no short-prompt cost either (TRITON +3.9% at conc=8, matched n=128) |
@@ -281,7 +282,7 @@ reference set, and `qwen3.6-27b-code` as the previous-generation dense 27B. Olde
 were removed from `config/models.yaml`; restore from git history if needed.
 
 Use aliases for common swaps: `llmctl swap qwen3.8` (→ 27b-code), `llmctl swap 27b-fast`, `llmctl swap 27b-think`,
-`llmctl swap flash-next`, `llmctl swap flash-next-vllm`, `llmctl swap gemma4` (→ 26B Q8 vision), `llmctl swap gemma4-vllm` (→ 26B vLLM).
+`llmctl swap flash-next`, `llmctl swap flash-next-vllm` (text+image), `llmctl swap flash-next-vllm-text`, `llmctl swap gemma4` (→ 26B Q8 vision), `llmctl swap gemma4-vllm` (→ 26B vLLM).
 ✓ = on disk and benchmarked
 
 ---

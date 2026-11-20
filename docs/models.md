@@ -378,6 +378,89 @@ date_math / json_strict / mini_scheme / regex_engine, with no truncation; at a 3
 (truncation, not quantisation). A 200K cap gives no further gain. Full write-up, including the 27B's
 empty-reply early stops: `docs/hard-code-tasks.md`.
 
+**Client settings for agent harnesses (measured 2026-11-20).** Three things a client config
+(DeepSeek Harness / pi-ai, OpenCode, anything OpenAI-compatible) has to get right, each measured
+against this profile through the router:
+
+- **`reasoning_effort` accepts only `low`, `medium`, `xhigh` and `none`.** The checkpoint's
+  `chat_template.jinja` checks the value against `('xhigh','medium','low')` and calls
+  `raise_exception` otherwise, which vLLM returns as HTTP 400. `high`, `minimal`, `max` and
+  `off` all returned 400. `none` is outside that list yet returned 200 with **0 reasoning
+  tokens** — thinking genuinely off. That holds for the top-level `reasoning_effort` field only;
+  `chat_template_kwargs: {"reasoning_effort": "none"}` reaches the template and returns 400. A client whose level names are passed through verbatim
+  (pi-ai does this for unmapped levels) therefore needs an explicit map. The one used:
+
+  | client level | API value | why |
+  |---|---|---|
+  | off, minimal | `none` | the only way to switch thinking off |
+  | low | `low` | |
+  | medium, high | `medium` | `high` is not accepted; medium is the server default |
+  | xhigh, max | `xhigh` | opt-in only — xhigh runs away on this model (4/32 code-test passes vs 29-32/32) |
+
+- **Output cap 81,920, not 128K.** vLLM enforces `prompt + max_tokens <= max_model_len`
+  (262,144), so a 131,072 cap returns 400 on any prompt past 131K. 81,920 is also the cap the
+  hard code tasks measured as truncating nothing (see below). It matters for compaction too: a
+  harness that compacts at `floor(min(W*0.8, W-O-headroom))` compacts at 163,840 with O=81,920
+  and 16,384 headroom, but at 114,688 with O=131,072 — below the old 131K window.
+
+- **Image input is on as of 2026-11-20.** The checkpoint is multimodal
+  (`Qwen4ExpForConditionalGeneration`: a Qwen3-VL vision tower, 27 blocks, BF16, all 333
+  `visual.*` tensors present in shard 15), its chat template emits
+  `<|vision_start|><|image_pad|><|vision_end|>` for image parts, and the nightly image
+  implements the tower (`vllm/models/qwen4_exp/amd/model.py:819-876`). Until this date the
+  profile carried `--language-model-only`, which swaps the tower for a `StageMissingLayer`
+  (`:856-863`), skips the `visual.` weights at load (`:996`), and answers any image with
+  `At most 0 image(s) may be provided in one prompt.` That flag landed in `3792a62` with no
+  reason recorded. Clients can now declare image input for this profile (pi-ai / dsh:
+  `input: [text, image]`); `gemma4-26b-q8` stays the vision profile for llama-server.
+  **The text-only configuration is kept as its own profile, `qwen3.8-flash-next-vllm-text`**
+  (alias `flash-next-vllm-text`, served name the same as the profile): identical argv with
+  `--language-model-only` instead of the two image flags. Use it for pure-text fleets, where
+  the cost below matters most; use `qwen3.8-flash-next-vllm` whenever a client may send an
+  image. The two cannot be loaded together (exclusive VRAM), so a switch is a ~5-6 min respawn.
+  Clients route by model name, so a client configured for one does not reach the other.
+
+**Vision canary (run 2026-11-20).** One spawn with the shipped argv minus
+`--language-model-only`, plus the two flags now in the profile; the shipped profile was
+re-spawned straight after and benchmarked as the same-day reference.
+
+- **Image size cap.** The processor's default `longest_edge` is 16,777,216 pixels; at patch 16
+  and merge 2 a full-size image is pixels / 1024 = **16,384 tokens**, twice this profile's
+  `--max-num-batched-tokens 8192`. In this image's transformers (5.19) `size.longest_edge` *is*
+  the max-pixels cap (`min_pixels`/`max_pixels` are deprecated aliases), so
+  `--mm-processor-kwargs '{"size": {"longest_edge": 4194304, "shortest_edge": 65536}}'` caps an
+  image at 2048² px = **4,096 tokens**. Verified: a 4000×3000 PNG produced a 4,094-token prompt
+  and was still read exactly. The startup log confirms the encoder budget ("budget of 8192
+  tokens, profiled with 2 image items of the maximum feature size").
+  `--limit-mm-per-prompt '{"image": 4, "video": 0}'` bounds a request; a fifth image returns
+  400 `At most 4 image(s) may be provided in one prompt.`
+- **KV pool: no cost.** 500,664 tokens with vision on; the shipped text-only profile re-spawned
+  minutes later read 480,851, and the morning's spawn 485,423. The ~4% spawn-to-spawn spread is
+  larger than anything the tower takes. (The documented ~551K from 2026-10-15 is still not
+  reproduced by either arm; that gap predates this change.)
+- **Quality gate: 7/7.** A card with `CODE: R9700-VX-4183`, a red circle (left), blue square
+  (right) and green triangle (bottom): exact text and all three shapes with positions on every
+  request — 1024×768 at `low` and `medium`, 4000×3000 through the cap, and four concurrent
+  requests (~6 s each). Two images in one prompt: counted and compared correctly. The BF16
+  tower in front of the W4A16 language model shows no visible damage on this test.
+- **Text: tool calls fine; throughput -4.5% at conc=8, -11% at conc=16.**
+  `medium-256`, `--no-thinking`, `--requests 128`, same day:
+
+  | | conc=1 | conc=8 | conc=16 |
+  |---|---|---|---|
+  | shipped, text-only | 55.9 | 205.6 | 246.0 |
+  | vision on | 53.7 | 196.3 | 218.3 |
+
+  **Probably a real cost, cause not established.** Compare flagged spawns only — both arms
+  carry `GPU_MAX_HW_QUEUES=1`, so the unflagged spread is the wrong reference. Flagged conc=8
+  has read 204.1, 204.3 and 205.6 (under 1% wide) and 196.3 is below all three; flagged
+  conc=16 has read 249.9, 250.6 and 246.0 and 218.3 is below all three. The one confound runs
+  the other way: the shipped arm was benchmarked straight after spawn, unwarmed (serial 50.4
+  vs conc=1 55.9), while the vision arm had been warmed by the image tests — and the cold
+  server still won. One spawn pair; a second would confirm the size. At ~7 concurrent agent
+  requests the price is ~4-5%.
+- Do not use `--skip-mm-profiling`: it hides exactly the memory the KV pool figure prices.
+
 **Not used from the checkpoint:** its `runtime/` directory is a CUDA/RTX 3090 overlay
 (UVA expert offload, `humming` MoE backend); it does not apply to ROCm.
 
