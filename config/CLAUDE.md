@@ -592,7 +592,7 @@ llama.cpp auto-discovers the remaining parts.
 | Flag | What it does | When to change |
 |------|-------------|----------------|
 | `--max-num-seqs` | Max concurrent sequences in flight | Lower if OOM; raise if throughput limited and VRAM free |
-| `--gpu-memory-utilization` | Fraction of VRAM reserved for KV cache | Lower if OOM; keep at 0.95–0.97 normally. Exception: `qwen3.8-flash-next-vllm` stays at 0.90 (0.97 stalls under concurrent 100K prompts; see docs/models.md) |
+| `--gpu-memory-utilization` | Fraction of VRAM reserved for KV cache | Lower if OOM; keep at 0.95–0.97 normally. Flash-Next (`qwen3.8-flash-next-vllm` and `-text`) run 0.95, never 0.97: 0.97 stalls under concurrent 100K prompts (see docs/models.md) |
 | `--max-num-batched-tokens` | Prefill chunk size, and the size of an MTP drafter's per-batch buffer | **16384 on the dense-27B MTP profiles** (`qwen3.8-27b-code`, `qwen3.8-27b-fast`, `qwen3.6-27b-code`); 32768 elsewhere. See below |
 | `--kv-cache-dtype fp8` | Store KV tensors in FP8 | **Not a default — see below.** Only `qwen3.6-35b-fast` sets it today |
 | `concurrencyLimit` | Queue depth before 429 | Set to `--max-num-seqs` or slightly above |

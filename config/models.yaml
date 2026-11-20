@@ -669,10 +669,16 @@ models:
   #          Vision is ON (the checkpoint carries a Qwen3-VL tower; 3792a62 had disabled it
   #          with --language-model-only, no reason recorded). --mm-processor-kwargs caps an
   #          image at 2048^2 px = 4,096 tokens: the default cap is 16,384 tokens, twice
-  #          --max-num-batched-tokens 8192. --limit-mm-per-prompt allows 4 images, no video.
+  #          --max-num-batched-tokens 8192. --limit-mm-per-prompt allows 32 images, no video: the
+  #          limit counts every image in the request, i.e. the whole resent conversation, and
+  #          4 rejected agent sessions (dsh, 2026-11-20) once their history held a 5th image.
   #          Canary 2026-11-20: 7/7 exact read-backs, KV pool 500,664 (shipped 480,851 same
   #          day), text probably slower: -4.5% at conc=8, -11% at conc=16, one spawn pair,
   #          cause not established (docs/models.md "Vision canary").
+  #          --gpu-memory-utilization 0.95 (was 0.90 until 2026-11-20): KV pool 460K -> 575K
+  #          tokens with vision on; 7 concurrent 100K prompts + image requests pass, peak 31.0
+  #          of 31.9 GiB per card. NEVER 0.97: it stalled under the same load with no errors
+  #          logged (docs/models.md, --gpu-memory-utilization sweep).
   qwen3.8-flash-next-vllm:
     name: "Qwen3.8-Flash-Next W4A16 text+image (vLLM, TP4+EP)"
     ttl: 0
@@ -720,13 +726,13 @@ models:
         --served-model-name qwen3.8-flash-next-vllm
         --tensor-parallel-size 4
         --enable-expert-parallel
-        --limit-mm-per-prompt '{"image": 4, "video": 0}'
+        --limit-mm-per-prompt '{"image": 32, "video": 0}'
         --mm-processor-kwargs '{"size": {"longest_edge": 4194304, "shortest_edge": 65536}}'
         --load-format safetensors
         --max-model-len -1
         --max-num-seqs 32
         --max-num-batched-tokens 8192
-        --gpu-memory-utilization 0.90
+        --gpu-memory-utilization 0.95
         --enable-prefix-caching
         --enable-chunked-prefill
         --trust-remote-code
@@ -796,7 +802,7 @@ models:
         --max-model-len -1
         --max-num-seqs 32
         --max-num-batched-tokens 8192
-        --gpu-memory-utilization 0.90
+        --gpu-memory-utilization 0.95
         --enable-prefix-caching
         --enable-chunked-prefill
         --trust-remote-code

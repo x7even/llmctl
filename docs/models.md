@@ -263,15 +263,31 @@ the GGUF profile does ~50 tok/s single-stream (with MTP) but only ~34 aggregate 
 
 | Utilization | KV pool (tokens) | Concurrency at 262K | Peak VRAM under stress | Stress result |
 |-------------|------------------|---------------------|------------------------|---------------|
-| **0.90 (shipped)** | 550,959 | 2.10x | ~32.0 / 34.2 GB | all 7 OK, 255 s |
+| 0.90 (shipped until 2026-11-20) | 550,959 | 2.10x | ~32.0 / 34.2 GB | all 7 OK, 255 s |
 | 0.93 | 627,926 (+14%) | 2.40x | 33.1 GB | all 7 OK, 255 s |
-| 0.95 | 678,221 (+23%) | 2.59x | 33.76 GB (~0.45 GB headroom) | all 7 OK, 254 s |
+| **0.95 (shipped)** | 678,221 (+23%) | 2.59x | 33.76 GB (~0.45 GB headroom) | all 7 OK, 254 s |
 | 0.97 | 729,278 (+32%) | 2.78x | ~34.0 GB (~0.2 GB headroom) | **stalled**: 3 of 7 timed out at 3600 s |
 
 0.97 stalled with ~20% of the KV pool in use, no preemptions and no logged errors (probably
 allocator thrash with almost no free VRAM; not proven). The extra pool only matters with several
-100K+ contexts live at once, so 0.90 stays shipped; 0.93 is the safer step up and 0.95 works with
-thin headroom. Do not go to 0.97 on this profile.
+100K+ contexts live at once, so 0.90 was shipped first. Do not go to 0.97 on this profile.
+
+**Raised to 0.95 on 2026-11-20, with vision on.** At 0.90 each card idled with ~4 GB free (about
+16 GB across the rig), and the sweep above had already shown 0.95 surviving the stress test
+text-only. Vision adds an encoder whose activation peak vLLM reserves inside the budget, so it
+was re-tested with images in the mix: one spawn at 0.95 with vision on, KV pool **575,345 tokens
+(2.19x at 262K)** against 460,276 for the 0.90 vision spawn the same day (+25%). Stress run
+through the router: the same 7 concurrent unique ~100K-token prompts, `bench/depth_bench.py
+--depths 100000 --concurrency 7 --gen 256 --no-thinking`, with the vision read-back
+(`vtest.py`, 7 checks incl. a capped 4000x3000 image and 4 concurrent image requests) run twice
+alongside. All 7 long prompts completed (332 s wall, TTFT 153 s mean / 232 s p90, KV usage
+peaking at 88% with 5 running and the rest queued), both read-backs passed 7/7, no errors or
+preemptions in the log, and peak VRAM was **31.0 of 31.9 GiB per card** (~1.6 GB headroom; the
+text-only 0.95 run above left 0.45 GB). One image request queued for 254 s behind the 100K
+prompts: 7 x 100K does not fit a 575K pool, so later arrivals wait their turn. That is
+capacity, not a stall. Idle VRAM at 0.95 still shows ~3 GiB free per card, because the
+startup profiling run's activation peak (vision encoder included) is held back inside the
+budget and only filled during large prefills. Single run, one spawn.
 
 **Tuning findings (do not "fix" these back):**
 - `--cudagraph-capture-sizes 1 2 4 8`, not the usual `1 2 4 8 16 32`. Larger captured sizes
@@ -432,8 +448,13 @@ re-spawned straight after and benchmarked as the same-day reference.
   image at 2048² px = **4,096 tokens**. Verified: a 4000×3000 PNG produced a 4,094-token prompt
   and was still read exactly. The startup log confirms the encoder budget ("budget of 8192
   tokens, profiled with 2 image items of the maximum feature size").
-  `--limit-mm-per-prompt '{"image": 4, "video": 0}'` bounds a request; a fifth image returns
-  400 `At most 4 image(s) may be provided in one prompt.`
+  `--limit-mm-per-prompt '{"image": 32, "video": 0}'` bounds a request; one image too many
+  returns 400 `At most 32 image(s) may be provided in one prompt.` The limit counts **every
+  image in the request**, and agent clients resend the whole conversation each turn, so it
+  caps a *session's* image history, not one message. It shipped at 4 and dsh hit it on the
+  first day: once a session held a fifth image, every later turn returned 400. 32 x 4,096 =
+  131K tokens, half the 262K window, so the context length stays the real limit. The startup
+  encoder profile is sized by the batch budget (2 items), not by this limit.
 - **KV pool: no cost.** 500,664 tokens with vision on; the shipped text-only profile re-spawned
   minutes later read 480,851, and the morning's spawn 485,423. The ~4% spawn-to-spawn spread is
   larger than anything the tower takes. (The documented ~551K from 2026-10-15 is still not
