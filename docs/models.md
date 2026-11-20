@@ -437,7 +437,7 @@ re-spawned straight after and benchmarked as the same-day reference.
   request — 1024×768 at `low` and `medium`, 4000×3000 through the cap, and four concurrent
   requests (~6 s each). Two images in one prompt: counted and compared correctly. The BF16
   tower in front of the W4A16 language model shows no visible damage on this test.
-- **Text: tool calls fine; throughput -4% at conc=8, -11% at conc=16, one spawn per arm.**
+- **Text: tool calls fine; throughput -4.5% at conc=8, -11% at conc=16.**
   `medium-256`, `--no-thinking`, `--requests 128`, same day:
 
   | | conc=1 | conc=8 | conc=16 |
@@ -445,11 +445,14 @@ re-spawned straight after and benchmarked as the same-day reference.
   | shipped, text-only | 55.9 | 205.6 | 246.0 |
   | vision on | 53.7 | 196.3 | 218.3 |
 
-  conc=8 is inside this profile's spawn-to-spawn noise. conc=16 is not obviously so — it is
-  below both flagged conc=16 readings (249.9 / 250.6) — but it sits inside the unflagged
-  four-spawn spread (222.6-251.3), and one spawn per arm is exactly the design this file has
-  already had to retract twice. Treat -11% at conc=16 as unconfirmed; a second spawn pair
-  would settle it.
+  **Probably a real cost, cause not established.** Compare flagged spawns only — both arms
+  carry `GPU_MAX_HW_QUEUES=1`, so the unflagged spread is the wrong reference. Flagged conc=8
+  has read 204.1, 204.3 and 205.6 (under 1% wide) and 196.3 is below all three; flagged
+  conc=16 has read 249.9, 250.6 and 246.0 and 218.3 is below all three. The one confound runs
+  the other way: the shipped arm was benchmarked straight after spawn, unwarmed (serial 50.4
+  vs conc=1 55.9), while the vision arm had been warmed by the image tests — and the cold
+  server still won. One spawn pair; a second would confirm the size. At ~7 concurrent agent
+  requests the price is ~4-5%.
 - Do not use `--skip-mm-profiling`: it hides exactly the memory the KV pool figure prices.
 
 **Not used from the checkpoint:** its `runtime/` directory is a CUDA/RTX 3090 overlay

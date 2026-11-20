@@ -671,8 +671,8 @@ models:
   #          image at 2048^2 px = 4,096 tokens: the default cap is 16,384 tokens, twice
   #          --max-num-batched-tokens 8192. --limit-mm-per-prompt allows 4 images, no video.
   #          Canary 2026-11-20: 7/7 exact read-backs, KV pool 500,664 (shipped 480,851 same
-  #          day), text -4% at conc=8, -11% at conc=16 on one spawn per arm (docs/models.md
-  #          "Vision canary").
+  #          day), text probably slower: -4.5% at conc=8, -11% at conc=16, one spawn pair,
+  #          cause not established (docs/models.md "Vision canary").
   qwen3.8-flash-next-vllm:
     name: "Qwen3.8-Flash-Next W4A16 (vLLM, TP4+EP)"
     ttl: 0
