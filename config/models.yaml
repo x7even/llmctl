@@ -666,11 +666,13 @@ models:
   #          the native 262144 on this rig (KV pool ~551K tokens, measured 2026-10-15), and
   #          fewer tokens rather than an OOM if memory is ever tighter. 262K costs nothing: same
   #          speed as 131K, and decode stays ~55 tok/s from 1K to 258K of context.
-  #          --language-model-only disables the checkpoint's Qwen3-VL vision tower
-  #          (amd/model.py:856-863 stubs it, :996 skips the visual. weights): an image gets
-  #          "At most 0 image(s) may be provided". Added in 3792a62 with no reason recorded.
-  #          The model itself supports vision; removing the flag is a canary (image-token cap
-  #          vs --max-num-batched-tokens, KV pool), see docs/models.md "Vision canary".
+  #          Vision is ON (the checkpoint carries a Qwen3-VL tower; 3792a62 had disabled it
+  #          with --language-model-only, no reason recorded). --mm-processor-kwargs caps an
+  #          image at 2048^2 px = 4,096 tokens: the default cap is 16,384 tokens, twice
+  #          --max-num-batched-tokens 8192. --limit-mm-per-prompt allows 4 images, no video.
+  #          Canary 2026-11-20: 7/7 exact read-backs, KV pool 500,664 (shipped 480,851 same
+  #          day), text -4% at conc=8, -11% at conc=16 on one spawn per arm (docs/models.md
+  #          "Vision canary").
   qwen3.8-flash-next-vllm:
     name: "Qwen3.8-Flash-Next W4A16 (vLLM, TP4+EP)"
     ttl: 0
@@ -718,7 +720,8 @@ models:
         --served-model-name qwen3.8-flash-next-vllm
         --tensor-parallel-size 4
         --enable-expert-parallel
-        --language-model-only
+        --limit-mm-per-prompt '{"image": 4, "video": 0}'
+        --mm-processor-kwargs '{"size": {"longest_edge": 4194304, "shortest_edge": 65536}}'
         --load-format safetensors
         --max-model-len -1
         --max-num-seqs 32
@@ -736,7 +739,7 @@ models:
 
   # ─── llama-server: Gemma 4 26B-A4B Q8_0 GGUF (vision-capable) ──────────
   # Best for: multimodal tasks (image+text), strong general reasoning, vision QA
-  # Only vision-capable profile in the stack — loads mmproj alongside the GGUF
+  # Vision-capable via llama-server (loads mmproj alongside the GGUF); qwen3.8-flash-next-vllm also takes images
   # Architecture: MoE with 26B total weights / 4B active params per token
   #   → fast decode despite Q8 size; comparable active-param cost to the Qwen3 MoEs
   # Backend: llama-server (Vulkan) — NOT vLLM (multimodal GGUF not supported in vLLM)
