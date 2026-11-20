@@ -674,7 +674,7 @@ models:
   #          day), text probably slower: -4.5% at conc=8, -11% at conc=16, one spawn pair,
   #          cause not established (docs/models.md "Vision canary").
   qwen3.8-flash-next-vllm:
-    name: "Qwen3.8-Flash-Next W4A16 (vLLM, TP4+EP)"
+    name: "Qwen3.8-Flash-Next W4A16 text+image (vLLM, TP4+EP)"
     ttl: 0
     metadata:
       requires:
@@ -722,6 +722,76 @@ models:
         --enable-expert-parallel
         --limit-mm-per-prompt '{"image": 4, "video": 0}'
         --mm-processor-kwargs '{"size": {"longest_edge": 4194304, "shortest_edge": 65536}}'
+        --load-format safetensors
+        --max-model-len -1
+        --max-num-seqs 32
+        --max-num-batched-tokens 8192
+        --gpu-memory-utilization 0.90
+        --enable-prefix-caching
+        --enable-chunked-prefill
+        --trust-remote-code
+        --reasoning-parser qwen3
+        --enable-auto-tool-choice
+        --tool-call-parser qwen3_coder
+        --default-chat-template-kwargs '{"reasoning_effort": "medium"}'
+        --cudagraph-capture-sizes 1 2 4 8
+    cmdStop: podman stop llmstack-vllm-${MODEL_ID}
+
+  # ─── vLLM: Qwen3.8-Flash-Next, text-only ─────────────────────────────────
+  # Same as qwen3.8-flash-next-vllm above (every comment there applies) with the vision tower
+  # off via --language-model-only — the configuration that shipped until 2026-11-20. Kept for
+  # pure-text agent fleets: the vision canary measured text throughput ~4.5% lower at conc=8
+  # and ~11% lower at conc=16 with vision on (one spawn pair, cause not established, see
+  # docs/models.md "Vision canary"). Images get "At most 0 image(s)" here. Exclusive VRAM
+  # with the vision profile: switching between them is a full ~5-6 min respawn.
+  qwen3.8-flash-next-vllm-text:
+    name: "Qwen3.8-Flash-Next W4A16 text-only (vLLM, TP4+EP)"
+    ttl: 0
+    metadata:
+      requires:
+        gpus: [4]
+        host_ram_gib: 96
+        vram_total_gib: 75
+        note: "measured: TP4+EP only (TP2 OOMs loading weights, TP3 fails: vocab 248320 not divisible by 3); 47.7 GiB PLE table pinned in host RAM"
+    checkEndpoint: /health
+    concurrencyLimit: 32
+    aliases:
+      - flash-next-vllm-text
+    # llama-swap forwards the client's model string upstream; vLLM only
+    # answers to --served-model-name, so without this every alias 404s.
+    useModelName: qwen3.8-flash-next-vllm-text
+    cmd: |
+      __LLMSTACK_DIR__/scripts/llm-prestart
+        --need-free-gib 80
+        --keep /mnt/models/llm/albucino/Qwen3.8-Flash-Next-W4A16-FP8PLE
+        --
+      podman run --replace --rm
+        --name llmstack-vllm-${MODEL_ID}
+        --device=/dev/kfd
+        --device=/dev/dri
+        --group-add keep-groups
+        --security-opt seccomp=unconfined
+        --security-opt apparmor=unconfined
+        --ipc=private
+        --shm-size=32g
+        --ulimit memlock=-1:-1
+        --network=host
+        -v /mnt/models/llm:/models:ro
+        -v __LLMSTACK_DIR__/.vllm-cache:/root/.cache/vllm
+        -v __LLMSTACK_DIR__/.triton-cache:/root/.triton/cache
+        -e HSA_ENABLE_SDMA=0
+        -e TORCH_BLAS_PREFER_HIPBLASLT=1
+        -e VLLM_ROCM_USE_AITER=0
+        -e GPU_MAX_HW_QUEUES=1
+        --entrypoint=""
+        docker.io/vllm/vllm-openai-rocm:nightly-8cbd5d03006c33185f402249ff2b448efd594986
+        vllm serve /models/albucino/Qwen3.8-Flash-Next-W4A16-FP8PLE
+        --host 127.0.0.1
+        --port ${PORT}
+        --served-model-name qwen3.8-flash-next-vllm-text
+        --tensor-parallel-size 4
+        --enable-expert-parallel
+        --language-model-only
         --load-format safetensors
         --max-model-len -1
         --max-num-seqs 32

@@ -413,6 +413,12 @@ against this profile through the router:
   `At most 0 image(s) may be provided in one prompt.` That flag landed in `3792a62` with no
   reason recorded. Clients can now declare image input for this profile (pi-ai / dsh:
   `input: [text, image]`); `gemma4-26b-q8` stays the vision profile for llama-server.
+  **The text-only configuration is kept as its own profile, `qwen3.8-flash-next-vllm-text`**
+  (alias `flash-next-vllm-text`, served name the same as the profile): identical argv with
+  `--language-model-only` instead of the two image flags. Use it for pure-text fleets, where
+  the cost below matters most; use `qwen3.8-flash-next-vllm` whenever a client may send an
+  image. The two cannot be loaded together (exclusive VRAM), so a switch is a ~5-6 min respawn.
+  Clients route by model name, so a client configured for one does not reach the other.
 
 **Vision canary (run 2026-11-20).** One spawn with the shipped argv minus
 `--language-model-only`, plus the two flags now in the profile; the shipped profile was
