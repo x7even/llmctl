@@ -448,8 +448,13 @@ re-spawned straight after and benchmarked as the same-day reference.
   image at 2048² px = **4,096 tokens**. Verified: a 4000×3000 PNG produced a 4,094-token prompt
   and was still read exactly. The startup log confirms the encoder budget ("budget of 8192
   tokens, profiled with 2 image items of the maximum feature size").
-  `--limit-mm-per-prompt '{"image": 4, "video": 0}'` bounds a request; a fifth image returns
-  400 `At most 4 image(s) may be provided in one prompt.`
+  `--limit-mm-per-prompt '{"image": 32, "video": 0}'` bounds a request; one image too many
+  returns 400 `At most 32 image(s) may be provided in one prompt.` The limit counts **every
+  image in the request**, and agent clients resend the whole conversation each turn, so it
+  caps a *session's* image history, not one message. It shipped at 4 and dsh hit it on the
+  first day: once a session held a fifth image, every later turn returned 400. 32 x 4,096 =
+  131K tokens, half the 262K window, so the context length stays the real limit. The startup
+  encoder profile is sized by the batch budget (2 items), not by this limit.
 - **KV pool: no cost.** 500,664 tokens with vision on; the shipped text-only profile re-spawned
   minutes later read 480,851, and the morning's spawn 485,423. The ~4% spawn-to-spawn spread is
   larger than anything the tower takes. (The documented ~551K from 2026-10-15 is still not
