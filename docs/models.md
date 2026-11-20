@@ -378,6 +378,59 @@ date_math / json_strict / mini_scheme / regex_engine, with no truncation; at a 3
 (truncation, not quantisation). A 200K cap gives no further gain. Full write-up, including the 27B's
 empty-reply early stops: `docs/hard-code-tasks.md`.
 
+**Client settings for agent harnesses (measured 2026-11-20).** Three things a client config
+(DeepSeek Harness / pi-ai, OpenCode, anything OpenAI-compatible) has to get right, each measured
+against this profile through the router:
+
+- **`reasoning_effort` accepts only `low`, `medium`, `xhigh` and `none`.** The checkpoint's
+  `chat_template.jinja` checks the value against `('xhigh','medium','low')` and calls
+  `raise_exception` otherwise, which vLLM returns as HTTP 400. `high`, `minimal`, `max` and
+  `off` all returned 400. `none` is outside that list yet returned 200 with **0 reasoning
+  tokens** — thinking genuinely off. A client whose level names are passed through verbatim
+  (pi-ai does this for unmapped levels) therefore needs an explicit map. The one used:
+
+  | client level | API value | why |
+  |---|---|---|
+  | off, minimal | `none` | the only way to switch thinking off |
+  | low | `low` | |
+  | medium, high | `medium` | `high` is not accepted; medium is the server default |
+  | xhigh, max | `xhigh` | opt-in only — xhigh runs away on this model (4/32 code-test passes vs 29-32/32) |
+
+- **Output cap 81,920, not 128K.** vLLM enforces `prompt + max_tokens <= max_model_len`
+  (262,144), so a 131,072 cap returns 400 on any prompt past 131K. 81,920 is also the cap the
+  hard code tasks measured as truncating nothing (see below). It matters for compaction too: a
+  harness that compacts at `floor(min(W*0.8, W-O-headroom))` compacts at 163,840 with O=81,920
+  and 16,384 headroom, but at 114,688 with O=131,072 — below the old 131K window.
+
+- **Image input is off, and it is our flag, not the model.** An image part gets
+  `At most 0 image(s) may be provided in one prompt.` The checkpoint is multimodal
+  (`Qwen4ExpForConditionalGeneration`: a Qwen3-VL vision tower, 27 blocks, BF16, all 333
+  `visual.*` tensors present in shard 15), its chat template emits
+  `<|vision_start|><|image_pad|><|vision_end|>` for image parts, and the nightly image
+  implements the tower (`vllm/models/qwen4_exp/amd/model.py:819-876`). The profile's
+  `--language-model-only` swaps the tower for a `StageMissingLayer` (`:856-863`) and skips the
+  `visual.` weights at load (`:996`). The flag landed in `3792a62` with no reason recorded;
+  probably KV headroom, which was never measured. Vision on this profile is therefore a config
+  canary, not a model limitation — see "Vision canary" below. Until then, configure clients as
+  text-only and use `gemma4-26b-q8` for images.
+
+**Vision canary — what removing `--language-model-only` needs (not run).**
+
+- **Cap the image size first.** The processor's default `longest_edge` is 16,777,216 pixels;
+  at patch 16 and merge 2 a full-size image is pixels / 1024 = **16,384 tokens**, twice this
+  profile's `--max-num-batched-tokens 8192`. Bound it with `--limit-mm-per-prompt`
+  (e.g. `'{"image": {"count": 4, "width": 2048, "height": 2048}}'`, 4,096 tokens per image)
+  and/or `--mm-processor-kwargs` — the kwarg name for this transformers version is to be
+  confirmed at the canary, not assumed.
+- **Price the KV pool.** The tower is ~0.8 GiB of BF16 weights plus startup encoder profiling.
+  Today's spawn already reported 485,423 tokens against the documented ~551K at 0.90 (that gap
+  is itself unexplained). Record the pool with the flag removed and compare on the same day.
+- **Quality gate:** an image with known text and shapes, read back exactly; the tower is BF16
+  but sits in front of a W4A16 language model, which has not been tested with vision input.
+- **No regression on text:** `llmband`, `medium-256` serial and conc=8 against the `hwq1`
+  baseline, a tool-call round trip, and the hard code tasks if the pool shrinks noticeably.
+- Do not use `--skip-mm-profiling`: it hides exactly the memory this canary must price.
+
 **Not used from the checkpoint:** its `runtime/` directory is a CUDA/RTX 3090 overlay
 (UVA expert offload, `humming` MoE backend); it does not apply to ROCm.
 

@@ -666,6 +666,11 @@ models:
   #          the native 262144 on this rig (KV pool ~551K tokens, measured 2026-10-15), and
   #          fewer tokens rather than an OOM if memory is ever tighter. 262K costs nothing: same
   #          speed as 131K, and decode stays ~55 tok/s from 1K to 258K of context.
+  #          --language-model-only disables the checkpoint's Qwen3-VL vision tower
+  #          (amd/model.py:856-863 stubs it, :996 skips the visual. weights): an image gets
+  #          "At most 0 image(s) may be provided". Added in 3792a62 with no reason recorded.
+  #          The model itself supports vision; removing the flag is a canary (image-token cap
+  #          vs --max-num-batched-tokens, KV pool), see docs/models.md "Vision canary".
   qwen3.8-flash-next-vllm:
     name: "Qwen3.8-Flash-Next W4A16 (vLLM, TP4+EP)"
     ttl: 0
