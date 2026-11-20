@@ -406,6 +406,25 @@ baseline; `bench/baselines/qwen3.8-flash-next-vllm-*.json` holds the earlier 55 
 the 262K window usable in practice. Medium effort is the server default because xhigh
 thinks without converging on this model; medium solves the code tests in 2-4K tokens.
 
+**Why it is flat — and why it carries no `--attention-backend` flag** (established
+2026-11-20 by reading the shipped nightly image and the checkpoint; source read, not a launch).
+Flash-Next's 48 layers are 36 gated-delta-net (`linear_attention`, constant state) plus 12 that
+transformers 5.19.0 normalises to **`indexed_attention`** — Qwen Sparse Attention. vLLM routes
+those to `Qwen4ExpQSAAttention` (`vllm/models/qwen4_exp/amd/model.py:216`, gated on
+`indexer_n_heads`, set to 4 here), which sets `attn_backend =
+Qwen4ExpQSAFlashAttentionBackend` **directly** (`amd/qsa.py:276`) and never consults the
+platform backend selector. Each query attends a top-`indexer_budget` = **2048** token selection
+(`amd/indexer_qsa.py:99`), not the whole context. So the parallelism-starvation gates that cost
+the dense 27B 28x at 131K (`docs/rdna4-long-context.md`) do not apply, and
+`--attention-backend TRITON_ATTN` would reach neither layer type. **Do not add it to this
+profile.** Two caveats: the indexer still *scans* the full context at
+`indexer_compress_ratio: 4`, i.e. O(L/4) per query, which is the likely source of the residual
+57 -> 55 slope (flat-ish, not constant); and sparse attention still caches every token, which is
+why the KV pool barely moves from 131K to 262K. The correctness risk also moves — from softmax
+reduction to *selection*, where a bad top-2048 pick loses the needle at full speed. The only
+retrieval evidence here is the single 88K needle above; a position-sweeping
+`bench/needle_check.py` run on this profile is still owed and needs a model swap.
+
 **Qwen3.8-27B decode vs context depth** (vLLM 0.26.0, TP4, MTP), for comparison with Flash-Next:
 
 | Context | 1K | 32K | 66K | 132K | 207K | 258K |

@@ -262,7 +262,7 @@ See `tui/CLAUDE.md` for architecture and coding conventions.
 | Profile | Backend | VRAM | Active params | Notes |
 |---------|---------|------|--------------|-------|
 | `qwen3.8-27b-code` ✓ | vLLM + MTP | ~31 GB + KV | 27B (dense) | **Default.** Thinking (medium effort); 131K ctx; 350 tok/s @ conc=8, 843 @ conc=32 |
-| `qwen3.8-27b-think` ✓ | vLLM + TRITON_ATTN | ~31 GB + KV | 27B (dense) | Thinking, no MTP — parallel agent fleets. **The long-context profile:** 33 tok/s at 131K vs 1.4 without the backend flag |
+| `qwen3.8-27b-think` ✓ | vLLM + TRITON_ATTN | ~31 GB + KV + 96 GiB host RAM | 27B (dense) | Thinking, no MTP — parallel agent fleets. **The long-context profile:** **262K ctx**; 33 tok/s at 131K vs 1.4 without the backend flag |
 | `qwen3.8-27b-fast` | vLLM + MTP | ~31 GB + KV | 27B (dense) | Thinking OFF by default |
 | `qwen3.8-flash-next` | llama-server (Vulkan) | ~81 GB | 6B (MoE, 125B) | UD-IQ4_XS GGUF, custom llama.cpp fork; single-user |
 | `qwen3.8-flash-next-vllm` | vLLM TP4+EP (nightly image) | ~19 GB/GPU + ~48 GB pinned PLE in host RAM (~96 GB host RAM recommended) | 6B (MoE, 125B) | W4A16 INT4 + FP8 PLE; 262K ctx, **medium effort by default** (xhigh runs away); 55.5 tok/s serial (**intermittent single-stream latency tail, cause not established** -- see `docs/models.md`), 204 @ conc=8, 251 @ conc=16, 460 @ conc=32, flat ~55 out to 258K; gained `GPU_MAX_HW_QUEUES=1` on 2026-10-19 (worth 1.66x on long generations; at `medium-256` it moved conc=8 only, from 140.1-181.5 to 204.1/204.3, and conc=16/32 are inside the unflagged spread); needs `--ulimit memlock=-1:-1` and all 4 GPUs; exclusive VRAM |
@@ -366,7 +366,8 @@ history, including the earlier vintages these rows replace).
   equal room. The 27B sometimes ends a reply early (`<|im_end|>` mid-reasoning, empty content, `finish=stop`):
   clients should retry. Findings: `docs/hard-code-tasks.md`.
 - vLLM `--max-model-len -1` (auto-fit) picks the native 262,144 on Flash-Next TP4 and the 27B at TP4 and TP2, so
-  the 27B's shipped 131,072 is policy (decode slows with depth), not memory. Table in `docs/gpu-counts.md`.
+  the 27B's shipped 131,072 is policy (decode slows with depth), not memory. That policy now applies
+  to `qwen3.8-27b-code`/`-fast` only: `qwen3.8-27b-think` serves the full **262,144** (PR #34). Table in `docs/gpu-counts.md`.
 
 - `qwen3.8-flash-next-vllm` defaults to `reasoning_effort=medium` (`--default-chat-template-kwargs`).
   The template's xhigh default runs away on this model (4/32 code-test passes vs 29-32/32 at medium across two runs of 8 samples x 4 tasks).
@@ -593,6 +594,24 @@ Operational consequences:
   know whether the profile shipped the flag; check the log when you want to know what the
   engine runs. **The `(selected via --attention-backend)` parenthetical misreports the source:**
   `rocm.py` prints that string whenever *anything* set a backend, including vLLM itself.
+- **Flash-Next is exempt from all four gates — do NOT give it `--attention-backend`.**
+  `qwen3.8-flash-next-vllm` is flat at depth (~57 tok/s at 1K, ~55 at 258K) with no backend flag,
+  which looks impossible beside the 27B's 28x collapse. Reason, read out of the shipped nightly
+  image 2026-11-20: transformers 5.19.0 normalises its 12 non-linear layers to
+  `indexed_attention` (QSA), `amd/model.py:216` routes those to `Qwen4ExpQSAAttention`, and
+  `amd/qsa.py:276` sets `attn_backend = Qwen4ExpQSAFlashAttentionBackend` **directly** — those
+  layers never consult the platform selector. Each query attends a top-`indexer_budget`=**2048**
+  selection, not the whole context; the other 36 layers are gated-delta-net with no KV growth. So
+  the flag reaches nothing, and this image rejects a bad backend name loudly rather than ignoring
+  it. The indexer does still scan the full context at `compress_ratio: 4` (O(L/4)), which is the
+  likely source of the residual 57->55 slope. Retrieval on this profile rests on a single 88K
+  needle; a position sweep is still owed. Details: `docs/rdna4-long-context.md`.
+- **Any `--kv-transfer-config` silently drops ROCM_ATTN from auto-selection.** In both `v0.26.0`
+  and the nightly, `rocm.py` appends ROCM_ATTN only `if not use_kv_connector` ("until connector
+  transfer semantics are validated"), so TRITON_ATTN wins by default. Adding a KV connector to
+  `qwen3.8-27b-code` would therefore change its kernel as a side effect; and on
+  `qwen3.8-27b-think` the explicit flag and the offload connector now each force TRITON_ATTN
+  independently, so dropping one alone proves nothing about the other.
 - **`gemma4-26b-a4b` runs TRITON_ATTN without any flag, and that is correct behaviour.**
   `model_executor/models/config.py:239` forces it for Gemma 4, because the model has
   heterogeneous head dimensions (per-layer `head_dim` differing from the global one) and the

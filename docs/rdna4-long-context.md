@@ -222,6 +222,34 @@ range, but only just.
 off with nothing in the log to say so.** Both profile comments carry this warning. Re-measure
 with `bench/depth_bench.py` after any change to either flag.
 
+### A KV connector silently changes the backend too
+
+The same class of surprise, from the other direction. In **both** `v0.26.0` and the
+Flash-Next nightly, the candidate list is built as:
+
+```python
+# vllm/platforms/rocm.py  (v0.26.0 line 430, nightly line 502)
+# Keep ROCM_ATTN disabled for KV connectors until connector transfer
+# semantics are validated for its asymmetric native K/V cache views.
+if not use_kv_connector:
+    backends.append(AttentionBackendEnum.ROCM_ATTN)
+```
+
+So **passing any `--kv-transfer-config` drops ROCM_ATTN out of auto-selection entirely**, and
+TRITON_ATTN — the next entry — wins by default. Two consequences worth knowing:
+
+- Adding a KV connector to an MTP profile such as `qwen3.8-27b-code` would silently move it
+  from ROCM_ATTN to TRITON_ATTN, a backend change nobody asked for in a change about KV
+  placement. (With MTP the 3D path stays shut either way, per gate 3, so this is a change of
+  kernel, not of depth behaviour — but it is still not the kernel that was benchmarked.)
+- On `qwen3.8-27b-think` the explicit flag and the KV offload connector now **each**
+  independently force TRITON_ATTN, so removing either one alone will not change the backend.
+  That redundancy is harmless, but do not read a passing test after dropping the flag as
+  evidence the flag was unnecessary.
+
+Upstream's own comment says the ROCM_ATTN + connector combination is *unvalidated*, not broken.
+Either way the shipped `27b-think` configuration is on the validated side.
+
 ---
 
 ## Correctness: a split-KV kernel must be checked, not assumed
@@ -422,6 +450,7 @@ the nearest capture size the 3D path closes silently.
 | `qwen3.6-35b-128k-nomtp` | no | **TRITON_ATTN** (explicit) | no MTP; 28× at 130K, 1.56× decay across the window, and the fastest deep-context profile here, with no measured short-prompt cost (+3.9% at `medium-256` conc=8, matched n=128) |
 | `qwen3.8-27b-code` | yes | ROCM_ATTN (auto) | MTP gates the 3D path shut, so the flag would do nothing; keeps its short-context MTP advantage |
 | `qwen3.8-27b-fast` | yes | ROCM_ATTN (auto) | as above |
+| `qwen3.8-flash-next-vllm` | no | **its own**, hardwired (`Qwen4ExpQSAFlashAttentionBackend`) | none of the four gates apply — see below. **Do not add `--attention-backend`**: its depth-sensitive layers never consult the selector |
 
 **What "auto" actually resolves to.** On a cold boot of the no-MTP profile *without* the flag,
 all four ranks log:
@@ -440,14 +469,77 @@ whole time; it lost on a static priority, and nothing in that message hints the 
 24× at depth. With the flag the line instead reads
 `rocm.py:570] Using TRITON_ATTN backend (selected via --attention-backend)`.
 
-Those two lines are the only reliable way to know which kernel is actually serving. An
-unrecognised `--attention-backend` value falls through to auto-selection **without an error**,
-and `VLLM_ATTENTION_BACKEND` is not read at all in 0.26.0 — so a profile can look correct and
-silently serve on the collapsing path. Check the log, not the config.
+Those two lines are the only reliable way to know which kernel is actually serving.
+`VLLM_ATTENTION_BACKEND` is not read at all in 0.26.0, so only the CLI flag has any effect.
+
+**Correction.** An earlier version of this file said an unrecognised `--attention-backend`
+value "falls through to auto-selection without an error". That is **not true of this image** —
+a bad name fails loudly. `arg_utils.py:2257` routes the flag through
+`AttentionConfig.validate_backend_before`, which is `AttentionBackendEnum[value.upper()]`, so a
+typo raises `KeyError` before the server starts; a name that is spelled right but incompatible
+with the model's shapes raises `Selected backend ... is not valid for this configuration` in
+`rocm.py`'s `get_attn_backend_cls`. `auto` is the one string that means auto-selection. So a
+typo cannot silently put a profile on the collapsing path — but *auto-selection itself* can,
+which is why the log line still matters more than the config. Note also that the
+`(selected via --attention-backend)` parenthetical misreports its source: `rocm.py` prints it
+whenever *anything* set a backend, vLLM itself included.
 
 One useful control from the same matched pair: the KV pool is **identical** on both arms —
 `GPU KV cache size: 1,126,917 tokens`, `Maximum concurrency for 131,072 tokens per request:
 8.60x`. Whatever the backend changes, it is not how much context fits.
+
+A second control, from the live `27b-think` server after it was raised to `--max-model-len
+262144`: `GPU KV cache size: 1,126,219 tokens`, `Maximum concurrency for 262,144 tokens per
+request: 4.30x`. The pool is the same to within 0.06% — **doubling the window does not shrink
+the KV pool**, it only halves how many requests can simultaneously hold a *full-length* one.
+The window is a policy choice about per-request reach, not a memory trade.
+
+### Flash-Next is exempt from all four gates, and must not be given the flag
+
+`qwen3.8-flash-next-vllm` publishes a depth curve that looks impossible next to everything
+above: ~57 tok/s at 1K and ~55 at 258K, essentially flat, with **no `--attention-backend`
+flag**. On the gate analysis it should be the worst case here — same checkpoint family as the
+27B (`head_dim: 256`, `num_attention_heads: 24`, `full_attention_interval: 4`) and *fewer* KV
+heads (2 against 4), so gate 2's `(num_seqs, num_kv_heads)` grid is narrower still.
+
+It is flat because **its depth-sensitive layers are not using any of these kernels.** Read out
+of the shipped nightly image and the checkpoint (source read, not a launch):
+
+- The checkpoint's `layer_types` is 36 × `linear_attention` + 12 × `full_attention`, but
+  transformers 5.19.0 — the version in the image — normalises that spelling, and
+  `AutoConfig.from_pretrained` on the shipped checkpoint returns 36 × `linear_attention` +
+  12 × **`indexed_attention`**. (`model.py:82` records the rename: transformers v5.18 renamed
+  `qwen_sparse_attention` to `indexed_attention`.)
+- `vllm/models/qwen4_exp/amd/model.py:216` routes `indexed_attention` to
+  `Qwen4ExpQSAAttention` whenever `indexer_n_heads` is set — it is, at 4.
+- `amd/qsa.py:276` then sets `self.attn_backend = Qwen4ExpQSAFlashAttentionBackend`
+  **directly**. Those layers never call `get_attn_backend_cls`, so the platform selector, its
+  priority sort and `--attention-backend` do not reach them.
+- `amd/indexer_qsa.py:99` sets `token_topk = config.indexer_budget` = **2048**.
+
+So 36 of 48 layers are gated-delta-net (constant state, no KV growth) and the other 12 attend a
+**top-2048 selection** rather than the whole context. The quadratic-ish term the four gates are
+about is simply absent. Two precisions:
+
+- **"Bounded independent of depth" is only half right.** The attention runs over 2048 selected
+  tokens, but the indexer that *picks* them scans the whole context at
+  `indexer_compress_ratio: 4`, i.e. O(L/4) work per query. That is the most likely source of
+  the residual 57 → 55 slope, and it means the curve is flat-ish, not constant.
+- **Sparse attention still caches every token.** vLLM's `_ATTENTION_LAYER_TYPES` in
+  `config/model.py` says so explicitly, which is why the KV pool barely moves between the 131K
+  and 262K settings (~535K → ~551K tokens) and why 262K costs nothing here.
+
+**Do not add `--attention-backend TRITON_ATTN` to this profile.** It cannot help the 12 QSA
+layers, which choose their own backend, and it cannot help the 36 linear-attention layers,
+which have no KV to split. This image also rejects an incompatible backend name loudly at
+startup, so the flag is not a free no-op to leave in "just in case".
+
+**The open correctness question moves, it does not disappear.** With top-2048 sparse attention
+the risk is no longer a split-KV softmax reduction but the *selection*: an indexer that picks
+the wrong 2048 tokens loses the needle while decoding at full speed. The only retrieval
+evidence on this profile today is a single 88K needle (`docs/models.md`). The follow-up is a
+position-sweeping `bench/needle_check.py` run on Flash-Next, which needs exclusive VRAM on all
+four cards and so a model swap — not done here.
 
 **The flag does nothing on an MTP profile.** Adding `--attention-backend TRITON_ATTN` to
 `27b-code` leaves `max_seqlen_q = 3`, so `use_3d` is still false and decode still goes to a 2D
