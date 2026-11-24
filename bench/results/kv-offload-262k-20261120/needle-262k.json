@@ -1,0 +1,145 @@
+{
+  "model": "qwen3.8-27b-think",
+  "url": "http://127.0.0.1:8080/v1/chat/completions",
+  "label": "262K window, KV offload live, 10d11h uptime",
+  "words_per_token": 1.0002463661000247,
+  "retrieved": 15,
+  "total": 15,
+  "rows": [
+    {
+      "depth": 131072,
+      "depth_actual": 131104,
+      "position": 0.05,
+      "vault": "Borealis",
+      "code": "CCM-3770-ZXK",
+      "response": "CCM-3770-ZXK",
+      "hit": true
+    },
+    {
+      "depth": 131072,
+      "depth_actual": 131102,
+      "position": 0.25,
+      "vault": "Harrow",
+      "code": "UTE-7061-VRW",
+      "response": "UTE-7061-VRW",
+      "hit": true
+    },
+    {
+      "depth": 131072,
+      "depth_actual": 131101,
+      "position": 0.5,
+      "vault": "Harrow",
+      "code": "KDZ-7489-REC",
+      "response": "KDZ-7489-REC",
+      "hit": true
+    },
+    {
+      "depth": 131072,
+      "depth_actual": 131102,
+      "position": 0.75,
+      "vault": "Tanager",
+      "code": "JZM-9684-AQH",
+      "response": "JZM-9684-AQH",
+      "hit": true
+    },
+    {
+      "depth": 131072,
+      "depth_actual": 131104,
+      "position": 0.95,
+      "vault": "Zephyr",
+      "code": "UCR-5286-BAE",
+      "response": "UCR-5286-BAE",
+      "hit": true
+    },
+    {
+      "depth": 196608,
+      "depth_actual": 196656,
+      "position": 0.05,
+      "vault": "Kestrel",
+      "code": "ENW-1791-CTD",
+      "response": "ENW-1791-CTD",
+      "hit": true
+    },
+    {
+      "depth": 196608,
+      "depth_actual": 196653,
+      "position": 0.25,
+      "vault": "Harrow",
+      "code": "MNE-4164-YBC",
+      "response": "MNE-4164-YBC",
+      "hit": true
+    },
+    {
+      "depth": 196608,
+      "depth_actual": 196653,
+      "position": 0.5,
+      "vault": "Obsidian",
+      "code": "VMJ-3269-FXA",
+      "response": "VMJ-3269-FXA",
+      "hit": true
+    },
+    {
+      "depth": 196608,
+      "depth_actual": 196653,
+      "position": 0.75,
+      "vault": "Solstice",
+      "code": "BPR-1243-GQR",
+      "response": "BPR-1243-GQR",
+      "hit": true
+    },
+    {
+      "depth": 196608,
+      "depth_actual": 196654,
+      "position": 0.95,
+      "vault": "Obsidian",
+      "code": "TQQ-9320-UGF",
+      "response": "TQQ-9320-UGF",
+      "hit": true
+    },
+    {
+      "depth": 258048,
+      "depth_actual": 258112,
+      "position": 0.05,
+      "vault": "Perihelion",
+      "code": "JXS-6730-ENA",
+      "response": "JXS-6730-ENA",
+      "hit": true
+    },
+    {
+      "depth": 258048,
+      "depth_actual": 258110,
+      "position": 0.25,
+      "vault": "Icarus",
+      "code": "KXX-4042-WHX",
+      "response": "KXX-4042-WHX",
+      "hit": true
+    },
+    {
+      "depth": 258048,
+      "depth_actual": 258109,
+      "position": 0.5,
+      "vault": "Dovetail",
+      "code": "VYW-9636-HJZ",
+      "response": "VYW-9636-HJZ",
+      "hit": true
+    },
+    {
+      "depth": 258048,
+      "depth_actual": 258108,
+      "position": 0.75,
+      "vault": "Gallant",
+      "code": "ASZ-1592-FHA",
+      "response": "ASZ-1592-FHA",
+      "hit": true
+    },
+    {
+      "depth": 258048,
+      "depth_actual": 258106,
+      "position": 0.95,
+      "vault": "Lantern",
+      "code": "RRK-7831-HQA",
+      "response": "RRK-7831-HQA",
+      "hit": true
+    }
+  ]
+}

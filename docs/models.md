@@ -55,7 +55,8 @@ steady-state decode distribution — is generated into
 ### Qwen3.8-27B FP8 — the default family (`qwen3.8-27b-code` / `-think` / `-fast`)
 
 Official `Qwen/Qwen3.8-27B-FP8` (Apache 2.0, 30.9 GB including the bundled MTP head).
-Dense 27B, 262 144 native context (served at 131 072), vision-capable, tool calls via the
+Dense 27B, 262 144 native context (`-code` and `-fast` are served at 131 072; `-think` is
+served at the full 262 144, see below), vision-capable, tool calls via the
 `qwen3_xml` parser, reasoning via the `qwen3` parser. One checkpoint, three profiles:
 
 | Profile | MTP | Thinking default | Use for |
@@ -77,6 +78,48 @@ Decode throughput, `medium-256`, `--no-thinking`, 32 requests per level, vLLM 0.
 
 Comparison against Qwen3.6-27B: `bench/benchmark-qwen3.8-vs-3.6-27b-2026-10-05.md`
 (throughput is equal; Qwen3.8 was weaker on the expression-evaluator task).
+
+#### `qwen3.8-27b-think` serves the full 262 144 context via host-RAM KV offload
+
+`-think` alone runs `--max-model-len 262144`, twice its siblings. It also carries:
+
+```
+--kv-transfer-config '{"kv_connector":"SimpleCPUOffloadConnector","kv_role":"kv_both",
+                       "kv_connector_extra_config":{"cpu_bytes_to_use":103079215104}}'
+```
+
+`cpu_bytes_to_use` is 96 GiB exactly, pinned in host RAM, which is why the profile's
+`metadata.requires` declares `host_ram_gib: 128` (96 for the buffer plus headroom). On a host
+with less RAM, `scripts/configure` will mark the profile unsupported rather than let it start
+and thrash.
+
+**The offload is not what makes 262 144 reachable, and why it was added is not recorded.**
+The VRAM pool alone covers the full window with room to spare — this boot reports:
+
+```
+GPU KV cache size: 1,126,219 tokens
+Maximum concurrency for 262,144 tokens per request: 4.30x
+```
+
+So `--max-model-len 262144` would serve 4.3 concurrent full-length streams without any
+connector at all. The 96 GiB sits on top of that pool, not in place of it. The plausible
+motives are a deeper prefix-cache reservoir or more slots for agent fleets, but **no
+rationale was written down at the time, and none is invented here.** Establish one before
+relying on the flag.
+
+**What is and is not established.** Both flags are present in the running container
+(`podman inspect`) and it has been up for over two days at TP4. That is uptime, not a
+measurement: **no A/B against the 131 072 arm has been recorded**, no retrieval check has been
+run on this configuration, and there is no figure here for what the offload costs in prefill
+or decode at depth. Before quoting one, run `bench/depth_bench.py` and `bench/needle_check.py`
+against both arms the way `docs/fp8-kv-cache.md` did — that write-up is the cautionary case for
+exactly this shape of change on this same profile, where a 1.89× pool win hid a 6× latency loss
+that only a matched ladder exposed.
+
+**Known gap:** `config/CLAUDE.md` ("Pinned host RAM") requires any profile that pins a large
+host buffer to run behind `scripts/llm-prestart`, as `qwen3.8-flash-next-vllm` does for its
+~48 GiB. This profile pins twice that and currently has **no** prestart wrapper, so starting it
+against a full page cache may leave it slow for the life of the container. Not yet addressed.
 
 ### Qwen3.6-35B — retained previous generation (`qwen3.6-35b-code`, `-128k-nomtp`, `-fast`)
 
@@ -362,6 +405,25 @@ visible to whoever is waiting for it. Worth a dedicated investigation, with host
 baseline; `bench/baselines/qwen3.8-flash-next-vllm-*.json` holds the earlier 55 / 149 / 232. Unlike the dense 27B, Flash-Next does not slow down with context depth, which makes
 the 262K window usable in practice. Medium effort is the server default because xhigh
 thinks without converging on this model; medium solves the code tests in 2-4K tokens.
+
+**Why it is flat — and why it carries no `--attention-backend` flag** (established
+2026-11-20 by reading the shipped nightly image and the checkpoint; source read, not a launch).
+Flash-Next's 48 layers are 36 gated-delta-net (`linear_attention`, constant state) plus 12 that
+transformers 5.19.0 normalises to **`indexed_attention`** — Qwen Sparse Attention. vLLM routes
+those to `Qwen4ExpQSAAttention` (`vllm/models/qwen4_exp/amd/model.py:216`, gated on
+`indexer_n_heads`, set to 4 here), which sets `attn_backend =
+Qwen4ExpQSAFlashAttentionBackend` **directly** (`amd/qsa.py:276`) and never consults the
+platform backend selector. Each query attends a top-`indexer_budget` = **2048** token selection
+(`amd/indexer_qsa.py:99`), not the whole context. So the parallelism-starvation gates that cost
+the dense 27B 28x at 131K (`docs/rdna4-long-context.md`) do not apply, and
+`--attention-backend TRITON_ATTN` would reach neither layer type. **Do not add it to this
+profile.** Two caveats: the indexer still *scans* the full context at
+`indexer_compress_ratio: 4`, i.e. O(L/4) per query, which is the likely source of the residual
+57 -> 55 slope (flat-ish, not constant); and sparse attention still caches every token, which is
+why the KV pool barely moves from 131K to 262K. The correctness risk also moves — from softmax
+reduction to *selection*, where a bad top-2048 pick loses the needle at full speed. The only
+retrieval evidence here is the single 88K needle above; a position-sweeping
+`bench/needle_check.py` run on this profile is still owed and needs a model swap.
 
 **Qwen3.8-27B decode vs context depth** (vLLM 0.26.0, TP4, MTP), for comparison with Flash-Next:
 
