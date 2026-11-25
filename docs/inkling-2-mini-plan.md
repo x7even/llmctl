@@ -35,9 +35,10 @@ DeepSWE 48.2% (Qwen3.8-27B 42.2%), Terminal Bench 2.1 71.6% (73.0%), SWE-bench V
 - May take destructive actions (delete or overwrite files) without confirmation. Run it sandboxed.
 - Compute per token is ~1.6× what "3.4B active" suggests, because of the loop.
 
-Why it's interesting here: a ~17.6 GB 4-bit build fits on **one** R9700. That would give us a
-strong agentic coder (coding scores roughly level with Qwen3.8-27B) that leaves three cards free.
-No current profile can do that.
+Why it's interesting here: the model fits on **one** R9700. That's the 20 GB official
+checkpoint on vllm-redshift (§2a), or a 17.6 GB 4-bit GGUF. That would give us a strong agentic
+coder (coding scores roughly level with Qwen3.8-27B) that leaves three cards free. No current
+profile can do that.
 
 ---
 
@@ -48,7 +49,7 @@ No current profile can do that.
 | **vllm-redshift** (third-party vLLM port, §2a) | **Primary candidate** | Built for exactly this card (R9700, gfx1201). Official NVFP4/MXFP8 weights as shipped. Author's numbers on one card: ~78 tok/s decode, 90–134 with DSpark, ~4,600 tok/s prefill, 196K ctx × 2 slots, tools + reasoning + images. Risks in §2a. |
 | upstream vLLM | Blocked — watch item | Needs vLLM ≥ 0.35 (nightly only, cu130 wheels). Recipe and blog list only NVIDIA (Blackwell, Hopper, DGX Spark). AMD support is an open PR for MI355X (block-scaled MFMA that RDNA4 lacks). Revisit when upstream merges vllm#69028 and a ROCm path for gfx12. |
 | **SGLang** | **Blocked** | AMD support is MI350X/MI355X (gfx950) only; the cookbook says "Other ROCm GPUs refuse at launch". |
-| **llama.cpp mainline, Vulkan** | **Primary path, one known gap** | Arch merged (#32217, #32694 adds `inkling2-loop.cpp`), NVFP4 loop-scale fix (#32704, ≥ b12611), FA compact bias (#32740), chat/tool parser (#32381, #32833), reasoning_effort (#32763), DSpark (#32218). **Gap:** the Vulkan port of the compact-bias FA op is an open draft, #32898. #32740 says that without it, "even when FA was on, the model effectively ran a non-FA route, materializing all the intermediate activation tensors" → enormous VRAM. Expect a slow/large fallback on Vulkan until #32898 lands. |
+| **llama.cpp mainline, Vulkan** | **Baseline / fallback, one known gap** | Arch merged (#32217, #32694 adds `inkling2-loop.cpp`), NVFP4 loop-scale fix (#32704, ≥ b12611), FA compact bias (#32740), chat/tool parser (#32381, #32833), reasoning_effort (#32763), DSpark (#32218). **Gap:** the Vulkan port of the compact-bias FA op is an open draft, #32898. #32740 says that without it, "even when FA was on, the model effectively ran a non-FA route, materializing all the intermediate activation tensors" → enormous VRAM. Expect a slow/large fallback on Vulkan until #32898 lands. |
 | llama.cpp mainline, HIP | Fallback (needs your call) | HIP shares the CUDA code, so it may already have the compact-bias FA. But HIP llama.cpp is a standing hold in this stack (upgrade-plan-2026-07). Unsloth also ships a `rocm-gfx120X` prebuilt. |
 | Tensor-parallel (`-sm tensor`) | Not yet | #32751 open. Layer split (`--tensor-split`) is the only multi-card mode. |
 
@@ -72,8 +73,8 @@ the GGUF path at roughly ⅓ the decode and 1/9–1/25 the prefill speed. For ag
 tens of K tokens, prefill is what users feel.
 
 Risks, and how the plan handles them:
-- **No LICENSE file** (all rights reserved by default). Running it locally is fine; don't
-  redistribute images built from it. Ask the author to add one.
+- **No LICENSE file**, so no license is granted. OK for evaluation. Ask the author to add one
+  before we depend on it, and don't redistribute images built from it.
 - **4 days old, one maintainer, ~1 MB of patches** (two open upstream PRs, vllm#67685 and
   #69028, ~490 KB; its own AMD backend, ~240 KB + 115 KB tests). → Build from source at a pinned
   tag rather than pulling `ghcr.io/...:inkling2-mini`. Read `core/` patches (small) in full and
@@ -81,15 +82,21 @@ Risks, and how the plan handles them:
 - **Own ROCm runtime:** the image ships pip ROCm 10.0 (TheRock) + torch 2.13 + Triton 3.8, and
   warns that a system ROCm 10.1 HIP runtime segfaults. Our host is 10.1, so never bind-mount host
   ROCm libraries into it. Kernel driver only (`/dev/kfd`, `/dev/dri`).
-- **`GPU_MAX_HW_QUEUES=2`** is applied inside its vLLM (`core/0101`, "38 → 60 tok/s"). Our
-  root CLAUDE.md makes **`=1` mandatory** for every vLLM profile, based on the slow-decode-band
-  measurements. The two contradict each other, so the canary must measure 1 vs 2 over several
-  spawns, the way that rule was established.
-- **Single GPU only** (`HIP_VISIBLE_DEVICES=0` baked in). Pick the card by passing only that
-  card's render node into the container.
-- Docker scripts → translate `scripts/docker-args.sh` into a rootless-podman llama-swap
-  `cmd` (`--entrypoint=""`, `.vllm-cache`/`.triton-cache` mounts, `useModelName`, explicit
-  graph sizes if its HIP-graph setup honours them).
+- **`GPU_MAX_HW_QUEUES=2`** is its RDNA4 default (`core/0101`, "37.8 → 59.9 tok/s" vs the HIP
+  default of 4). Our root CLAUDE.md makes **`=1` mandatory** for every vLLM profile. The patch
+  only sets 2 **when the variable is unset** (`if _ON_RDNA4 and "GPU_MAX_HW_QUEUES" not in
+  os.environ`), so our `-e GPU_MAX_HW_QUEUES=1` is honoured. The canary measures 1 vs 2 as a
+  plain env A/B over several spawns, the way the rule was established.
+- **Single GPU only.** Its args pass all of `/dev/dri` and set `HIP_VISIBLE_DEVICES=0
+  ROCR_VISIBLE_DEVICES=0`; set those to the chosen card instead.
+- **Container args to translate** (`scripts/docker-args.sh`): `--device /dev/kfd --device
+  /dev/dri --group-add video --security-opt seccomp=unconfined --ipc host --shm-size 8g`,
+  `-e ROCPROFILER_REGISTER_ENABLED=0` (stops a 100% idle CPU spin), and **one cache volume at
+  `/root/.cache`** (vLLM compile cache + Triton kernels). Its first-request Triton JIT is costly:
+  65/84/68 tok/s cold vs 91/134/92 warm. llama-swap runs `--rm`, so mount a persistent host dir
+  (e.g. `__LLMSTACK_DIR__/.redshift-cache`) at `/root/.cache`, not our usual
+  `/root/.cache/vllm` + `/root/.triton/cache` pair, or every swap serves cold. Plus
+  `--entrypoint=""` and `useModelName`.
 - Revisit once upstream vLLM merges #69028 plus an RDNA4 path. Then switch to the official image.
 
 Current image `localhost/llmstack-llama:latest` is **build 9903** — far too old (needs
@@ -97,7 +104,8 @@ Current image `localhost/llmstack-llama:latest` is **build 9903** — far too ol
 
 ### KV sizing (corrected for the loop)
 
-ggml-org's card: "Each pass keeps its own KV and convolution cache." So per token:
+For the primary path, redshift's FP8 KV pool (9.13 GB = 416,701 tokens, 196K × 2) replaces
+this estimate. What follows applies to the llama.cpp fallback. ggml-org's card: "Each pass keeps its own KV and convolution cache." So per token:
 
 - Global attention evaluations: layer 5 (1) + layers 11, 17 (×3 each = 6) + layer 23 (1) = **8**
 - 8 × 8 KV heads × 128 × (K+V) × 2 B = **32 KiB/token at f16** (~17 KiB at q8_0)
@@ -116,7 +124,8 @@ that.
 
 | Repo | File | Size | Verdict |
 |---|---|---|---|
-| `ggml-org/Inkling-2-Mini-GGUF` | `Inkling-2-Mini-IQ4_NL.gguf` | 17.6 GB | **Primary.** From the implementers. Experts of layers 0–19 IQ4_NL, everything else Q8_0, imatrix. KLD 0.0095 vs BF16. |
+| `thinkingmachines/Inkling-2-Mini` @ `ed40e7d` | safetensors + `mtp.safetensors` | 20.2 GB | **Primary (vllm-redshift).** Official weights as shipped; the revision redshift v0.5.1 pins. |
+| `ggml-org/Inkling-2-Mini-GGUF` | `Inkling-2-Mini-IQ4_NL.gguf` | 17.6 GB | **Fallback (llama.cpp).** From the implementers. Experts of layers 0–19 IQ4_NL, everything else Q8_0, imatrix. KLD 0.0095 vs BF16. |
 | `ggml-org/Inkling-2-Mini-GGUF` | `mmproj-Inkling-2-Mini-Q8_0.gguf` (346 MB) or BF16 (642 MB) | | Vision tower. |
 | `ggml-org/Inkling-2-Mini-GGUF` | `Inkling-2-Mini-Q8_0.gguf` | 27.8 GB | Quality reference. Single card leaves ~3 GiB, so 2-card only. |
 | `unsloth/Inkling-2-Mini-GGUF` | `Mainline_Support/Inkling-2-Mini-UD-Q4_K_XL.gguf_file` | 17.6 GB | Alternative A/B arm. **Root-level files are Unsloth's own layout and do not load on mainline.** Use the `Mainline_Support/` copies, renamed `.gguf_file` → `.gguf`. |
@@ -157,24 +166,32 @@ and only if the fork publishes a censored build and Vulkan numbers.
 - Clone `abhinand5/vllm-redshift` at tag `inkling2-mini/v0.5.1`. Review the `core/` patches and
   the Dockerfile. Build `localhost/vllm-redshift:inkling2-mini-v0.5.1` from source with podman
   (30–60 min).
+- New `containers/llama-server-inkling/Containerfile`, a copy of the `llama-server-qwen4exp`
+  pattern: mainline `ggml-org/llama.cpp`, `ARG LLAMA_REF` pinned to the b12719 commit, Vulkan,
+  same Mesa 26 runtime base. Tag `localhost/llmstack-llama-inkling:b12719`.
+  **Do not rebuild `:latest`.** That would also swap the binary under both gemma4 GGUF profiles.
 
 ### Phase 1a — vllm-redshift canary (one card, router untouched)
 Run its `serve.sh` defaults translated to podman on one card. Check:
 1. Load log: KV pool tokens (expect ~416,701), model memory (~19.8 GiB), VRAM.
 2. Router-shaped requests: `reasoning` field split, `reasoning_effort` low/medium honoured,
    one `tools` call parsed into `tool_calls`, `vtest.py` vision check.
-3. Speed: our `bench/concurrent_bench.py` serial / conc 2 (its `--max-num-seqs`) / conc 4, plus a
-   ~40K-token prompt. Compare to the README's numbers.
-4. `GPU_MAX_HW_QUEUES` 2 (its default) vs 1, two fresh spawns per arm, long generations included.
-5. Stability: 30 min of mixed agent traffic, plus a cold-restart time with a warm cache.
-If 1a passes, the Phase 1 llama.cpp canary below becomes a baseline/fallback measurement
+3. Speed at its defaults: our `bench/concurrent_bench.py` serial and conc 2, plus a ~40K-token
+   prompt, after warm-up requests. Compare to the README's numbers.
+4. **Concurrency (the blind spot).** Every published redshift number is single-stream at
+   `--max-num-seqs 2`. Its fast BF16-activation expert path covers only ~6 routed tokens
+   (`VLLM_INKLING2_DIRECT_MAX_CTAS` 48); bigger batches take the MXFP8 path. DSpark verifies 8
+   tokens per sequence, so any multi-sequence step leaves the path the headline numbers came
+   from. Arms: `--max-num-seqs 4` and `8` with `MAX_MODEL_LEN=65536`, DSpark on and off.
+   Measure aggregate tok/s at conc 1/2/4/8, and compare against Flash-Next vLLM's ~150–185 at
+   conc=8. If aggregate throughput doesn't scale, this ships as a low-concurrency profile.
+5. `GPU_MAX_HW_QUEUES` 2 (its default) vs 1, two fresh spawns per arm, long generations included.
+6. Stability: 30 min of mixed agent traffic, plus a cold-restart time with the warm
+   `/root/.cache` mount.
+If 1a passes, the Phase 1b llama.cpp canary below becomes a baseline/fallback measurement
 rather than the shipping path.
-- New `containers/llama-server-inkling/Containerfile`, a copy of the `llama-server-qwen4exp`
-  pattern: mainline `ggml-org/llama.cpp`, `ARG LLAMA_REF` pinned to the b12719 commit, Vulkan,
-  same Mesa 26 runtime base. Tag `localhost/llmstack-llama-inkling:b12719`.
-  **Do not rebuild `:latest`.** That would also swap the binary under both gemma4 GGUF profiles.
 
-### Phase 1 — Vulkan canary (single card)
+### Phase 1b — llama.cpp Vulkan canary (fallback track, single card)
 Run by hand on GPU 0, router untouched:
 ```
 llama-server -m …/Inkling-2-Mini-IQ4_NL.gguf --mmproj …/mmproj-Inkling-2-Mini-Q8_0.gguf
@@ -198,7 +215,7 @@ Gate: if FA on Vulkan blows up VRAM or runs on CPU, either (a) build with #32898
 as a second canary arm, or (b) take the HIP fallback (your decision, §5), or (c) wait for
 #32898 to merge.
 
-### Phase 2 — layout and arms
+### Phase 2 — llama.cpp layout and arms (fallback track; only if 1a fails or GGUF earns a profile)
 - Single card vs `--tensor-split 1,1,1,1` layer split (more KV and context, but every token hops
   cards, 3× through the loop core). Measure both at conc 1/4/8.
 - KV f16 vs q8_0 (q8_0 V needs working FA).
@@ -242,7 +259,9 @@ as a second canary arm, or (b) take the HIP fallback (your decision, §5), or (c
 1. **Adopt vllm-redshift as the primary path?** It's an unlicensed, 4-day-old, single-maintainer
    fork, but it is built for this exact card, runs the weights as released, and shows ~3× decode
    and ~9–25× prefill over llama.cpp. Recommendation: yes, canary it built from source at the
-   v0.5.1 tag. llama.cpp Vulkan becomes baseline and fallback.
+   v0.5.1 tag. llama.cpp Vulkan becomes baseline and fallback. Caveat: its numbers are all
+   single-stream. If Phase 1a step 4 shows aggregate throughput not scaling, it ships as a
+   low-concurrency profile, and Flash-Next stays the agent-fleet model.
 2. **Layout for the GGUF fallback:** single card (leaves 3 GPUs free, ~390K tokens of KV) or
    4-card layer split? Recommendation: single card. (redshift is single-card regardless.)
 3. **If llama.cpp is needed and Vulkan FA is broken:** cherry-pick #32898 (stays Vulkan-only)
