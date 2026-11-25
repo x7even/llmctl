@@ -45,11 +45,52 @@ No current profile can do that.
 
 | Path | Verdict | Why |
 |---|---|---|
-| **vLLM** | **Blocked — watch item** | Needs vLLM ≥ 0.35 (nightly only, cu130 wheels). Recipe and blog list only NVIDIA (Blackwell, Hopper, DGX Spark). Weights are NVFP4/MXFP8 MoE. AMD's NVFP4 story is QDQ emulation on MI300/MI355, and nothing covers RDNA4. Revisit when a ROCm vLLM release names `Inkling2Loop`. |
+| **vllm-redshift** (third-party vLLM port, §2a) | **Primary candidate** | Built for exactly this card (R9700, gfx1201). Official NVFP4/MXFP8 weights as shipped. Author's numbers on one card: ~78 tok/s decode, 90–134 with DSpark, ~4,600 tok/s prefill, 196K ctx × 2 slots, tools + reasoning + images. Risks in §2a. |
+| upstream vLLM | Blocked — watch item | Needs vLLM ≥ 0.35 (nightly only, cu130 wheels). Recipe and blog list only NVIDIA (Blackwell, Hopper, DGX Spark). AMD support is an open PR for MI355X (block-scaled MFMA that RDNA4 lacks). Revisit when upstream merges vllm#69028 and a ROCm path for gfx12. |
 | **SGLang** | **Blocked** | AMD support is MI350X/MI355X (gfx950) only; the cookbook says "Other ROCm GPUs refuse at launch". |
 | **llama.cpp mainline, Vulkan** | **Primary path, one known gap** | Arch merged (#32217, #32694 adds `inkling2-loop.cpp`), NVFP4 loop-scale fix (#32704, ≥ b12611), FA compact bias (#32740), chat/tool parser (#32381, #32833), reasoning_effort (#32763), DSpark (#32218). **Gap:** the Vulkan port of the compact-bias FA op is an open draft, #32898. #32740 says that without it, "even when FA was on, the model effectively ran a non-FA route, materializing all the intermediate activation tensors" → enormous VRAM. Expect a slow/large fallback on Vulkan until #32898 lands. |
 | llama.cpp mainline, HIP | Fallback (needs your call) | HIP shares the CUDA code, so it may already have the compact-bias FA. But HIP llama.cpp is a standing hold in this stack (upgrade-plan-2026-07). Unsloth also ships a `rocm-gfx120X` prebuilt. |
 | Tensor-parallel (`-sm tensor`) | Not yet | #32751 open. Layer split (`--tensor-split`) is the only multi-card mode. |
+
+### 2a. `abhinand5/vllm-redshift` — reviewed, recommended as the primary canary
+
+A patch series on a pinned upstream vLLM commit (`bf151b7eb1`, 2026-11-21), released per
+model with semver tags (`inkling2-mini/v0.2.0` … `v0.5.1`, 2026-11-21 → 23) and a CHANGELOG
+that carries numbers. How it gets around the missing hardware: Triton kernels decode NVFP4/MXFP8
+experts to fp16 in registers (RDNA4 has no FP4/block-scaled matrix units). Custom Triton
+attention handles the relative bias, sinks and L2 clip, with FP8 KV. A tail-only
+sliding-window/conv-state manager makes two 196K requests fit. DSpark runs with an FP8 drafter
+and adaptive verify. HIP graphs.
+
+Defaults (`models/inkling2-mini/model.env`): `--max-num-seqs 2 --kv-cache-dtype fp8
+--kv-cache-memory-bytes 9126805504` (416,701-token pool), `MAX_MODEL_LEN=196608`,
+`--reasoning-parser inkling --tool-call-parser inkling --enable-auto-tool-choice`,
+`--limit-mm-per-prompt {"image":64}`, DSpark `num_speculative_tokens: 7` (the only value it
+supports). Effort per request via `chat_template_kwargs.reasoning_effort`. Its own head-to-head
+on R9700 shows llama.cpp (ROCm, Q8_K_XL) at ~31 tok/s decode and 149–522 tok/s prefill. That puts
+the GGUF path at roughly ⅓ the decode and 1/9–1/25 the prefill speed. For agent prompts in the
+tens of K tokens, prefill is what users feel.
+
+Risks, and how the plan handles them:
+- **No LICENSE file** (all rights reserved by default). Running it locally is fine; don't
+  redistribute images built from it. Ask the author to add one.
+- **4 days old, one maintainer, ~1 MB of patches** (two open upstream PRs, vllm#67685 and
+  #69028, ~490 KB; its own AMD backend, ~240 KB + 115 KB tests). → Build from source at a pinned
+  tag rather than pulling `ghcr.io/...:inkling2-mini`. Read `core/` patches (small) in full and
+  skim `model/0201`.
+- **Own ROCm runtime:** the image ships pip ROCm 10.0 (TheRock) + torch 2.13 + Triton 3.8, and
+  warns that a system ROCm 10.1 HIP runtime segfaults. Our host is 10.1, so never bind-mount host
+  ROCm libraries into it. Kernel driver only (`/dev/kfd`, `/dev/dri`).
+- **`GPU_MAX_HW_QUEUES=2`** is applied inside its vLLM (`core/0101`, "38 → 60 tok/s"). Our
+  root CLAUDE.md makes **`=1` mandatory** for every vLLM profile, based on the slow-decode-band
+  measurements. The two contradict each other, so the canary must measure 1 vs 2 over several
+  spawns, the way that rule was established.
+- **Single GPU only** (`HIP_VISIBLE_DEVICES=0` baked in). Pick the card by passing only that
+  card's render node into the container.
+- Docker scripts → translate `scripts/docker-args.sh` into a rootless-podman llama-swap
+  `cmd` (`--entrypoint=""`, `.vllm-cache`/`.triton-cache` mounts, `useModelName`, explicit
+  graph sizes if its HIP-graph setup honours them).
+- Revisit once upstream vLLM merges #69028 plus an RDNA4 path. Then switch to the official image.
 
 Current image `localhost/llmstack-llama:latest` is **build 9903** — far too old (needs
 ≥ b12611, and ≥ the 2026-11-24 merge of #32218 for DSpark). Latest release tag today: b12719.
@@ -108,9 +149,26 @@ and only if the fork publishes a censored build and Vulkan numbers.
 ## 4. Plan (gated phases)
 
 ### Phase 0 — prerequisites (no GPU)
+- Download the official checkpoint at the revision redshift pins (`ed40e7d`, ~20.2 GB incl.
+  `mtp.safetensors`) to `/mnt/models/llm/thinkingmachines/Inkling-2-Mini/`.
 - Download to `/mnt/models/llm/ggml-org/Inkling-2-Mini-GGUF/`: IQ4_NL + mmproj Q8_0 (~18 GB),
   and `unsloth/.../Mainline_Support/dspark-Inkling-2-Mini-Q8_0.gguf_file` renamed (~0.5 GB).
   1 TB free on `/mnt/models`.
+- Clone `abhinand5/vllm-redshift` at tag `inkling2-mini/v0.5.1`. Review the `core/` patches and
+  the Dockerfile. Build `localhost/vllm-redshift:inkling2-mini-v0.5.1` from source with podman
+  (30–60 min).
+
+### Phase 1a — vllm-redshift canary (one card, router untouched)
+Run its `serve.sh` defaults translated to podman on one card. Check:
+1. Load log: KV pool tokens (expect ~416,701), model memory (~19.8 GiB), VRAM.
+2. Router-shaped requests: `reasoning` field split, `reasoning_effort` low/medium honoured,
+   one `tools` call parsed into `tool_calls`, `vtest.py` vision check.
+3. Speed: our `bench/concurrent_bench.py` serial / conc 2 (its `--max-num-seqs`) / conc 4, plus a
+   ~40K-token prompt. Compare to the README's numbers.
+4. `GPU_MAX_HW_QUEUES` 2 (its default) vs 1, two fresh spawns per arm, long generations included.
+5. Stability: 30 min of mixed agent traffic, plus a cold-restart time with a warm cache.
+If 1a passes, the Phase 1 llama.cpp canary below becomes a baseline/fallback measurement
+rather than the shipping path.
 - New `containers/llama-server-inkling/Containerfile`, a copy of the `llama-server-qwen4exp`
   pattern: mainline `ggml-org/llama.cpp`, `ARG LLAMA_REF` pinned to the b12719 commit, Vulkan,
   same Mesa 26 runtime base. Tag `localhost/llmstack-llama-inkling:b12719`.
@@ -151,8 +209,14 @@ as a second canary arm, or (b) take the HIP fallback (your decision, §5), or (c
   under a fixed output cap. This is the Flash-Next runaway check.
 
 ### Phase 3 — the model card
-- `config/models.yaml` profile `inkling2-mini` (aliases `inkling`, `inkling-mini`), llama-server
-  stanza modelled on `gemma4-26b-q8`:
+- If 1a wins: `config/models.yaml` profile `inkling2-mini` as a **vLLM stanza** on
+  `localhost/vllm-redshift:inkling2-mini-v0.5.1`. It must meet the five mandatory vLLM items
+  (`GPU_MAX_HW_QUEUES` per the 1a result, with the deviation documented if it stays at 2),
+  `metadata.requires.gpus: [1]`, `concurrencyLimit` matched to `--max-num-seqs`, and
+  `--default-chat-template-kwargs '{"reasoning_effort":"medium"}'`. Keep a
+  `inkling2-mini-gguf` llama-server profile only if it earns a place (e.g. multi-card context).
+- Otherwise: llama-server profile `inkling2-mini` (aliases `inkling`, `inkling-mini`)
+  modelled on `gemma4-26b-q8`:
   - `metadata.requires`: `min_gpus: 1`, `estimate: true` until measured, plus a `note`
   - explicit `concurrencyLimit` (= `--parallel`)
   - `--chat-template-kwargs '{"reasoning_effort":"medium"}'` (template default is high/0.9)
@@ -175,14 +239,17 @@ as a second canary arm, or (b) take the HIP fallback (your decision, §5), or (c
 
 ## 5. Decisions needed from you
 
-1. **Layout:** single card (leaves 3 GPUs free, ~390K tokens of KV) or 4-card layer split
-   (more context, likely slower per token)? Recommendation: single card first, measure split second.
-2. **Backend if Vulkan FA is broken:** wait for #32898 / cherry-pick it (stays Vulkan-only),
-   or lift the HIP hold for this one profile? Recommendation: cherry-pick #32898 as a canary
-   arm. Lift the HIP hold only if that fails.
+1. **Adopt vllm-redshift as the primary path?** It's an unlicensed, 4-day-old, single-maintainer
+   fork, but it is built for this exact card, runs the weights as released, and shows ~3× decode
+   and ~9–25× prefill over llama.cpp. Recommendation: yes, canary it built from source at the
+   v0.5.1 tag. llama.cpp Vulkan becomes baseline and fallback.
+2. **Layout for the GGUF fallback:** single card (leaves 3 GPUs free, ~390K tokens of KV) or
+   4-card layer split? Recommendation: single card. (redshift is single-card regardless.)
+3. **If llama.cpp is needed and Vulkan FA is broken:** cherry-pick #32898 (stays Vulkan-only)
+   or lift the HIP hold? Recommendation: cherry-pick #32898 first.
 
 Sources: thinkingmachines.ai/news/inkling-2-mini, thinkingmachines.ai/model-card/inkling-2-mini,
 huggingface.co/thinkingmachines/Inkling-2-Mini (config.json, generation_config.json,
 chat_template.jinja), recipes.vllm.ai/thinkingmachines/Inkling-2-Mini, SGLang cookbook,
-unsloth.ai/docs/models/inkling-2-mini, ggml-org/unsloth/Harsha001 HF repos, ggml-org/llama.cpp
+unsloth.ai/docs/models/inkling-2-mini, ggml-org/unsloth/Harsha001 HF repos, github.com/abhinand5/vllm-redshift (v0.5.1), ggml-org/llama.cpp
 PRs listed above (states checked with `gh` on 2026-11-25).
