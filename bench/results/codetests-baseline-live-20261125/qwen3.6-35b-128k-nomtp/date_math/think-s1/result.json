@@ -1,0 +1,79 @@
+{
+ "passed": 0,
+ "total": 14,
+ "fatal": null,
+ "timed_out": false,
+ "stderr_tail": "",
+ "tests": [
+  {
+   "test": "test_no_forbidden_imports",
+   "ok": false,
+   "err": "AssertionError: missing public function is_leap"
+  },
+  {
+   "test": "test_leap_and_month_lengths",
+   "ok": false,
+   "err": "AttributeError: module 'solution' has no attribute 'is_leap'"
+  },
+  {
+   "test": "test_ordinal_weekday",
+   "ok": false,
+   "err": "AttributeError: module 'solution' has no attribute 'to_ordinal'"
+  },
+  {
+   "test": "test_iso_week_vs_stdlib",
+   "ok": false,
+   "err": "AttributeError: module 'solution' has no attribute 'iso_week'"
+  },
+  {
+   "test": "test_from_iso_week_rules",
+   "ok": false,
+   "err": "AttributeError: module 'solution' has no attribute 'iso_weeks_in_year'"
+  },
+  {
+   "test": "test_add_days",
+   "ok": false,
+   "err": "AttributeError: module 'solution' has no attribute 'add_days'"
+  },
+  {
+   "test": "test_add_months_oracle",
+   "ok": false,
+   "err": "AttributeError: module 'solution' has no attribute 'add_months'"
+  },
+  {
+   "test": "test_parse_accepts",
+   "ok": false,
+   "err": "AttributeError: module 'solution' has no attribute 'parse'"
+  },
+  {
+   "test": "test_parse_rejects",
+   "ok": false,
+   "err": "AssertionError: parse('') raised AttributeError, expected ValueError"
+  },
+  {
+   "test": "test_format_date",
+   "ok": false,
+   "err": "AttributeError: module 'solution' has no attribute 'format_date'"
+  },
+  {
+   "test": "test_diff_rule",
+   "ok": false,
+   "err": "AttributeError: module 'solution' has no attribute 'diff'"
+  },
+  {
+   "test": "test_diff_oracle_and_identity",
+   "ok": false,
+   "err": "AttributeError: module 'solution' has no attribute 'diff'"
+  },
+  {
+   "test": "test_validation_and_types",
+   "ok": false,
+   "err": "AssertionError: raised AttributeError: module 'solution' has no attribute 'to_ordinal'; expected ValueError"
+  },
+  {
+   "test": "test_scale",
+   "ok": false,
+   "err": "AttributeError: module 'solution' has no attribute 'from_ordinal'"
+  }
+ ]
+}

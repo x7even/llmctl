@@ -1,0 +1,3 @@
+llmband: qwen3.6-35b-128k-nomtp -> UNDECIDED band
+  no baseline for this profile; run --calibrate against a server you have reason to believe is in the fast band
+  256 steps / 256 tok in 2.588s (1.0 accepted/step); 44/44 card-samples under load across 4 cards

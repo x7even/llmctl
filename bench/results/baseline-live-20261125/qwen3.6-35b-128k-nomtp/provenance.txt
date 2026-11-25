@@ -1,0 +1,48 @@
+=== spawn1: 2026-11-25T10:02:33+00:00 ===
+All models unloaded
+swap exit 0, wall 104 s; container before='' after='17de7395599e721b15b1f8691cab7c6b8849cb30040a84cf3021955961555fb5'
+--- image ---
+ImageName=docker.io/vllm/vllm-openai-rocm:v0.26.0 Image=3d7fe5e20f0da24f220aa44fdf352055e8b277f201a4893ac177b380ffcc32ef ImageDigest=sha256:5709fafe47123becb2f5e61c32d0b97beff1a629bb40bb753c15464f69a97a18
+RepoDigests=["docker.io/vllm/vllm-openai-rocm@sha256:5709fafe47123becb2f5e61c32d0b97beff1a629bb40bb753c15464f69a97a18","localhost/llmstack-vllm-rollback@sha256:5709fafe47123becb2f5e61c32d0b97beff1a629bb40bb753c15464f69a97a18"] RepoTags=["localhost/llmstack-vllm-rollback:v0.26.0","docker.io/vllm/vllm-openai-rocm:v0.26.0"]
+--- container Id / created ---
+17de7395599e721b15b1f8691cab7c6b8849cb30040a84cf3021955961555fb5 2026-11-25 10:02:34.393035497 +0000 UTC
+--- argv ---
+["serve","/models/Qwen3.6-35B-A3B-FP8","--host","127.0.0.1","--port","9105","--served-model-name","qwen3.6-35b-128k-nomtp","--attention-backend","TRITON_ATTN","--dtype","auto","--tensor-parallel-size","4","--enable-expert-parallel","--max-num-seqs","32","--max-num-batched-tokens","32768","--max-model-len","131072","--gpu-memory-utilization","0.92","--enable-prefix-caching","--enable-chunked-prefill","--trust-remote-code","--reasoning-parser","qwen3","--enable-auto-tool-choice","--tool-call-parser","qwen3_xml","--cudagraph-capture-sizes","1","2","4","8","16","32"]
+--- env GPU_MAX_HW_QUEUES ---
+"PYTORCH_NVML_BASED_CUDA_CHECK=1"
+"HSA_NO_SCRATCH_RECLAIM=1"
+"GPU_MAX_HW_QUEUES=1"
+"HSA_ENABLE_IPC_MODE_LEGACY=1"
+"PYTORCH_ROCM_ARCH=gfx90a;gfx942;gfx950;gfx1100;gfx1101;gfx1200;gfx1201;gfx1150;gfx1151"
+"TORCH_BLAS_PREFER_HIPBLASLT=1"
+"HSA_ENABLE_SDMA=0"
+--- log: version / engine config / KV / concurrency / backend / connector ---
+(APIServer pid=1) INFO 11-25 10:02:53 [api_utils.py:345]  ▄▄ ▄█ █     █     █ ▀▄▀ █  version 0.26.0
+(EngineCore pid=276) INFO 11-25 10:03:05 [core.py:116] Initializing a V1 LLM engine (v0.26.0) with config: model='/models/Qwen3.6-35B-A3B-FP8', speculative_config=None, tokenizer='/models/Qwen3.6-35B-A3B-FP8', skip_tokenizer_init=False, tokenizer_mode=auto, revision=None, tokenizer_revision=None, trust_remote_code=True, dtype=torch.bfloat16, max_seq_len=131072, download_dir=None, load_format=auto, tensor_parallel_size=4, pipeline_parallel_size=1, data_parallel_size=1, decode_context_parallel_size=1, dcp_comm_backend=ag_rs, disable_custom_all_reduce=True, quantization=fp8, quantization_config=N
+(Worker_TP0_EP0 pid=475) INFO 11-25 10:03:25 [rocm.py:570] Using TRITON_ATTN backend (selected via --attention-backend).
+(Worker_TP0_EP0 pid=475) INFO 11-25 10:03:32 [gpu_model_runner.py:5347] Model loading took 8.75 GiB memory and 7.425944 seconds
+(EngineCore pid=276) INFO 11-25 10:03:56 [kv_cache_utils.py:2177] GPU KV cache size: 1,538,425 tokens
+(EngineCore pid=276) INFO 11-25 10:03:56 [kv_cache_utils.py:2178] Maximum concurrency for 131,072 tokens per request: 11.74x
+(Worker_TP0_EP0 pid=475) INFO 11-25 10:03:59 [gpu_model_runner.py:6844] Graph capturing finished in 3 secs, took 0.61 GiB
+(APIServer pid=1) INFO:     Application startup complete.
+--- backend port ---
+--port 9105
+=== llmband (spawn1-presweep) 2026-11-25T10:04:19+00:00 ===
+llmband: qwen3.6-35b-128k-nomtp -> UNDECIDED band
+  no baseline for this profile; run --calibrate against a server you have reason to believe is in the fast band
+  256 steps / 256 tok in 2.594s (1.0 accepted/step); 44/44 card-samples under load across 4 cards
+llmband exit code (spawn1-presweep): 2
+=== sweep 2026-11-25T10:04:23+00:00 -> bench/baselines/qwen3.6-35b-128k-nomtp-v0.26.0-peak-nothink-live-20261125.json ===
+sweep exit 0
+=== llmband (postsweep) 2026-11-25T10:13:42+00:00 ===
+llmband: qwen3.6-35b-128k-nomtp -> UNDECIDED band
+  no baseline for this profile; run --calibrate against a server you have reason to believe is in the fast band
+  256 steps / 256 tok in 2.588s (1.0 accepted/step); 44/44 card-samples under load across 4 cards
+llmband exit code (postsweep): 2
+=== depth 2026-11-25T10:13:54+00:00 mml=131072 deep=129984 metrics=http://127.0.0.1:9105/metrics ===
+depth cell c1 depths=2048,16384,65536,129984 conc=1 nonce=1795601635 -> bench/baselines/depth/qwen3.6-35b-128k-nomtp-v0.26.0-depth-c1-prewarm-live-20261125.json
+depth c1 exit 0
+depth cell c8 depths=16384 conc=8 nonce=1795601636 -> bench/baselines/depth/qwen3.6-35b-128k-nomtp-v0.26.0-depth-c8-prewarm-live-20261125.json
+depth c8 exit 0
+depth cell c4 depths=65536 conc=4 nonce=1795601637 -> bench/baselines/depth/qwen3.6-35b-128k-nomtp-v0.26.0-depth-c4-prewarm-live-20261125.json
+depth c4 exit 0

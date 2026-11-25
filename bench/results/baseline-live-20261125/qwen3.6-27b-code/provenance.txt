@@ -1,0 +1,44 @@
+=== spawn1: 2026-11-25T09:33:12+00:00 ===
+All models unloaded
+swap exit 0, wall 168 s; container before='' after='0ac551afce50fa611c03680988df16c79370c024e5ef810aca0300b13ade3a4b'
+--- image ---
+ImageName=docker.io/vllm/vllm-openai-rocm:v0.26.0 Image=3d7fe5e20f0da24f220aa44fdf352055e8b277f201a4893ac177b380ffcc32ef ImageDigest=sha256:5709fafe47123becb2f5e61c32d0b97beff1a629bb40bb753c15464f69a97a18
+RepoDigests=["docker.io/vllm/vllm-openai-rocm@sha256:5709fafe47123becb2f5e61c32d0b97beff1a629bb40bb753c15464f69a97a18","localhost/llmstack-vllm-rollback@sha256:5709fafe47123becb2f5e61c32d0b97beff1a629bb40bb753c15464f69a97a18"] RepoTags=["localhost/llmstack-vllm-rollback:v0.26.0","docker.io/vllm/vllm-openai-rocm:v0.26.0"]
+--- container Id / created ---
+0ac551afce50fa611c03680988df16c79370c024e5ef810aca0300b13ade3a4b 2026-11-25 09:33:14.589144119 +0000 UTC
+--- argv ---
+["serve","/models/Qwen3.6-27B-FP8","--host","127.0.0.1","--port","9104","--served-model-name","qwen3.6-27b-code","--dtype","auto","--tensor-parallel-size","4","--max-model-len","131072","--max-num-seqs","32","--max-num-batched-tokens","16384","--gpu-memory-utilization","0.95","--enable-prefix-caching","--enable-chunked-prefill","--trust-remote-code","--reasoning-parser","qwen3","--enable-auto-tool-choice","--tool-call-parser","qwen3_xml","--speculative-config","{\"method\": \"mtp\", \"num_speculative_tokens\": 2}","--cudagraph-capture-sizes","1","2","4","8","16","32"]
+--- env GPU_MAX_HW_QUEUES ---
+["HSA_ENABLE_IPC_MODE_LEGACY=1"
+"PYTORCH_NVML_BASED_CUDA_CHECK=1"
+"PYTORCH_ROCM_ARCH=gfx90a;gfx942;gfx950;gfx1100;gfx1101;gfx1200;gfx1201;gfx1150;gfx1151"
+"HSA_ENABLE_SDMA=0"
+"TORCH_BLAS_PREFER_HIPBLASLT=1"
+"HSA_NO_SCRATCH_RECLAIM=1"
+"GPU_MAX_HW_QUEUES=1"
+--- log: version / engine config / KV / concurrency / backend / connector ---
+(APIServer pid=1) INFO 11-25 09:33:35 [api_utils.py:345]  ▄▄ ▄█ █     █     █ ▀▄▀ █  version 0.26.0
+(EngineCore pid=276) INFO 11-25 09:33:47 [core.py:116] Initializing a V1 LLM engine (v0.26.0) with config: model='/models/Qwen3.6-27B-FP8', speculative_config=SpeculativeConfig(method='mtp', model='/models/Qwen3.6-27B-FP8', num_spec_tokens=2), tokenizer='/models/Qwen3.6-27B-FP8', skip_tokenizer_init=False, tokenizer_mode=auto, revision=None, tokenizer_revision=None, trust_remote_code=True, dtype=torch.bfloat16, max_seq_len=131072, download_dir=None, load_format=auto, tensor_parallel_size=4, pipeline_parallel_size=1, data_parallel_size=1, decode_context_parallel_size=1, dcp_comm_backend=ag_rs, 
+(Worker_TP1 pid=479) INFO 11-25 09:34:18 [rocm.py:615] Found incompatible backend(s) [TURBOQUANT] with AttentionType.DECODER. Overriding with ROCM_ATTN out of potential backends: ['ROCM_ATTN', 'TRITON_ATTN'].
+(Worker_TP3 pid=505) INFO 11-25 09:34:18 [rocm.py:615] Found incompatible backend(s) [TURBOQUANT] with AttentionType.DECODER. Overriding with ROCM_ATTN out of potential backends: ['ROCM_ATTN', 'TRITON_ATTN'].
+(Worker_TP0 pid=475) INFO 11-25 09:34:18 [rocm.py:615] Found incompatible backend(s) [TURBOQUANT] with AttentionType.DECODER. Overriding with ROCM_ATTN out of potential backends: ['ROCM_ATTN', 'TRITON_ATTN'].
+(Worker_TP2 pid=490) INFO 11-25 09:34:18 [rocm.py:615] Found incompatible backend(s) [TURBOQUANT] with AttentionType.DECODER. Overriding with ROCM_ATTN out of potential backends: ['ROCM_ATTN', 'TRITON_ATTN'].
+(Worker_TP0 pid=475) INFO 11-25 09:34:28 [gpu_model_runner.py:5347] Model loading took 7.65 GiB memory and 9.874557 seconds
+(EngineCore pid=276) INFO 11-25 09:35:37 [kv_cache_utils.py:2177] GPU KV cache size: 1,096,983 tokens
+(EngineCore pid=276) INFO 11-25 09:35:37 [kv_cache_utils.py:2178] Maximum concurrency for 131,072 tokens per request: 8.37x
+(Worker_TP0 pid=475) INFO 11-25 09:35:42 [gpu_model_runner.py:6844] Graph capturing finished in 4 secs, took 0.62 GiB
+(APIServer pid=1) INFO:     Application startup complete.
+--- backend port ---
+--port 9104
+=== llmband (spawn1-presweep) 2026-11-25T09:36:02+00:00 ===
+llmband: qwen3.6-27b-code -> UNDECIDED band
+  no baseline for this profile; run --calibrate against a server you have reason to believe is in the fast band
+  111 steps / 256 tok in 3.064s (2.306 accepted/step); 52/52 card-samples under load across 4 cards
+llmband exit code (spawn1-presweep): 2
+=== sweep 2026-11-25T09:36:08+00:00 -> bench/baselines/qwen3.6-27b-code-v0.26.0-peak-nothink-live-20261125.json ===
+sweep exit 0
+=== llmband (postsweep) 2026-11-25T09:48:18+00:00 ===
+llmband: qwen3.6-27b-code -> UNDECIDED band
+  no baseline for this profile; run --calibrate against a server you have reason to believe is in the fast band
+  111 steps / 256 tok in 3.1s (2.306 accepted/step); 52/52 card-samples under load across 4 cards
+llmband exit code (postsweep): 2

@@ -1,7 +1,7 @@
 # vLLM 0.26.0 → 0.34.0 upgrade — November 2026
 
-**Status: in progress.** Phase 0 (fresh baseline of the stack as it runs today) started
-2026-11-25. Nothing in `config/models.yaml` references 0.34 yet.
+**Status: in progress.** Phase 0 (fresh baseline of the stack as it runs today) finished
+2026-11-25; Phase 1 (bring-up on `v0.34.0`) is next. Nothing in `config/models.yaml` references 0.34 yet.
 
 Why now: the stack has been pinned to `v0.26.0` since the October 0.31.0 canary failed its gate
 (`docs/upgrade-plan-2026-10.md`). Eight releases have shipped since. New model support
@@ -63,9 +63,65 @@ Phase 1 arms on `qwen3.8-27b-code`, in this order, one variable each: as-shipped
 `--no-enable-extensible-kv-cache` → explicit `--attention-backend ROCM_ATTN` → decode capture
 sizes to 32 → `GPU_MAX_HW_QUEUES` 1 / 2 / unset.
 
-## Phase 0 — baseline (2026-11-25)
+## Phase 0 — baseline (2026-11-25) — done
 
-_Filled in when the run completes._
+Live config (main checkout, uncommitted changes included: `qwen3.8-27b-think` at 262,144 with
+the CPU KV-offload connector, Flash-Next at `--gpu-memory-utilization 0.95`). One fresh spawn
+per profile, `GPU_MAX_HW_QUEUES=1` confirmed in every container. Six profiles on `v0.26.0`,
+Flash-Next on `nightly-8cbd5d0` (vLLM 0.31.1rc1).
+
+### `medium-256`, no thinking, `--requests 128 --serial-n 8`, decode tok/s
+
+| Profile | serial | c1 | c2 | c4 | c8 | c16 | c32 |
+|---|---|---|---|---|---|---|---|
+| qwen3.8-27b-code | 67.9 | 66.0 | 116.0 | 204.8 | 367.0 | 578.7 | 865.3 |
+| qwen3.8-27b-think | 44.5 | 45.9 | 82.3 | 154.4 | 276.2 | 482.0 | 759.0 |
+| qwen3.6-27b-code | 68.2 | 67.3 | 116.3 | 206.5 | 368.3 | 585.8 | 867.9 |
+| qwen3.6-35b-code | 109.6 | 118.2 | 193.1 | 309.8 | 305.3 | 575.7 | 1047.1 |
+| qwen3.6-35b-128k-nomtp | 92.1 | 91.9 | 153.6 | 272.5 | 466.7 | 752.1 | 1194.9 |
+| gemma4-26b-a4b | 129.6 | 129.5 | 210.0 | 348.1 | 539.1 | 891.7 | 1434.9 |
+| qwen3.8-flash-next-vllm | 55.1 | 55.4 | 98.5 | 164.5 | 206.0 | 245.0 | 454.8 |
+
+Against the published 2026-10-19 table every comparable cell is within −3.9 % to +6.0 %: the
+stack is where it was. The −3.9 % is `27b-think` serial, whose cell had a latency tail (p90/mean
+1.44); its c1 cell matches.
+
+### Depth, prewarmed, no arrivals, aggregate decode tok/s
+
+| Profile | 2K×1 | 16K×1 | 64K×1 | 130K×1 | 258K×1 | 16K×8 | 64K×4 |
+|---|---|---|---|---|---|---|---|
+| qwen3.8-27b-code | 63.0 | 26.4 | 9.4 | 5.0 | — | 113.5 | 26.3 |
+| qwen3.8-27b-think | 47.6 | 45.4 | 39.5 | 33.5 | 26.0 | 192.6 | 108.1 |
+| qwen3.6-35b-code | 112.3 | 41.8 | 13.1 | 7.3 | — | 231.3 | 46.3 |
+| qwen3.6-35b-128k-nomtp | 95.5 | 90.3 | 75.6 | 62.0 | — | 381.9 | 216.0 |
+| gemma4-26b-a4b | 119.6 | 76.8 | 46.9 | 34.7 | 23.1 | 326.4 | 3.6 ¹ |
+| qwen3.8-flash-next-vllm | 56.7 | 56.7 | 56.6 | 56.6 | 56.2 | 162.9 | 147.5 |
+
+¹ Not a steady-state figure: TTFT 113.7 s, reproduced on a re-run. The prewarm evidently does not
+hold 4×64K in gemma4's 469K-token pool (cause inferred).
+
+The two MTP profiles are the ones that collapse with depth (63 → 5 and 112 → 7 tok/s). That is
+the cell block to watch on 0.34, where the split-KV path may accept MTP.
+
+### Other reference points
+
+- **KV pool (tokens):** 27b-code 1,097,728; 27b-think 1,150,051; 3.6-27b-code 1,096,983;
+  35b-code 1,339,213; nomtp 1,538,425; gemma4 469,454; Flash-Next 589,824.
+- **Swap wall time:** 104–178 s.
+- **Band:** 27b-code `llmband` fast before and after; the others have no stored band baseline
+  (exit 2) and are fast by comparison with their published rows.
+- **Quality** (hard tasks, think, medium effort, 4 samples, 81,920 cap; mean tests passed):
+  27b-code date_math 85.7 %, json_strict 78.6 %, mini_scheme 0 %, regex_engine 0 %, with 9 of 16
+  samples ending early. nomtp date_math 23.2 %, the rest 0 %, 11 of 16 samples running to the
+  cap. Only date_math and json_strict on 27b-code have room to show a drop; the gate on 0.34
+  reads those two plus the early-stop and cap counts.
+- **Response shape:** thinking is in `reasoning` already; tool calls well-formed.
+- **Open observations, not chased:** nomtp 16K×8 reads 381.9 against 439.8 documented (−13 %)
+  and 64K×4 216.0 against 231.1; `qwen3.6-35b-code` c8 is no faster than c4 (as published); the
+  card-3 slot link is still at Gen4.
+
+Data: `bench/baselines/*-live-20261125.json`, `bench/baselines/depth/*-live-20261125.json`,
+`bench/results/baseline-live-20261125/`, `bench/results/codetests-baseline-live-20261125/`.
 
 ## Phase 1–4
 

@@ -1,0 +1,299 @@
+{
+  "model": "qwen3.8-27b-code",
+  "url": "http://127.0.0.1:8080/v1/chat/completions",
+  "label": "live-20261125 baseline qwen3.8-27b-code v0.26.0 prewarm c4",
+  "gen": 128,
+  "no_thinking": true,
+  "prewarm": true,
+  "shared_prefix": false,
+  "requests_per_cell": null,
+  "seed": 1234,
+  "run_nonce": 1795592441,
+  "words_per_token": 1.0002463661000247,
+  "timestamp": "2026-11-25T07:46:27",
+  "rows": [
+    {
+      "ok": 4,
+      "requested": 4,
+      "slots": 4,
+      "errors": [],
+      "prompt_tokens": 65551,
+      "completion_tokens": 128,
+      "agg_decode_tok_s": 26.311516412000028,
+      "per_stream_tok_s_mean": 8.653610727759526,
+      "per_stream_tok_s_min": 6.917649260257555,
+      "ttft_s_mean": 4.706446606751342,
+      "ttft_s_p90": 5.867884081999364,
+      "e2e_s_max": 20.529944590001833,
+      "dist": {
+        "per_stream_tok_s": {
+          "n": 4,
+          "mean": 8.653610727759526,
+          "stdev": 1.2279465675487393,
+          "min": 6.917649260257555,
+          "p10": 6.917649260257555,
+          "p50": 9.427767661236729,
+          "p90": 9.607874993207815,
+          "max": 9.607874993207815,
+          "percentiles_meaningful": false
+        },
+        "ttft_s": {
+          "n": 4,
+          "mean": 4.706446606751342,
+          "stdev": 2.320928592681882,
+          "min": 1.2250538959997357,
+          "p10": 1.2250538959997357,
+          "p50": 5.866766445004032,
+          "p90": 5.867884081999364,
+          "max": 5.867884081999364,
+          "percentiles_meaningful": false
+        },
+        "e2e_s": {
+          "n": 4,
+          "mean": 19.63424278000275,
+          "stdev": 0.6307551039923527,
+          "min": 19.086207602005743,
+          "p10": 19.086207602005743,
+          "p50": 19.583891590998974,
+          "p90": 20.529944590001833,
+          "max": 20.529944590001833,
+          "percentiles_meaningful": false
+        },
+        "decode_window_s": {
+          "n": 4,
+          "mean": 14.927796173251409,
+          "stdev": 2.3725563658867985,
+          "min": 13.21832352000638,
+          "p10": 13.21832352000638,
+          "p50": 14.6631781449978,
+          "p90": 18.358837694999238,
+          "max": 18.358837694999238,
+          "percentiles_meaningful": false
+        },
+        "accepted_per_step": {
+          "n": 4,
+          "mean": 2.3240116056682423,
+          "stdev": 0.11606595490656206,
+          "min": 2.189655172413793,
+          "p10": 2.189655172413793,
+          "p50": 2.3962264150943398,
+          "p90": 2.4423076923076925,
+          "max": 2.4423076923076925,
+          "percentiles_meaningful": false
+        }
+      },
+      "samples": {
+        "per_stream_tok_s": [
+          6.917649260257555,
+          9.607874993207815,
+          8.661150996336003,
+          9.427767661236729
+        ],
+        "ttft_s": [
+          1.2250538959997357,
+          5.866082004002237,
+          5.866766445004032,
+          5.867884081999364
+        ],
+        "e2e_s": [
+          19.583891590998974,
+          19.086207602005743,
+          20.529944590001833,
+          19.336927337004454
+        ]
+      },
+      "accepted_per_step": 2.3240116056682423,
+      "prefill_tok_s": 44684.59095917574,
+      "prefill_tok_s_per_stream_mean": 21756.917342243527,
+      "live": {
+        "interval_s": 1.0,
+        "n_samples": 20,
+        "modal_running_requests": 4.0,
+        "max_running_requests": 4.0,
+        "saturation_threshold_requests": 3.6,
+        "max_waiting_requests": 0,
+        "n_samples_in_band": 18,
+        "n_zero_decode_ticks_in_band": 3,
+        "zero_decode_tick_fraction_in_band": 0.16666666666666666,
+        "decode_tok_s_all": {
+          "n": 16,
+          "mean": 31.684828473908457,
+          "stdev": 11.65364079074249,
+          "min": 1.9997997780531231,
+          "p10": 24.997943644112706,
+          "p50": 35.99740087986268,
+          "p90": 40.997067602753035,
+          "max": 42.99645034194957,
+          "percentiles_meaningful": true
+        },
+        "decode_tok_s_saturated": {
+          "n": 15,
+          "mean": 32.130620795894835,
+          "stdev": 11.920614690984378,
+          "min": 1.9997997780531231,
+          "p10": 5.999481326834064,
+          "p50": 35.99740087986268,
+          "p90": 40.997067602753035,
+          "max": 42.99645034194957,
+          "percentiles_meaningful": true
+        },
+        "prefill_tok_s_nonzero": {
+          "n": 2,
+          "mean": 131090.218926615,
+          "stdev": 92695.73287226433,
+          "min": 65544.43762558013,
+          "p10": 65544.43762558013,
+          "p50": 196636.00022764987,
+          "p90": 196636.00022764987,
+          "max": 196636.00022764987,
+          "percentiles_meaningful": false
+        },
+        "samples": [
+          {
+            "dt": 1.0,
+            "gen_tok_s": 0.0,
+            "prompt_tok_s": 0.0,
+            "running": 0.0,
+            "waiting": 0.0
+          },
+          {
+            "dt": 1.0,
+            "gen_tok_s": 2.0,
+            "prompt_tok_s": 65544.44,
+            "running": 4.0,
+            "waiting": 0.0
+          },
+          {
+            "dt": 1.0,
+            "gen_tok_s": 0.0,
+            "prompt_tok_s": 0.0,
+            "running": 4.0,
+            "waiting": 0.0
+          },
+          {
+            "dt": 1.0,
+            "gen_tok_s": 0.0,
+            "prompt_tok_s": 0.0,
+            "running": 4.0,
+            "waiting": 0.0
+          },
+          {
+            "dt": 1.0,
+            "gen_tok_s": 0.0,
+            "prompt_tok_s": 0.0,
+            "running": 4.0,
+            "waiting": 0.0
+          },
+          {
+            "dt": 1.0,
+            "gen_tok_s": 6.0,
+            "prompt_tok_s": 196636.0,
+            "running": 4.0,
+            "waiting": 0.0
+          },
+          {
+            "dt": 1.0,
+            "gen_tok_s": 33.0,
+            "prompt_tok_s": 0.0,
+            "running": 4.0,
+            "waiting": 0.0
+          },
+          {
+            "dt": 1.0,
+            "gen_tok_s": 33.0,
+            "prompt_tok_s": 0.0,
+            "running": 4.0,
+            "waiting": 0.0
+          },
+          {
+            "dt": 1.0,
+            "gen_tok_s": 43.0,
+            "prompt_tok_s": 0.0,
+            "running": 4.0,
+            "waiting": 0.0
+          },
+          {
+            "dt": 1.0,
+            "gen_tok_s": 39.0,
+            "prompt_tok_s": 0.0,
+            "running": 4.0,
+            "waiting": 0.0
+          },
+          {
+            "dt": 1.0,
+            "gen_tok_s": 41.0,
+            "prompt_tok_s": 0.0,
+            "running": 4.0,
+            "waiting": 0.0
+          },
+          {
+            "dt": 1.0,
+            "gen_tok_s": 37.0,
+            "prompt_tok_s": 0.0,
+            "running": 4.0,
+            "waiting": 0.0
+          },
+          {
+            "dt": 1.0,
+            "gen_tok_s": 39.0,
+            "prompt_tok_s": 0.0,
+            "running": 4.0,
+            "waiting": 0.0
+          },
+          {
+            "dt": 1.0,
+            "gen_tok_s": 30.0,
+            "prompt_tok_s": 0.0,
+            "running": 4.0,
+            "waiting": 0.0
+          },
+          {
+            "dt": 1.0,
+            "gen_tok_s": 33.0,
+            "prompt_tok_s": 0.0,
+            "running": 4.0,
+            "waiting": 0.0
+          },
+          {
+            "dt": 1.0,
+            "gen_tok_s": 36.0,
+            "prompt_tok_s": 0.0,
+            "running": 4.0,
+            "waiting": 0.0
+          },
+          {
+            "dt": 1.0,
+            "gen_tok_s": 37.0,
+            "prompt_tok_s": 0.0,
+            "running": 4.0,
+            "waiting": 0.0
+          },
+          {
+            "dt": 1.0,
+            "gen_tok_s": 36.0,
+            "prompt_tok_s": 0.0,
+            "running": 4.0,
+            "waiting": 0.0
+          },
+          {
+            "dt": 1.0,
+            "gen_tok_s": 37.0,
+            "prompt_tok_s": 0.0,
+            "running": 4.0,
+            "waiting": 0.0
+          },
+          {
+            "dt": 1.0,
+            "gen_tok_s": 25.0,
+            "prompt_tok_s": 0.0,
+            "running": 1.0,
+            "waiting": 0.0
+          }
+        ],
+        "peak_over_median": 1.1944320781782394
+      },
+      "depth_requested": 65536,
+      "concurrency": 4
+    }
+  ]
+}
