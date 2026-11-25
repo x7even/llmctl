@@ -1,7 +1,8 @@
 # vLLM 0.26.0 → 0.34.0 upgrade — November 2026
 
 **Status: in progress.** Phase 0 (fresh baseline of the stack as it runs today) finished
-2026-11-25; Phase 1 (bring-up on `v0.34.0`) is next. Nothing in `config/models.yaml` references 0.34 yet.
+2026-11-25. Phase 1 (bring-up on `v0.34.0`): `qwen3.8-27b-code` starts and is faster everywhere, but
+failed the quality gate; isolating that is the current step. Nothing in `config/models.yaml` references 0.34 yet.
 
 Why now: the stack has been pinned to `v0.26.0` since the October 0.31.0 canary failed its gate
 (`docs/upgrade-plan-2026-10.md`). Eight releases have shipped since. New model support
@@ -123,6 +124,82 @@ the cell block to watch on 0.34, where the split-KV path may accept MTP.
 Data: `bench/baselines/*-live-20261125.json`, `bench/baselines/depth/*-live-20261125.json`,
 `bench/results/baseline-live-20261125/`, `bench/results/codetests-baseline-live-20261125/`.
 
-## Phase 1–4
+## Phase 1 — bring-up, `qwen3.8-27b-code` on `v0.34.0` (2026-11-25)
 
-_Not started._
+Side port, fresh compile caches, router stopped. Every arm is a fresh spawn; the sweep was run
+twice per spawn. **The production argv starts unchanged** (only image, name and port differ).
+Cold start 217 s, warm 70–147 s, 202 s when an arm forces a recompile.
+
+### `medium-256`, decode tok/s (first sweep; the repeat agrees within ~2 %)
+
+| Arm | serial | c1 | c2 | c4 | c8 | c16 | c32 |
+|---|---|---|---|---|---|---|---|
+| 0.26.0 baseline | 67.9 | 66.0 | 116.0 | 204.8 | 367.0 | 578.7 | 865.3 |
+| A0 shipped flags | 75.7 | 76.2 | 137.0 | 249.8 | 437.0 | 711.6 | 982.5 |
+| A1 extensible KV off | 76.8 | 76.2 | 137.5 | 250.1 | 437.1 | 715.4 | 974.3 |
+| A2 `ROCM_ATTN` forced | 68.1 | 67.1 | 123.8 | 227.1 | 389.1 | 604.5 | 829.2 |
+| A3 decode capture to 32 | 75.4 | 76.3 | 137.0 | 256.8 | 455.9 | 714.6 | 991.2 |
+| A4 `GPU_MAX_HW_QUEUES=2` | 43.7 | 43.6 | 81.3 | 152.2 | 270.5 | 466.5 | 713.5 |
+| A4 queue flag unset | 45.2 | 45.2 | 82.0 | 152.5 | 274.6 | 470.2 | 719.3 |
+| **A5 = A1 + A3** | 76.9 | 76.3 | 137.7 | 257.0 | 456.0 | 720.9 | 1006.2 |
+
+A5 against the baseline: +13 % serial, +19 % c2, +25 % c4, +24 % c8, +25 % c16, +16 % c32.
+
+### Depth, prewarmed, aggregate decode tok/s
+
+| Arm | 2K×1 | 16K×1 | 64K×1 | 130K×1 | 16K×8 | 64K×4 |
+|---|---|---|---|---|---|---|
+| 0.26.0 baseline | 63.0 | 26.4 | 9.4 | 5.0 | 113.5 | 26.3 |
+| A0 | 87.9 | 86.2 | 81.0 | 73.4 | 305.6 | 165.4 |
+| A1 | 91.2 | 84.6 | 84.0 | 74.6 | 310.9 | 171.1 |
+| A2 `ROCM_ATTN` | 47.8 | 14.9 | 5.0 | 2.5 | 72.3 | 14.8 |
+| A5 | 79.5 | 87.8 | 78.3 | 77.4 | 313.9 | 168.2 |
+
+Needle retrieval 15/15 on A0 and A5.
+
+### What the hypotheses turned out to be
+
+- **Model Runner V2 with `GPU_MAX_HW_QUEUES=1` is fast** (measured): 39.4–39.9 steps/s,
+  `mem_busy` 49–50 %, against the 0.26 band baseline of 36.3 at 46 %. Without it, or with `2`,
+  the spawn is in the slow band: 22–23 steps/s, `mem_busy` 28–29 %, −35 % serial (one spawn
+  each). `2` is not enough here, contrary to vllm#58639. That October's loss was this band is
+  consistent with these figures, still inferred.
+- **TRITON_ATTN is auto-selected and works with MTP at depth** (measured): 73 tok/s at 130K
+  against 2.5 with `ROCM_ATTN` forced on the same image. MTP and depth are no longer a trade on
+  this profile. `ROCM_ATTN` is also slower at every short-prompt level. Not tested: depth above 8
+  streams.
+- **Extensible KV cache costs no throughput** (measured; #69742's −44 % did not reproduce) but
+  costs pool: 880,495 tokens on, 1,005,399 off, against 1,097,728 on 0.26. Turn it off.
+- **Decode capture** (measured): the shipped `--cudagraph-capture-sizes 1 2 4 8 16 32` resolves
+  to decode request sizes {1,2,3,6} under MTP, not 10 as estimated above. Explicit
+  `--compilation-config '{"prefill_cudagraph_capture_token_sizes":[1,2,4,8,16,32],"decode_cudagraph_capture_request_sizes":[1,2,4,8,16,32]}'`
+  (legacy flag removed) is worth +3.9 % at c8 and +2 % at c4, nothing at c32. Mandatory item 2
+  in `CLAUDE.md` needs rewriting at cut-over.
+- **Response shape:** `reasoning_content` is gone, thinking is in `reasoning`; tool calls
+  well-formed. `bench/depth_bench.py` now reads either.
+
+### Quality gate — failed on the A5 spawn, cause open
+
+Hard tasks, think, medium effort, 81,920 cap; 0.34 is two runs of 4 samples, 0.26 is one.
+
+| Task | 0.26.0 (n=4) | 0.34.0 A5 run 1 | run 2 | pooled (n=8) |
+|---|---|---|---|---|
+| date_math | 85.7 % | 58.9 % | 92.9 % | 75.9 % |
+| json_strict | 78.6 % | 35.7 % | 64.3 % | 50.0 % |
+| mini_scheme | 0 % | 0 % | 0 % | 0 % |
+| regex_engine | 0 % | 0 % | 0 % | 0 % |
+
+Early-ended samples: 23 of 32 on 0.34 against 9 of 16 on 0.26; empty replies 14 of 32 against
+5 of 16. Same signature as the known 27B early stop (reasoning ends mid-sentence, no answer),
+more often. The two 0.34 runs differ by 30 points on both tasks, so n=4 per side is a weak
+comparison, and the 0.26 side has only n=4. Not yet separated: the image, TRITON_ATTN under
+MTP verify, the A5 capture change, extensible KV off. Next: the same suite at equal n on 0.26,
+0.34 A0, and 0.34 with `ROCM_ATTN`.
+
+Data: `bench/baselines/qwen3.8-27b-code-v0.34.0-*-20261125*.json`,
+`bench/baselines/depth/qwen3.8-27b-code-v0.34.0-*`, `bench/results/canary-v0.34.0-20261125/`,
+`bench/results/codetests-canary-v0.34.0-20261125/`.
+
+## Phase 2–4
+
+_Not started. Other profiles' bring-up waits on the quality question above._

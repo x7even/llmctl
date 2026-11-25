@@ -1,0 +1,74 @@
+{
+ "passed": 0,
+ "total": 13,
+ "fatal": null,
+ "timed_out": false,
+ "stderr_tail": "",
+ "tests": [
+  {
+   "test": "test_api_and_examples",
+   "ok": false,
+   "err": "AttributeError: module 'solution' has no attribute 'compile'"
+  },
+  {
+   "test": "test_classes_escapes_anchors",
+   "ok": false,
+   "err": "AttributeError: module 'solution' has no attribute 'compile'"
+  },
+  {
+   "test": "test_priority_and_laziness",
+   "ok": false,
+   "err": "AttributeError: module 'solution' has no attribute 'compile'"
+  },
+  {
+   "test": "test_capture_semantics",
+   "ok": false,
+   "err": "AttributeError: module 'solution' has no attribute 'compile'"
+  },
+  {
+   "test": "test_empty_iteration_loops",
+   "ok": false,
+   "err": "AttributeError: module 'solution' has no attribute 'compile'"
+  },
+  {
+   "test": "test_invalid_patterns",
+   "ok": false,
+   "err": "AssertionError: compile('('): raised AttributeError, expected ValueError"
+  },
+  {
+   "test": "test_strict_dialect_rejections",
+   "ok": false,
+   "err": "AssertionError: compile('a{'): raised AttributeError, expected ValueError"
+  },
+  {
+   "test": "test_random_captures_diff",
+   "ok": false,
+   "err": "AttributeError: module 'solution' has no attribute 'compile'"
+  },
+  {
+   "test": "test_random_empty_loops_diff",
+   "ok": false,
+   "err": "AttributeError: module 'solution' has no attribute 'compile'"
+  },
+  {
+   "test": "test_random_classes_anchors_diff",
+   "ok": false,
+   "err": "AttributeError: module 'solution' has no attribute 'compile'"
+  },
+  {
+   "test": "test_random_syntax_validity",
+   "ok": false,
+   "err": "AssertionError: compile('[^+\\\\d|b'): raised AttributeError, expected ValueError"
+  },
+  {
+   "test": "test_scale_memoisation",
+   "ok": false,
+   "err": "AttributeError: module 'solution' has no attribute 'compile'"
+  },
+  {
+   "test": "test_long_input_no_recursion",
+   "ok": false,
+   "err": "AttributeError: module 'solution' has no attribute 'compile'"
+  }
+ ]
+}

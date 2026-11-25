@@ -1,0 +1,79 @@
+{
+ "passed": 0,
+ "total": 14,
+ "fatal": null,
+ "timed_out": false,
+ "stderr_tail": "s/codetests-canary-v0.34.0-20261125/qwen3.8-27b-code/mini_scheme/think-s0/solution.py:1475: SyntaxWarning: \"is not\" with 'tuple' literal. Did you mean \"!=\"?\n  if not is_pair(b) or not is_pair(b[1]) or b[1][1] is not ():\n__LLMSTACK_DIR__/bench/results/codetests-canary-v0.34.0-20261125/qwen3.8-27b-code/mini_scheme/think-s0/solution.py:1618: SyntaxWarning: \"is not\" with 'tuple' literal. Did you mean \"!=\"?\n  if not is_pair(rest[1]) or rest[1][1] is not ():\n",
+ "tests": [
+  {
+   "test": "test_lexical_syntax_and_display",
+   "ok": false,
+   "err": "AssertionError: '(display 1) .': .output '1', want ''"
+  },
+  {
+   "test": "test_integer_arithmetic",
+   "ok": false,
+   "err": "SchemeError: cannot display value"
+  },
+  {
+   "test": "test_truthiness_equality_and_predicates",
+   "ok": false,
+   "err": "AssertionError: \"(display (if #f 'y 'n))\": got '', want 'n'"
+  },
+  {
+   "test": "test_lists_apply_and_shadowing",
+   "ok": false,
+   "err": "SchemeError: malformed let binding"
+  },
+  {
+   "test": "test_closures_and_mutation",
+   "ok": false,
+   "err": "SchemeError: malformed let binding"
+  },
+  {
+   "test": "test_binding_forms_and_internal_defines",
+   "ok": false,
+   "err": "SchemeError: let: variable must be a symbol"
+  },
+  {
+   "test": "test_evaluation_order",
+   "ok": false,
+   "err": "SchemeError: malformed let binding"
+  },
+  {
+   "test": "test_error_handling",
+   "ok": false,
+   "err": "AssertionError: '(display \"o\") (if 1 2 3 4)': did not raise SchemeError"
+  },
+  {
+   "test": "test_tail_calls_long_loops",
+   "ok": false,
+   "err": "SchemeError: cannot display value"
+  },
+  {
+   "test": "test_tail_calls_in_conditionals",
+   "ok": false,
+   "err": "SchemeError: unbound variable: quote"
+  },
+  {
+   "test": "test_tail_calls_in_binding_forms_and_apply",
+   "ok": false,
+   "err": "SchemeError: malformed let binding"
+  },
+  {
+   "test": "test_deep_recursion_and_long_lists",
+   "ok": false,
+   "err": "SchemeError: length: not a proper list"
+  },
+  {
+   "test": "test_classic_programs",
+   "ok": false,
+   "err": "SchemeError: cannot display value"
+  },
+  {
+   "test": "test_randomized_differential",
+   "ok": false,
+   "err": "SchemeError: let: variable must be a symbol"
+  }
+ ]
+}
