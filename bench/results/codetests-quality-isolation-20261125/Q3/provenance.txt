@@ -1,0 +1,79 @@
+=== stopped 2026-11-25T19:21:32+00:00 ===
+GPU: 0
+        USED_VRAM: 57 MB
+GPU: 1
+        USED_VRAM: 57 MB
+GPU: 2
+        USED_VRAM: 57 MB
+GPU: 3
+        USED_VRAM: 57 MB
+CONTAINER ID  IMAGE       COMMAND     CREATED     STATUS      PORTS       NAMES
+=== spawn1: 2026-11-25T19:21:32+00:00 arm=Q3 image=docker.io/vllm/vllm-openai-rocm:v0.34.0 ===
+--- launch command (printf %q) ---
+podman run -d --replace --name llmstack-canary-q-Q3 --device=/dev/kfd --device=/dev/dri --group-add keep-groups --security-opt seccomp=unconfined --security-opt apparmor=unconfined --ipc=private --shm-size=32g --network=host -v /mnt/models/llm:/models:ro -v ~/.local/share/llmstack/canary-034/vllm-cache:/root/.cache/vllm -v ~/.local/share/llmstack/canary-034/triton-cache:/root/.triton/cache -e HSA_ENABLE_SDMA=0 -e GPU_MAX_HW_QUEUES=1 -e TORCH_BLAS_PREFER_HIPBLASLT=1 --entrypoint= docker.io/vllm/vllm-openai-rocm:v0.34.0 vllm serve /models/Qwen3.8-27B-FP8 --host 127.0.0.1 --port 9234 --served-model-name qwen3.8-27b-code --dtype auto --tensor-parallel-size 4 --max-model-len 131072 --max-num-seqs 32 --max-num-batched-tokens 16384 --gpu-memory-utilization 0.95 --enable-prefix-caching --enable-chunked-prefill --trust-remote-code --reasoning-parser qwen3 --enable-auto-tool-choice --tool-call-parser qwen3_xml --default-chat-template-kwargs \{\"reasoning_effort\":\ \"medium\"\} --speculative-config \{\"method\":\ \"mtp\"\,\ \"num_speculative_tokens\":\ 2\} --cudagraph-capture-sizes 1 2 4 8 16 32 --attention-backend ROCM_ATTN 
+--- VRAM before ---
+GPU: 0
+        USED_VRAM: 57 MB
+GPU: 1
+        USED_VRAM: 57 MB
+GPU: 2
+        USED_VRAM: 57 MB
+GPU: 3
+        USED_VRAM: 57 MB
+startup status=OK after 81 s
+--- image ---
+ImageName=docker.io/vllm/vllm-openai-rocm:v0.34.0 Image=9a5f9af8f20f129a8f0ccbe6c78499a1d0db8ddb17caaa848bb09f04f139d2b1
+--- argv ---
+["serve","/models/Qwen3.8-27B-FP8","--host","127.0.0.1","--port","9234","--served-model-name","qwen3.8-27b-code","--dtype","auto","--tensor-parallel-size","4","--max-model-len","131072","--max-num-seqs","32","--max-num-batched-tokens","16384","--gpu-memory-utilization","0.95","--enable-prefix-caching","--enable-chunked-prefill","--trust-remote-code","--reasoning-parser","qwen3","--enable-auto-tool-choice","--tool-call-parser","qwen3_xml","--default-chat-template-kwargs","{\"reasoning_effort\": \"medium\"}","--speculative-config","{\"method\": \"mtp\", \"num_speculative_tokens\": 2}","--cudagraph-capture-sizes","1","2","4","8","16","32","--attention-backend","ROCM_ATTN"]
+--- env ---
+"HSA_ENABLE_IPC_MODE_LEGACY=1"
+"HSA_ENABLE_SDMA=0"
+"TORCH_BLAS_PREFER_HIPBLASLT=1"
+"HSA_NO_SCRATCH_RECLAIM=1"
+"GPU_MAX_HW_QUEUES=1"
+--- log: selected lines ---
+(APIServer pid=1) INFO 11-25 19:21:52 [startup.py:96] non-default args: {'model_tag': '/models/Qwen3.8-27B-FP8', 'default_chat_template_kwargs': {'reasoning_effort': 'medium'}, 'enable_auto_tool_choice': True, 'tool_call_parser': 'qwen3_xml', 'host': '127.0.0.1', 'port': 9234, 'model': '/models/Qwen3.8-27B-FP8', 'trust_remote_code': True, 'max_model_len': 131072, 'served_model_name': ['qwen3.8-27b-code'], 'attention_backend': 'ROCM_ATTN', 'reasoning_parser': 'qwen3', 'tensor_parallel_size': 4, 'gpu_memory_utilization': 0.95, 'enable_prefix_caching': True, 'max_num_batched_tokens': 16384, 'max_num_seqs': 32, 'enable_chunked_prefill': True, 'cudagraph_capture_sizes': [1, 2, 4, 8, 16, 32], 'speculative_config': {'method': 'mtp', 'num_speculative_tokens': 2}}
+(APIServer pid=1) WARNING 11-25 19:21:53 [config.py:94] Enabling num_speculative_tokens > 1 will run multiple times of forward on same MTP layer,which may result in lower acceptance rate
+(APIServer pid=1) INFO 11-25 19:21:53 [speculative.py:1478] Overriding draft model max model len from 262144 to 131072
+(APIServer pid=1) WARNING 11-25 19:21:53 [vllm.py:2588] cudagraph_capture_sizes and max_cudagraph_capture_size are deprecated. Set the token counts of prefill CUDA graphs with prefill_cudagraph_capture_token_sizes or max_prefill_cudagraph_capture_tokens, and the request counts of decode CUDA graphs with decode_cudagraph_capture_request_sizes or max_decode_cudagraph_capture_requests.
+(EngineCore pid=341) INFO 11-25 19:22:03 [core.py:153] Initializing a V1 LLM engine (v0.34.0) with config: model='/models/Qwen3.8-27B-FP8', speculative_config=SpeculativeConfig(method='mtp', model='/models/Qwen3.8-27B-FP8', num_spec_tokens=2), tokenizer='/models/Qwen3.8-27B-FP8', skip_tokenizer_init=False, tokenizer_mode=auto, revision=None, tokenizer_revision=None, trust_remote_code=True, dtype=torch.bfloat16, max_seq_len=131072, download_dir=None, load_format=auto, tensor_parallel_size=4, pipeline_parallel_size=1, data_parallel_size=1, decode_context_parallel_size=1, dcp_comm_backend=ag_rs, disable_custom_all_reduce=True, quantization=fp8, quantization_config=None, enforce_eager=False, aux_output_config=AuxOutputConfig(enable_return_routed_experts=False, max_bytes=None), kv_cache_dtype=auto, device_config=cuda, structured_outputs_config=StructuredOutputsConfig(backend='auto', disable_a
+(Worker_TP0 pid=562) INFO 11-25 19:22:11 [rocm.py:828] Using ROCM_ATTN backend (selected via --attention-backend).
+(Worker_TP3 pid=561) INFO 11-25 19:22:46 [extensible_kv_cache.py:693] Memory after warmup: 20.92 GiB free, 0.03 GiB committed to the KV cache, 2.25 GiB kept for transient activations (1.23 GiB allocated at peak, 2.25 GiB of torch reservation growth); 1210 KV cache blocks (15.69 GiB) fit within the requested 30.27 GiB. Torch may reserve up to 13.0 GiB.
+(Worker_TP2 pid=563) INFO 11-25 19:22:46 [extensible_kv_cache.py:693] Memory after warmup: 20.84 GiB free, 0.03 GiB committed to the KV cache, 2.25 GiB kept for transient activations (1.23 GiB allocated at peak, 2.25 GiB of torch reservation growth); 1203 KV cache blocks (15.6 GiB) fit within the requested 30.27 GiB. Torch may reserve up to 13.02 GiB.
+(Worker_TP1 pid=560) INFO 11-25 19:22:46 [extensible_kv_cache.py:693] Memory after warmup: 20.86 GiB free, 0.03 GiB committed to the KV cache, 2.25 GiB kept for transient activations (1.23 GiB allocated at peak, 2.25 GiB of torch reservation growth); 1203 KV cache blocks (15.6 GiB) fit within the requested 30.27 GiB. Torch may reserve up to 13.03 GiB.
+(Worker_TP0 pid=562) INFO 11-25 19:22:46 [extensible_kv_cache.py:693] Memory after warmup: 20.86 GiB free, 0.03 GiB committed to the KV cache, 2.25 GiB kept for transient activations (1.23 GiB allocated at peak, 2.25 GiB of torch reservation growth); 1203 KV cache blocks (15.6 GiB) fit within the requested 30.27 GiB. Torch may reserve up to 13.03 GiB.
+(EngineCore pid=341) INFO 11-25 19:22:46 [kv_cache_utils.py:1168] GPU KV cache size: 895,906 tokens, Maximum concurrency for 131,072 tokens per request: 6.84x
+(Worker_TP1 pid=560) INFO 11-25 19:22:46 [extensible_kv_cache.py:536] Extended KV cache to 1203 blocks (15.61 GiB).
+(Worker_TP3 pid=561) INFO 11-25 19:22:46 [extensible_kv_cache.py:536] Extended KV cache to 1203 blocks (15.61 GiB).
+(Worker_TP0 pid=562) INFO 11-25 19:22:46 [extensible_kv_cache.py:536] Extended KV cache to 1203 blocks (15.61 GiB).
+(Worker_TP2 pid=563) INFO 11-25 19:22:46 [extensible_kv_cache.py:536] Extended KV cache to 1203 blocks (15.61 GiB).
+(APIServer pid=1) INFO 11-25 19:22:50 [hf.py:743] Detected the chat template content format to be 'openai'. You can set `--chat-template-content-format` to override this.
+(APIServer pid=1) WARNING 11-25 19:22:50 [model.py:1931] Default vLLM sampling parameters have been overridden by the model's `generation_config.json`: `{'temperature': 1.0, 'top_k': 20, 'top_p': 0.95}`. If this is not intended, please relaunch vLLM instance with `--generation-config vllm`.
+(APIServer pid=1) WARNING 11-25 19:22:50 [serving.py:320] The chat template requires system-first ordering, so inline system messages in /v1/messages requests (e.g. Claude Code's per-turn reminders) are merged into the leading system prompt. Each new one changes the prompt prefix, so the rest of the conversation misses the prefix cache. Pass a --chat-template that accepts non-leading system messages to avoid this.
+INFO:     Application startup complete.
+=== llmband (spawn1) 2026-11-25T19:22:53+00:00 ===
+llmband: qwen3.8-27b-code -> FAST band
+  35.09 steps/s vs baseline 36.31, floor 31.95 (-12%) -> fast
+  mem_busy 44% vs baseline 46% (+/-30%) -> consistent
+  112 steps / 256 tok in 3.192s (2.286 accepted/step); 56/56 card-samples under load across 4 cards
+llmband exit code (spawn1): 0
+--- tokenize probe ---
+{
+ "date_math/kw-medium": {
+  "n_tokens": 3361,
+  "tail": "ed as in \"Argument checking\".\n\nOutput requirements: reply with **one** Python code block containing the complete module. No explanation outside the code block.<|im_end|>\n<|im_start|>assistant\n<think>\n"
+ },
+ "date_math/kw-none": {
+  "n_tokens": 3361,
+  "tail": "ed as in \"Argument checking\".\n\nOutput requirements: reply with **one** Python code block containing the complete module. No explanation outside the code block.<|im_end|>\n<|im_start|>assistant\n<think>\n"
+ },
+ "json_strict/kw-medium": {
+  "n_tokens": 2151,
+  "tail": "00; `\"[\" * 500 + \"x\"` -> 500.\n\nOutput requirements: reply with **one** Python code block containing the complete module. No explanation outside the code block.<|im_end|>\n<|im_start|>assistant\n<think>\n"
+ },
+ "json_strict/kw-none": {
+  "n_tokens": 2151,
+  "tail": "00; `\"[\" * 500 + \"x\"` -> 500.\n\nOutput requirements: reply with **one** Python code block containing the complete module. No explanation outside the code block.<|im_end|>\n<|im_start|>assistant\n<think>\n"
+ }
+}
+=== codetests 2026-11-25T19:23:04+00:00 parallel=8 ===

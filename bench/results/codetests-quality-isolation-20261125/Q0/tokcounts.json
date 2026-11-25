@@ -1,0 +1,98 @@
+{
+ "date_math/think-s0": {
+  "reasoning_tokens": 29869,
+  "content_tokens": 4076
+ },
+ "date_math/think-s1": {
+  "reasoning_tokens": 31609,
+  "content_tokens": 0
+ },
+ "date_math/think-s10": {
+  "reasoning_tokens": 24642,
+  "content_tokens": 4246
+ },
+ "date_math/think-s11": {
+  "reasoning_tokens": 19664,
+  "content_tokens": 0
+ },
+ "date_math/think-s2": {
+  "reasoning_tokens": 19494,
+  "content_tokens": 4387
+ },
+ "date_math/think-s3": {
+  "reasoning_tokens": 21882,
+  "content_tokens": 3489
+ },
+ "date_math/think-s4": {
+  "reasoning_tokens": 23085,
+  "content_tokens": 3668
+ },
+ "date_math/think-s5": {
+  "reasoning_tokens": 23029,
+  "content_tokens": 0
+ },
+ "date_math/think-s6": {
+  "reasoning_tokens": 19534,
+  "content_tokens": 4594
+ },
+ "date_math/think-s7": {
+  "reasoning_tokens": 18155,
+  "content_tokens": 4526
+ },
+ "date_math/think-s8": {
+  "reasoning_tokens": 27430,
+  "content_tokens": 3839
+ },
+ "date_math/think-s9": {
+  "reasoning_tokens": 22472,
+  "content_tokens": 3615
+ },
+ "json_strict/think-s0": {
+  "reasoning_tokens": 23921,
+  "content_tokens": 0
+ },
+ "json_strict/think-s1": {
+  "reasoning_tokens": 24691,
+  "content_tokens": 2404
+ },
+ "json_strict/think-s10": {
+  "reasoning_tokens": 20034,
+  "content_tokens": 2067
+ },
+ "json_strict/think-s11": {
+  "reasoning_tokens": 24225,
+  "content_tokens": 2316
+ },
+ "json_strict/think-s2": {
+  "reasoning_tokens": 18912,
+  "content_tokens": 0
+ },
+ "json_strict/think-s3": {
+  "reasoning_tokens": 27089,
+  "content_tokens": 0
+ },
+ "json_strict/think-s4": {
+  "reasoning_tokens": 34603,
+  "content_tokens": 2449
+ },
+ "json_strict/think-s5": {
+  "reasoning_tokens": 26676,
+  "content_tokens": 2427
+ },
+ "json_strict/think-s6": {
+  "reasoning_tokens": 24833,
+  "content_tokens": 2526
+ },
+ "json_strict/think-s7": {
+  "reasoning_tokens": 28258,
+  "content_tokens": 3578
+ },
+ "json_strict/think-s8": {
+  "reasoning_tokens": 27602,
+  "content_tokens": 2981
+ },
+ "json_strict/think-s9": {
+  "reasoning_tokens": 21198,
+  "content_tokens": 2843
+ }
+}

@@ -1,8 +1,8 @@
 # vLLM 0.26.0 → 0.34.0 upgrade — November 2026
 
 **Status: in progress.** Phase 0 (fresh baseline of the stack as it runs today) finished
-2026-11-25. Phase 1 (bring-up on `v0.34.0`): `qwen3.8-27b-code` starts and is faster everywhere, but
-failed the quality gate; isolating that is the current step. Nothing in `config/models.yaml` references 0.34 yet.
+2026-11-25. Phase 1 (bring-up on `v0.34.0`): `qwen3.8-27b-code` starts and is faster everywhere, and a
+12-sample quality re-check found no regression. Tuning and the other profiles are next. Nothing in `config/models.yaml` references 0.34 yet.
 
 Why now: the stack has been pinned to `v0.26.0` since the October 0.31.0 canary failed its gate
 (`docs/upgrade-plan-2026-10.md`). Eight releases have shipped since. New model support
@@ -178,7 +178,7 @@ Needle retrieval 15/15 on A0 and A5.
 - **Response shape:** `reasoning_content` is gone, thinking is in `reasoning`; tool calls
   well-formed. `bench/depth_bench.py` now reads either.
 
-### Quality gate — failed on the A5 spawn, cause open
+### Quality gate — first reading (superseded below)
 
 Hard tasks, think, medium effort, 81,920 cap; 0.34 is two runs of 4 samples, 0.26 is one.
 
@@ -200,6 +200,27 @@ Data: `bench/baselines/qwen3.8-27b-code-v0.34.0-*-20261125*.json`,
 `bench/baselines/depth/qwen3.8-27b-code-v0.34.0-*`, `bench/results/canary-v0.34.0-20261125/`,
 `bench/results/codetests-canary-v0.34.0-20261125/`.
 
+### Quality re-check at 12 samples per task — no regression found
+
+Fresh spawn per arm, same suite, `date_math` and `json_strict` only (the other two score 0 on
+both versions). The run was stopped during the fourth arm once the picture was clear.
+
+| Arm | date_math | json_strict | empty replies |
+|---|---|---|---|
+| Q0 0.26.0 production | 64.9 % | 44.6 % | 6 of 24 |
+| Q1 0.34.0 shipped flags | 78.6 % | 53.0 % | 3 of 24 |
+| Q2 0.34.0 A5 | 80.4 % | 39.9 % | 4 of 24 |
+| Q3 0.34.0 `ROCM_ATTN` (partial) | 80.4 % | 34.3 % (5 samples) | 4 of 17 |
+
+The 0.26.0 figures the gate was failing against (85.7 % / 78.6 %) were a favourable draw of
+four: at twelve samples the same configuration scores 64.9 % / 44.6 %. Single samples range
+from 0 to 14 of 14 on every arm, so differences of 10–15 points between arms are noise at this
+size. 0.34 does not end replies early more often. No significance tests were run. **Lesson for
+`bench/CLAUDE.md`: four samples per task cannot gate this suite.** Decision (user, 2026-11-25):
+proceed to transition and tuning.
+
+Data: `bench/results/codetests-quality-isolation-20261125/`.
+
 ## Phase 2–4
 
-_Not started. Other profiles' bring-up waits on the quality question above._
+_In progress: KV pool sizing on 0.34, then bring-up of the remaining profiles._

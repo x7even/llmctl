@@ -1,0 +1,79 @@
+{
+ "passed": 0,
+ "total": 14,
+ "fatal": null,
+ "timed_out": false,
+ "stderr_tail": "",
+ "tests": [
+  {
+   "test": "test_basic_values",
+   "ok": false,
+   "err": "AssertionError: "
+  },
+  {
+   "test": "test_number_values",
+   "ok": false,
+   "err": "JSONError: expected ',' or ']', got '-'"
+  },
+  {
+   "test": "test_number_errors_pos",
+   "ok": false,
+   "err": "AssertionError: '[01]': pos 1, expected 2"
+  },
+  {
+   "test": "test_string_values",
+   "ok": false,
+   "err": "JSONError: expected ',' or '}', got '\"'"
+  },
+  {
+   "test": "test_string_errors_pos",
+   "ok": false,
+   "err": "AssertionError: '[\"x\\x00\"]': pos 1, expected 3"
+  },
+  {
+   "test": "test_structure_whitespace_trailing_pos",
+   "ok": false,
+   "err": "JSONError: expected ',' or '}', got '\"'"
+  },
+  {
+   "test": "test_duplicate_keys",
+   "ok": false,
+   "err": "JSONError: expected ',' or '}', got '\"'"
+  },
+  {
+   "test": "test_depth_limit_ok",
+   "ok": false,
+   "err": "AssertionError: '[]': got '[None]', expected '[]'"
+  },
+  {
+   "test": "test_depth_limit_exceeded",
+   "ok": false,
+   "err": "AssertionError: '[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[': pos 1, expected 500"
+  },
+  {
+   "test": "test_error_api",
+   "ok": false,
+   "err": "JSONError: expected ',' or ']', got '1'"
+  },
+  {
+   "test": "test_no_json_module_no_eval",
+   "ok": false,
+   "err": "JSONError: expected ',' or ']', got '1'"
+  },
+  {
+   "test": "test_differential_valid",
+   "ok": false,
+   "err": "JSONError: expected ',' or '}', got '\"'"
+  },
+  {
+   "test": "test_differential_mutations",
+   "ok": false,
+   "err": "AssertionError: '[\"\\\\udfffc\",\"': pos 1, expected 12"
+  },
+  {
+   "test": "test_performance_scale",
+   "ok": false,
+   "err": "JSONError: expected ',' or ']', got '{'"
+  }
+ ]
+}

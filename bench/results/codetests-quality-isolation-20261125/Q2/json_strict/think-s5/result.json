@@ -1,0 +1,79 @@
+{
+ "passed": 0,
+ "total": 14,
+ "fatal": null,
+ "timed_out": false,
+ "stderr_tail": "",
+ "tests": [
+  {
+   "test": "test_basic_values",
+   "ok": false,
+   "err": "AttributeError: module 'solution' has no attribute 'loads'"
+  },
+  {
+   "test": "test_number_values",
+   "ok": false,
+   "err": "AttributeError: module 'solution' has no attribute 'loads'"
+  },
+  {
+   "test": "test_number_errors_pos",
+   "ok": false,
+   "err": "AttributeError: module 'solution' has no attribute 'JSONError'"
+  },
+  {
+   "test": "test_string_values",
+   "ok": false,
+   "err": "AttributeError: module 'solution' has no attribute 'loads'"
+  },
+  {
+   "test": "test_string_errors_pos",
+   "ok": false,
+   "err": "AttributeError: module 'solution' has no attribute 'JSONError'"
+  },
+  {
+   "test": "test_structure_whitespace_trailing_pos",
+   "ok": false,
+   "err": "AttributeError: module 'solution' has no attribute 'loads'"
+  },
+  {
+   "test": "test_duplicate_keys",
+   "ok": false,
+   "err": "AttributeError: module 'solution' has no attribute 'loads'"
+  },
+  {
+   "test": "test_depth_limit_ok",
+   "ok": false,
+   "err": "AttributeError: module 'solution' has no attribute 'loads'"
+  },
+  {
+   "test": "test_depth_limit_exceeded",
+   "ok": false,
+   "err": "AttributeError: module 'solution' has no attribute 'loads'"
+  },
+  {
+   "test": "test_error_api",
+   "ok": false,
+   "err": "AttributeError: module 'solution' has no attribute 'JSONError'"
+  },
+  {
+   "test": "test_no_json_module_no_eval",
+   "ok": false,
+   "err": "AttributeError: module 'solution' has no attribute 'loads'"
+  },
+  {
+   "test": "test_differential_valid",
+   "ok": false,
+   "err": "AttributeError: module 'solution' has no attribute 'loads'"
+  },
+  {
+   "test": "test_differential_mutations",
+   "ok": false,
+   "err": "AttributeError: module 'solution' has no attribute 'loads'"
+  },
+  {
+   "test": "test_performance_scale",
+   "ok": false,
+   "err": "AttributeError: module 'solution' has no attribute 'loads'"
+  }
+ ]
+}

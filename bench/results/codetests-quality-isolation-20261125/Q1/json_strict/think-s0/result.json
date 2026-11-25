@@ -1,0 +1,69 @@
+{
+ "passed": 10,
+ "total": 14,
+ "fatal": null,
+ "timed_out": false,
+ "stderr_tail": "",
+ "tests": [
+  {
+   "test": "test_basic_values",
+   "ok": true
+  },
+  {
+   "test": "test_number_values",
+   "ok": true
+  },
+  {
+   "test": "test_number_errors_pos",
+   "ok": true
+  },
+  {
+   "test": "test_string_values",
+   "ok": true
+  },
+  {
+   "test": "test_string_errors_pos",
+   "ok": false,
+   "err": "AssertionError: '\"\\\\u1\"': pos 3, expected 4"
+  },
+  {
+   "test": "test_structure_whitespace_trailing_pos",
+   "ok": false,
+   "err": "AssertionError: '[1,]': accepted -> '[1]', expected JSONError at 3"
+  },
+  {
+   "test": "test_duplicate_keys",
+   "ok": true
+  },
+  {
+   "test": "test_depth_limit_ok",
+   "ok": true
+  },
+  {
+   "test": "test_depth_limit_exceeded",
+   "ok": true
+  },
+  {
+   "test": "test_error_api",
+   "ok": true
+  },
+  {
+   "test": "test_no_json_module_no_eval",
+   "ok": true
+  },
+  {
+   "test": "test_differential_valid",
+   "ok": true
+  },
+  {
+   "test": "test_differential_mutations",
+   "ok": false,
+   "err": "AssertionError: '[\" \"\\r,]': accepted -> \"[' ']\", expected JSONError at 6"
+  },
+  {
+   "test": "test_performance_scale",
+   "ok": false,
+   "err": "AssertionError: '[{\"k\":0},{\"k\":1},{\"k\":2},{\"k\":3},{\"k\":4},{\"k\":5},{\"k\":6},{\"k': accepted -> \"[{'k': 0}, {'k': 1}, {'k': 2}, {'k': 3},\", expected JSONError at 708891"
+  }
+ ]
+}
