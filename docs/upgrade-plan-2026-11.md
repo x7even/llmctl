@@ -255,7 +255,7 @@ Draft upstream patch (opt-in env vars for the floor and reserve, defaults unchan
 `margin-patch-notes.md`. Dry-run applied only; not filed. Open lever, untested: allocator
 settings that reduce reservation growth.
 
-## Phase 2 — remaining profiles on 0.34.0 (2026-11-26) — 3 of 6 done, resumed after the drive swap
+## Phase 2 — remaining profiles on 0.34.0 (2026-11-26) — 4 of 6 done, resumed after the drive swap
 
 **Was blocked on hardware; resumed the same day.** The model drive (`nvme1`, `/mnt/models`) stopped responding at
 02:38 UTC while `qwen3.6-35b-code` was loading: read timeouts, failed controller reset, device
@@ -347,6 +347,36 @@ step are unchanged (2.15 → 2.15 at 2K and 130K), so none of this is MTP accept
   i.e. ~79 steps/s.
 - Needle 15/15 (16K, 64K, 130,752). Smoke passed: `reasoning` field, tool call well-formed.
 - 0 preemptions over the run; MTP acceptance 52 % of draft tokens.
+
+#### `qwen3.6-27b-code` (MTP, dense 27B, previous generation) — pass
+
+One spawn, tuned capture sizes, otherwise the live argv.
+
+| | serial | c8 | c16 | c32 |
+|---|---|---|---|---|
+| 0.26.0 | 68.2 | 368.3 | 585.8 | 867.9 |
+| 0.34.0 tuned | 75.1 (+10 %) | 448.9 (+22 %) | 714.2 (+22 %) | 1011.4 (+17 %) |
+
+c1 67.3 → 76.3, c2 116.3 → 139.5, c4 206.5 → 256.7. Within ~2 % of Phase 1's A5 on
+`qwen3.8-27b-code` (76.9 / 456.0 / 720.9 / 1006.2) at every level, as the two shared a row on
+0.26 too.
+
+Depth, prewarmed, aggregate tok/s (0.34.0 only — Phase 0 ran no depth cells on this profile):
+
+| 2K | 16K | 64K | 130K | 16K×8 | 64K×4 |
+|---|---|---|---|---|---|
+| 91.1 | 84.7 | 81.0 | 72.3 | 335.1 | 174.1 |
+
+No 0.26 reference on the same method, so no ratio is quoted; the shape (1.26x decay across the
+window) matches Phase 1's 27B on 0.34, where the 0.26 reference fell from 63.0 to 5.0.
+
+- KV pool 1,096,983 → 876,640 tokens (−20 %).
+- Backend TRITON_ATTN by auto-selection under MTP (same log line as above). Resolved capture
+  sizes as on the 35B: decode and prefill `[1, 2, 4, 8, 16, 32]`.
+- Startup 202 s (first compile of this model on the canary cache).
+- `llmband` exit 2 before and after (no stored baseline); 118 steps in 2.97 s and 3.00 s, i.e.
+  ~40 steps/s, the same as Phase 1's fast 27B (39.4–39.9).
+- Needle 15/15. Smoke passed. 0 preemptions; acceptance 53 % of draft tokens.
 
 ## Phase 3b — margin: upstream is already on it
 
