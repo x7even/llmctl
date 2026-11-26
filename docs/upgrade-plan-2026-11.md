@@ -255,14 +255,16 @@ Draft upstream patch (opt-in env vars for the floor and reserve, defaults unchan
 `margin-patch-notes.md`. Dry-run applied only; not filed. Open lever, untested: allocator
 settings that reduce reservation growth.
 
-## Phase 2 — remaining profiles on 0.34.0 (2026-11-26) — 5 of 6 done, resumed after the drive swap
+## Phase 2 — remaining profiles on 0.34.0 (2026-11-26) — done (all pass), resumed after the drive swap
 
 **Was blocked on hardware; resumed the same day.** The model drive (`nvme1`, `/mnt/models`) stopped responding at
 02:38 UTC while `qwen3.6-35b-code` was loading: read timeouts, failed controller reset, device
 disabled, ext4 shut down. Kernel excerpt in
-`bench/results/canary-v0.34.0-20261126/qwen3.6-35b-code/kernel-nvme1-failure.log`. The kernel
+`bench/results/canary-v0.34.0-20261126/qwen3.6-35b-code/kernel-nvme1-failure.log` (local to the
+rig: `*.log` is gitignored, so it is not in the repo). The kernel
 log is clean up to that point, so the two profiles below were measured on a healthy drive.
-Not run: `qwen3.6-35b-code`, `qwen3.6-27b-code`, `qwen3.8-27b-think`, both Flash-Next profiles.
+At the time these five were not run: `qwen3.6-35b-code`, `qwen3.6-27b-code`, `qwen3.8-27b-think` and both
+Flash-Next profiles. All five were run after the drive swap; see the subsection below.
 
 Both completed profiles started on 0.34.0 with the live argv unchanged (image only), one spawn
 each, `medium-256` sweep as Phase 0, decode tok/s 0.26.0 → 0.34.0:
@@ -414,6 +416,69 @@ TTFT at 16K×8 1.55 → 1.06 s.
 - `llmband` exit 2 before and after (no stored baseline): 256 steps in 4.99 s and 5.03 s,
   ~51 steps/s, against a 0.26 serial of 44.5 tok/s, so not a slow draw (inferred).
 - Needle 15/15 (16K, 64K, 131,072). Smoke passed.
+
+#### `qwen3.8-flash-next-vllm` (W4A16 + FP8 PLE, TP4+EP, vision on) — pass
+
+The old pin is `nightly-8cbd5d0` (vLLM 0.31.1rc1.dev173), not 0.26. The live argv is unchanged
+apart from image, name and port; `llm-prestart` ran first with the live arguments (MemFree
+114.6 GiB, no drop needed).
+
+**PLE offload needed no flag.** The live argv carries no `VLLM_PLE_CPU_OFFLOAD`, and no 0.34
+source reads that name. 0.34's `EngramConfig` defaults to `cpu_offload=True`, and the log
+confirms it took effect:
+- `Resolved Engram configuration: EngramConfig(cpu_offload=True, ...)`.
+- Each rank logs `Initialized AMD PLE embedding ... weight_device=cpu, pinned=True`.
+- Model load is 19.01 GiB per GPU.
+- Host MemFree fell from 114.6 GiB to 1.2 GiB at startup.
+
+So `--engram-config` was not needed and was not added.
+
+| | serial | c8 | c16 | c32 |
+|---|---|---|---|---|
+| nightly-8cbd5d0 | 55.1 | 206.0 | 245.0 | 454.8 |
+| 0.34.0 | 60.8 (+10 %) | 244.9 (+19 %) | 242.8 (−1 %) | 461.6 (+1.5 %) |
+
+c1 55.4 → 60.7, c2 98.5 → 105.5, c4 164.5 → 168.6. c16 still sits level with c8 (p90 12.2 s),
+the same plateau as on the nightly. The c8 gain is one spawn per arm, and Flash-Next's c8 has
+spread widely across spawns before: 140–182 unflagged, and 204.1 / 204.3 flagged, in the
+2026-10 readings. The c16 and c32 cells are
+inside the earlier spawn-to-spawn spread, so they show no change, not a gain.
+
+Depth, prewarmed, aggregate tok/s:
+
+| 2K | 16K | 64K | 130K | 258K | 16K×8 | 64K×4 |
+|---|---|---|---|---|---|---|
+| 56.7 → 62.0 | 56.7 → 61.7 | 56.6 → 61.7 | 56.6 → 61.7 | 56.2 → 61.4 | 162.9 → 169.9 | 147.5 → 144.5 |
+
+The single-stream rate is still flat across the window, now about 9 % higher. The concurrent
+depth cells did not move.
+
+- **KV pool 589,824 → 377,487 tokens (−36 %)**, the largest drop of any profile. Auto-fit still
+  picks `max_model_len` 262,144, but at 1.44x concurrency for a full-length request. The
+  extended KV is 4.74 GiB per GPU, and the log reports 9.77 GiB still free after warmup on
+  rank 0. Idle VRAM after startup is ~26.7 GB per GPU. No preemptions occurred in this run, but
+  this pool is tighter for many concurrent long requests, and nothing here tests that. It is the
+  Phase 3 tuning candidate (`--kv-cache-memory-bytes` or the extensible-KV floor), not a fail.
+- Capture sizes resolved to `[1, 2, 4, 8]` for prefill and decode, which is what the live
+  `--cudagraph-capture-sizes 1 2 4 8` asks for. There is no MTP, so the legacy flag is honest
+  here.
+- The log names no attention backend for the full-attention layers, as on the nightly. GDN uses
+  the Triton/FLA prefill kernel, MoE uses `TRITON WNA16`, and ViT uses Torch SDPA.
+- Startup 212 s.
+- `llmband` exit 2 before and after the sweep. `config/band-baselines.json` is gitignored and
+  only holds `qwen3.8-27b-code`, so no other profile has a baseline. The probe read 256 steps in
+  4.01 s and 4.03 s (~64 steps/s). The fast reference in CLAUDE.md is 57.8, so this was not a
+  slow draw (inferred).
+- Smoke passed, including the image request: all four shapes were named correctly in 2.1 s,
+  from 819 prompt tokens. Needle 15/15. 0 preemptions.
+
+#### `qwen3.8-flash-next-vllm-text` — smoke only, pass
+
+The live argv (`--language-model-only`, `GPU_MAX_HW_QUEUES=1`, confirmed in provenance) is
+unchanged apart from image, name and port. Startup took 171 s. PLE offload behaved as above
+(`weight_device=cpu, pinned=True`). The KV pool is 402,491 tokens, versus 377,487 with the
+vision tower on. The plain, reasoning and tool-call smoke tests passed. No sweep was run, by
+design.
 
 ## Phase 3b — margin: upstream is already on it
 

@@ -1,0 +1,105 @@
+=== spawn1 (legacy): 2026-11-26T22:03:10+00:00 profile=qwen3.8-flash-next-vllm-text FIX_DROP='' FIX_ADD='' ===
+--- changes vs live profile argv ---
+prefix wrapper not run by argv (done separately): __LLMSTACK_DIR__/scripts/llm-prestart --need-free-gib 80 --keep /mnt/models/llm/albucino/Qwen3.8-Flash-Next-W4A16-FP8PLE --
+--rm -> (dropped), -d added
+--name llmstack-vllm-${MODEL_ID} -> llmstack-canary034-qwen3.8-flash-next-vllm-text
+vllm-cache mount -> canary-034
+triton-cache mount -> canary-034
+image docker.io/vllm/vllm-openai-rocm:nightly-8cbd5d03006c33185f402249ff2b448efd594986 -> docker.io/vllm/vllm-openai-rocm:v0.34.0
+--- llm-prestart (page-cache drop, same args as live cmd) MemFree before: MemFree:        89101680 kB ---
+llm-prestart: MemFree 85.0 GiB, need 80 - ok
+--- MemFree after prestart: MemFree:        89097184 kB ---
+--- launch command (bash array, printf %q) ---
+podman run -d --replace --name llmstack-canary034-qwen3.8-flash-next-vllm-text --device=/dev/kfd --device=/dev/dri --group-add keep-groups --security-opt seccomp=unconfined --security-opt apparmor=unconfined --ipc=private --shm-size=32g --ulimit memlock=-1:-1 --network=host -v /mnt/models/llm:/models:ro -v ~/.local/share/llmstack/canary-034/vllm-cache:/root/.cache/vllm -v ~/.local/share/llmstack/canary-034/triton-cache:/root/.triton/cache -e HSA_ENABLE_SDMA=0 -e TORCH_BLAS_PREFER_HIPBLASLT=1 -e VLLM_ROCM_USE_AITER=0 -e GPU_MAX_HW_QUEUES=1 --entrypoint= docker.io/vllm/vllm-openai-rocm:v0.34.0 vllm serve /models/albucino/Qwen3.8-Flash-Next-W4A16-FP8PLE --host 127.0.0.1 --port 9234 --served-model-name qwen3.8-flash-next-vllm-text --tensor-parallel-size 4 --enable-expert-parallel --language-model-only --load-format safetensors --max-model-len -1 --max-num-seqs 32 --max-num-batched-tokens 8192 --gpu-memory-utilization 0.95 --enable-prefix-caching --enable-chunked-prefill --trust-remote-code --reasoning-parser qwen3 --enable-auto-tool-choice --tool-call-parser qwen3_coder --default-chat-template-kwargs \{\"reasoning_effort\":\ \"medium\"\} --cudagraph-capture-sizes 1 2 4 8 
+--- host MemFree before: MemFree:        89097184 kB
+--- VRAM before: GPU0 used=57MB GPU1 used=57MB GPU2 used=57MB GPU3 used=72MB 
+startup status=OK; 'startup complete' at 171 s, /health ok at 171 s
+--- idle VRAM after startup: GPU0 used=26804MB GPU1 used=26756MB GPU2 used=26828MB GPU3 used=26844MB 
+--- host MemFree after startup: MemFree:         1408708 kB
+--- image ---
+ImageName=docker.io/vllm/vllm-openai-rocm:v0.34.0 Image=9a5f9af8f20f129a8f0ccbe6c78499a1d0db8ddb17caaa848bb09f04f139d2b1 ImageDigest=sha256:3cb773d23f063afa86291ef75773cdd486154ddea94c213300f4ed7cc42b7af1
+--- container Id / created ---
+7df1a45cdebf4687eb5408fb8cfa7686742602595d5dabd497e1db48c9a13119 2026-11-26 22:03:11.333593057 +0000 UTC
+--- argv ---
+["serve","/models/albucino/Qwen3.8-Flash-Next-W4A16-FP8PLE","--host","127.0.0.1","--port","9234","--served-model-name","qwen3.8-flash-next-vllm-text","--tensor-parallel-size","4","--enable-expert-parallel","--language-model-only","--load-format","safetensors","--max-model-len","-1","--max-num-seqs","32","--max-num-batched-tokens","8192","--gpu-memory-utilization","0.95","--enable-prefix-caching","--enable-chunked-prefill","--trust-remote-code","--reasoning-parser","qwen3","--enable-auto-tool-choice","--tool-call-parser","qwen3_coder","--default-chat-template-kwargs","{\"reasoning_effort\": \"medium\"}","--cudagraph-capture-sizes","1","2","4","8"]
+--- env (container) ---
+["HSA_NO_SCRATCH_RECLAIM=1"
+"HSA_ENABLE_SDMA=0"
+"PYTORCH_NVML_BASED_CUDA_CHECK=1"
+"HIP_DEVICE_LIB_PATH=/usr/local/lib/python3.12/dist-packages/_rocm_sdk_core/lib/llvm/amdgcn/bitcode"
+"HSA_ENABLE_IPC_MODE_LEGACY=1"
+"TORCH_BLAS_PREFER_HIPBLASLT=1"
+"GPU_MAX_HW_QUEUES=1"
+"HIP_FORCE_DEV_KERNARG=1"
+"HIP_PATH=/usr/local/lib/python3.12/dist-packages/_rocm_sdk_devel"
+"VLLM_ROCM_USE_AITER=0"
+"PYTORCH_ROCM_ARCH=gfx90a;gfx942;gfx950;gfx1100;gfx1101;gfx1200;gfx1201;gfx1150;gfx1151"
+"HIP_CLANG_PATH=/usr/local/lib/python3.12/dist-packages/_rocm_sdk_devel/lib/llvm/bin"
+### startinfo spawn1 (qwen3.8-flash-next-vllm-text) 2026-11-26T22:06:06+00:00
+startup status=OK; 'startup complete' at 171 s, /health ok at 171 s
+version 0.34.0
+-- attention backend:
+-- resolved capture sizes:
+'cudagraph_capture_sizes': [1, 2, 4, 8]
+cudagraph_mode': <CUDAGraphMode.FULL_AND_PIECEWISE: (2
+decode_cudagraph_capture_request_sizes': [1, 2, 4, 8]
+prefill_cudagraph_capture_token_sizes': [1, 2, 4, 8]
+-- capture progress (first frame each):
+      1 Capturing CUDA graphs (FULL):   0%|          | 0/4
+      1 Capturing CUDA graphs (PIECEWISE):   0%|          | 0/4
+-- KV:
+APIServer INFO 11-26 22:03:34 [vllm.py:1429] Resolved Engram configuration: EngramConfig(cpu_offload=True, disk_offload=False, embedding_across_dp=False, dp_shared_memory=False, use_thp=False)
+EngineCore INFO 11-26 22:05:24 [kv_cache_planning.py:1466] Auto-fit max_model_len: full model context length 262144 fits in available KV cache memory (9.22 GiB GPU); the final length is set after CUDA graph capture and warmup
+EngineCore INFO 11-26 22:05:58 [kv_cache_planning.py:1458] Auto-fit max_model_len: using max_model_len=262144, which fits in the KV cache memory left after CUDA graph capture and warmup (5.04 GiB GPU).
+EngineCore INFO 11-26 22:05:58 [kv_cache_utils.py:1168] GPU KV cache size: 402,491 tokens, Maximum concurrency for 262,144 tokens per request: 1.54x
+EngineCore INFO 11-26 22:06:00 [vllm.py:1429] Resolved Engram configuration: EngramConfig(cpu_offload=True, disk_offload=False, embedding_across_dp=False, dp_shared_memory=False, use_thp=False)
+Worker_TP0_EP0 INFO 11-26 22:03:50 [ple_layer.py:283] Initialized AMD PLE embedding language_model.model.layers.1.ple.ple_embedding.ngram_embedding: quantization_config=INCConfig, quantization_method=Qwen4ExpPLEFp8EmbeddingMethod, weight_dtype=torch.float8_e4m3fn, weight_device=cpu, pinned=True
+Worker_TP0_EP0 INFO 11-26 22:05:24 [gpu_worker.py:795] Available KV cache memory: 9.23 GiB
+Worker_TP0_EP0 INFO 11-26 22:05:58 [extensible_kv_cache.py:536] Extended KV cache to 499 blocks (5.05 GiB).
+Worker_TP0_EP0 INFO 11-26 22:05:58 [extensible_kv_cache.py:693] Memory after warmup: 10.07 GiB free, 0.02 GiB committed to the KV cache, 2.01 GiB kept for transient activations (1.11 GiB allocated at peak, 2.01 GiB of torch reservation growth); 503 KV cache blocks (5.09 GiB) fit within the requested
+Worker_TP1_EP1 INFO 11-26 22:03:50 [ple_layer.py:283] Initialized AMD PLE embedding language_model.model.layers.1.ple.ple_embedding.ngram_embedding: quantization_config=INCConfig, quantization_method=Qwen4ExpPLEFp8EmbeddingMethod, weight_dtype=torch.float8_e4m3fn, weight_device=cpu, pinned=True
+Worker_TP1_EP1 INFO 11-26 22:05:58 [extensible_kv_cache.py:536] Extended KV cache to 499 blocks (5.05 GiB).
+Worker_TP1_EP1 INFO 11-26 22:05:58 [extensible_kv_cache.py:693] Memory after warmup: 10.05 GiB free, 0.02 GiB committed to the KV cache, 2.01 GiB kept for transient activations (1.11 GiB allocated at peak, 2.01 GiB of torch reservation growth); 500 KV cache blocks (5.06 GiB) fit within the requested
+Worker_TP2_EP2 INFO 11-26 22:03:50 [ple_layer.py:283] Initialized AMD PLE embedding language_model.model.layers.1.ple.ple_embedding.ngram_embedding: quantization_config=INCConfig, quantization_method=Qwen4ExpPLEFp8EmbeddingMethod, weight_dtype=torch.float8_e4m3fn, weight_device=cpu, pinned=True
+Worker_TP2_EP2 INFO 11-26 22:05:58 [extensible_kv_cache.py:536] Extended KV cache to 499 blocks (5.05 GiB).
+Worker_TP2_EP2 INFO 11-26 22:05:58 [extensible_kv_cache.py:693] Memory after warmup: 10.04 GiB free, 0.02 GiB committed to the KV cache, 2.01 GiB kept for transient activations (1.11 GiB allocated at peak, 2.01 GiB of torch reservation growth); 499 KV cache blocks (5.05 GiB) fit within the requested
+Worker_TP3_EP3 INFO 11-26 22:03:50 [ple_layer.py:283] Initialized AMD PLE embedding language_model.model.layers.1.ple.ple_embedding.ngram_embedding: quantization_config=INCConfig, quantization_method=Qwen4ExpPLEFp8EmbeddingMethod, weight_dtype=torch.float8_e4m3fn, weight_device=cpu, pinned=True
+Worker_TP3_EP3 INFO 11-26 22:05:58 [extensible_kv_cache.py:536] Extended KV cache to 499 blocks (5.05 GiB).
+Worker_TP3_EP3 INFO 11-26 22:05:58 [extensible_kv_cache.py:693] Memory after warmup: 10.12 GiB free, 0.02 GiB committed to the KV cache, 2.01 GiB kept for transient activations (1.11 GiB allocated at peak, 2.01 GiB of torch reservation growth); 507 KV cache blocks (5.13 GiB) fit within the requested
+-- graph capture / load:
+INFO 11-26 22:04:18 [model_runner.py:441] Model loading took 18.79 GiB memory and 30.401326 seconds
+INFO 11-26 22:04:18 [model_runner.py:441] Model loading took 18.79 GiB memory and 30.449540 seconds
+INFO 11-26 22:04:18 [model_runner.py:441] Model loading took 18.79 GiB memory and 30.615626 seconds
+INFO 11-26 22:04:20 [model_runner.py:441] Model loading took 18.79 GiB memory and 32.299511 seconds
+INFO 11-26 22:04:30 [backends.py:421] [backbone] Compiling a graph for compile range (1, 8192) takes 4.07 s
+INFO 11-26 22:04:31 [backends.py:421] [backbone] Compiling a graph for compile range (1, 8192) takes 4.53 s
+INFO 11-26 22:04:31 [backends.py:421] [backbone] Compiling a graph for compile range (1, 8192) takes 4.62 s
+INFO 11-26 22:05:57 [model_runner.py:1216] Graph capturing finished in 4 secs, took -0.41 GiB
+INFO 11-26 22:05:57 [model_runner.py:1216] Graph capturing finished in 4 secs, took -0.61 GiB
+INFO 11-26 22:05:57 [model_runner.py:1216] Graph capturing finished in 4 secs, took -0.76 GiB
+INFO 11-26 22:05:57 [model_runner.py:1216] Graph capturing finished in 4 secs, took -1.46 GiB
+-- warnings (deduped, counted):
+      8 /usr/local/lib/python3.12/dist-packages/torch/distributed/c10d_logger.py:83: FutureWarning: `torch.distributed.all_gather_into_tensor` is deprecated. Please use `torch.distributed.all_gather_single` instead.
+      4 WARNING [utils.py:420] lm_head skinny-GEMM guard engaged: weight (62080, 2560) (317849600 bytes) exceeds the weight cap 67108864 (VLLM_SKINNY_GEMM_MAX_WEIGHT_BYTES, or the hardware memory-side cache size when unset) at n=2; skipping wvSplitK for the generic GE
+      1 WARNING [vllm.py:2588] cudagraph_capture_sizes and max_cudagraph_capture_size are deprecated. Set the token counts of prefill CUDA graphs with prefill_cudagraph_capture_token_sizes or max_prefill_cudagraph_capture_tokens, and the request counts of decode CUDA 
+      1 WARNING [serving.py:320] The chat template requires system-first ordering, so inline system messages in /v1/messages requests (e.g. Claude Code's per-turn reminders) are merged into the leading system prompt. Each new one changes the prompt prefix, so the rest
+      1 WARNING [model.py:1931] Default vLLM sampling parameters have been overridden by the model's `generation_config.json`: `{'temperature': 1.0, 'top_k': 20, 'top_p': 0.95}`. If this is not intended, please relaunch vLLM instance with `--generation-config vllm`.
+      1 WARNING [fused_moe.py:1253] Using default MoE config. Performance might be sub-optimal! Config file not found at /usr/local/lib/python3.12/dist-packages/vllm/model_executor/layers/fused_moe/configs/E=128,N=640,device_name=AMD_Radeon_R9700,dtype=int4_w4a16.json
+      1 WARNING [compilation.py:1514] Op 'sparse_attn_indexer' not present in model, enabling with '+sparse_attn_indexer' has no effect
+-- errors:
+=== smoke 2026-11-26T22:06:06+00:00 ===
+[plain] 0.8s finish=stop usage={'prompt_tokens': 21, 'total_tokens': 23, 'completion_tokens': 2, 'completion_tokens_details': {'reasoning_tokens': 0}}
+   fields with values: {"role": "assistant", "content": "Paris"}
+   has reasoning_content key: False; reasoning len: 0
+   plain correct: True
+[reasoning] 3.9s finish=stop usage={'prompt_tokens': 46, 'total_tokens': 199, 'completion_tokens': 153, 'completion_tokens_details': {'reasoning_tokens': 147}}
+   fields with values: {"role": "assistant", "content": "\n\n155", "reasoning": "The train leaves at 14:35 and arrives at 17:10.\n\nFrom 14:35 to 17:35 would be 3 hours = 180 minutes.\nBut it arrives at 17:10, which is 25 minutes before 17:35.\nSo 180 - 25 = 155 minutes.\n\nAlternativel"}
+   has reasoning_content key: False; reasoning len: 303
+   reasoning answer 155 in content: True
+[toolcall] 3.0s finish=tool_calls usage={'prompt_tokens': 311, 'total_tokens': 406, 'completion_tokens': 95, 'completion_tokens_details': {'reasoning_tokens': 52}}
+   fields with values: {"role": "assistant", "tool_calls": [{"id": "chatcmpl-tool-850053816bf496fa", "type": "function", "function": {"name": "get_weather", "arguments": "{\"city\": \"Paris, France\", \"unit\": \"celsius\"}"}}], "reasoning": "The user wants to know the current weather in Paris, France. I have a get_weather tool available that I can use for this. The city is \"Paris\" and I'll use the default unit (celsius) since no specific "}
+   has reasoning_content key: False; reasoning len: 220
+   tool call well-formed: True
+SMOKE_ALL_OK
+server log saved (249 lines)
+=== stopped 2026-11-26T22:06:26+00:00 VRAM: GPU0 used=57MB GPU1 used=57MB GPU2 used=57MB GPU3 used=72MB 

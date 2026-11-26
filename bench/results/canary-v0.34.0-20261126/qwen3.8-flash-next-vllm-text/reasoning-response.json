@@ -1,0 +1,41 @@
+{
+ "id": "chatcmpl-a0b20e64b2e71698",
+ "object": "chat.completion",
+ "created": 1795730767,
+ "model": "qwen3.8-flash-next-vllm-text",
+ "choices": [
+  {
+   "index": 0,
+   "message": {
+    "role": "assistant",
+    "content": "\n\n155",
+    "refusal": null,
+    "audio": null,
+    "function_call": null,
+    "reasoning": "The train leaves at 14:35 and arrives at 17:10.\n\nFrom 14:35 to 17:35 would be 3 hours = 180 minutes.\nBut it arrives at 17:10, which is 25 minutes before 17:35.\nSo 180 - 25 = 155 minutes.\n\nAlternatively: From 14:35 to 16:35 = 2 hours = 120 minutes. From 16:35 to 17:10 = 35 minutes. Total = 155 minutes.\n"
+   },
+   "logprobs": null,
+   "finish_reason": "stop",
+   "stop_reason": null,
+   "token_ids": null,
+   "routed_experts": null,
+   "weight_versions": null
+  }
+ ],
+ "service_tier": null,
+ "system_fingerprint": "vllm-0.34.0-tp4-ep-6a832a7a",
+ "usage": {
+  "prompt_tokens": 46,
+  "total_tokens": 199,
+  "completion_tokens": 153,
+  "completion_tokens_details": {
+   "reasoning_tokens": 147
+  }
+ },
+ "prompt_logprobs": null,
+ "prompt_token_ids": null,
+ "prompt_text": null,
+ "kv_transfer_params": null,
+ "ec_transfer_params": null,
+ "metrics": null
+}
