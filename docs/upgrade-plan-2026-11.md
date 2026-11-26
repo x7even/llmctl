@@ -255,9 +255,9 @@ Draft upstream patch (opt-in env vars for the floor and reserve, defaults unchan
 `margin-patch-notes.md`. Dry-run applied only; not filed. Open lever, untested: allocator
 settings that reduce reservation growth.
 
-## Phase 2 — remaining profiles on 0.34.0 (2026-11-26) — BLOCKED, 2 of 6 done
+## Phase 2 — remaining profiles on 0.34.0 (2026-11-26) — 3 of 6 done, resumed after the drive swap
 
-**Blocked on hardware.** The model drive (`nvme1`, `/mnt/models`) stopped responding at
+**Was blocked on hardware; resumed the same day.** The model drive (`nvme1`, `/mnt/models`) stopped responding at
 02:38 UTC while `qwen3.6-35b-code` was loading: read timeouts, failed controller reset, device
 disabled, ext4 shut down. Kernel excerpt in
 `bench/results/canary-v0.34.0-20261126/qwen3.6-35b-code/kernel-nvme1-failure.log`. The kernel
@@ -290,6 +290,63 @@ Depth, prewarmed, aggregate tok/s:
 - Startup 192 s each (first compile on the canary cache).
 
 Driver scripts: `~/.local/share/llmstack/canary-034/drivers/` (copied off tmpfs).
+
+### Resumed on the replacement drive (2026-11-26, from ~20:15 UTC)
+
+The drive was replaced and every model re-downloaded to it on 2026-11-26. Weights are the same
+upstream revisions; for the three Qwen FP8 checkpoints `chat_template.jinja` and
+`tokenizer_config.json` were put back to their pre-2026-11-07 versions (the 2026-11-07 upstream
+commits changed only those two files), so the prompts match the Phase 0 baselines. Revisions and
+the kept upstream copies: `/mnt/models/llm/PROVENANCE.txt`. The two profiles above were measured
+on the old drive before it failed; everything below is on the new one. Kernel log checked for
+NVMe errors after every profile: none.
+
+Same recipe as above: one fresh spawn per profile on `v0.34.0`, side port, `llmband` before and
+after the sweep, `medium-256` sweep at `--requests 128 --serial-n 8`, the three prewarmed depth
+cells, needle 3 depths × 5 positions, smoke (plain, thinking, tool call). **Every figure is one
+spawn per arm** (one 0.26.0 spawn in Phase 0, one 0.34.0 spawn here); differences of a few
+percent are not results. MTP profiles run in the `tuned` form: the legacy
+`--cudagraph-capture-sizes 1 2 4 8 16 32` replaced by the Phase 1 `--compilation-config`
+(prefill token sizes and decode request sizes both `[1,2,4,8,16,32]`). So an MTP row differs
+from its 0.26 row in two things, the image and the capture change; Phase 1 put the capture
+change alone at about +4 % at c8 and +2 % at c4. Extensible KV left at its default, as for the
+two profiles above.
+
+#### `qwen3.6-35b-code` (MTP, 3B-active MoE) — pass
+
+Fresh spawn (`spawn2`; `spawn1` is the one that died with the drive). Argv: live profile, image
+and capture change only.
+
+| | serial | c8 | c16 | c32 |
+|---|---|---|---|---|
+| 0.26.0 | 109.6 | 305.3 | 575.7 | 1047.1 |
+| 0.34.0 tuned | 150.2 (+37 %) | 671.4 (+120 %) | 986.9 (+71 %) | 1562.9 (+49 %) |
+
+c1 118.2 → 148.6, c2 193.1 → 230.2, c4 309.8 → 399.4. The 0.26 profile's c8 was no faster than
+its c4 (Phase 0, and as published); on 0.34 the curve is monotonic, so most of the c8 figure is
+that dip disappearing rather than a 2.2x speedup in general.
+
+Depth, prewarmed, aggregate tok/s:
+
+| 2K | 16K | 64K | 130K | 16K×8 | 64K×4 |
+|---|---|---|---|---|---|
+| 112.3 → 167.1 | 41.8 → 161.6 | 13.1 → 143.0 | 7.3 → 140.4 (19x) | 231.3 → 608.7 | 46.3 → 297.7 |
+
+This is the Phase 1 finding on a second MTP profile: on 0.26 the MTP profile collapsed with
+depth (ROCM_ATTN, split-KV path closed by MTP); on 0.34 TRITON_ATTN is auto-selected
+(`Overriding with TRITON_ATTN out of potential backends: ['TRITON_ATTN', 'ROCM_ATTN']`) and
+decay across the window is 1.19x. 130K TTFT 0.81 → 0.33 s (prewarmed). Accepted tokens per
+step are unchanged (2.15 → 2.15 at 2K and 130K), so none of this is MTP acceptance.
+
+- KV pool 1,339,213 → 1,087,351 tokens (−19 %), extensible sizing as on the others.
+- Resolved capture sizes (startinfo): decode request sizes `[1, 2, 4, 8, 16, 32]`, prefill
+  token sizes `[1, 2, 4, 8, 16, 32]`, `FULL_AND_PIECEWISE`; same capture-progress shape as
+  Phase 1 A5 (decode FULL 15 graphs).
+- Startup 212 s (first compile of this model on the canary cache).
+- `llmband` exit 2 before and after (no stored baseline); 126 steps / 256 tokens in 1.59 s,
+  i.e. ~79 steps/s.
+- Needle 15/15 (16K, 64K, 130,752). Smoke passed: `reasoning` field, tool call well-formed.
+- 0 preemptions over the run; MTP acceptance 52 % of draft tokens.
 
 ## Phase 3b — margin: upstream is already on it
 
