@@ -1,0 +1,270 @@
+{
+ "extensible": false,
+ "kv_ext_GiB": {},
+ "cards": {
+  "0000:03:00.0": {
+   "idle_used_GiB": 29.096237182617188,
+   "idle_used_pct": 91.32708090669446,
+   "idle_torch_reserved_GiB": 28.072265625,
+   "idle_non_torch_GiB": 1.0239715576171875,
+   "peak_used_GiB": 31.531448364257812,
+   "peak_used_pct": 98.9707059986513,
+   "min_free_GiB": 0.3279266357421875,
+   "max_non_torch_growth_GiB": 0.01070404052734375,
+   "max_non_torch_growth_raw_upper_GiB": 1.3097610473632812,
+   "max_reserved_growth_GiB": 2.41796875,
+   "max_used_growth_GiB": 2.435211181640625,
+   "torch_retries_end": 1,
+   "torch_ooms_end": 0,
+   "steps": {
+    "sweep": {
+     "non_torch_growth_GiB": 0.001087188720703125,
+     "non_torch_growth_raw_upper_GiB": 0.17491531372070312,
+     "reserved_growth_GiB": 0.17578125,
+     "used_growth_GiB": 0.17686843872070312,
+     "min_free_GiB": 2.5862693786621094
+    },
+    "depth c1": {
+     "non_torch_growth_GiB": 0.001194000244140625,
+     "non_torch_growth_raw_upper_GiB": 1.3097610473632812,
+     "reserved_growth_GiB": 1.5390625,
+     "used_growth_GiB": 1.5402565002441406,
+     "min_free_GiB": 1.2228813171386719
+    },
+    "depth c4": {
+     "non_torch_growth_GiB": 0.001239776611328125,
+     "non_torch_growth_raw_upper_GiB": 0.001239776611328125,
+     "reserved_growth_GiB": 1.5390625,
+     "used_growth_GiB": 1.5403022766113281,
+     "min_free_GiB": 1.2228355407714844
+    },
+    "depth c8": {
+     "non_torch_growth_GiB": 0.001239776611328125,
+     "non_torch_growth_raw_upper_GiB": 0.001239776611328125,
+     "reserved_growth_GiB": 1.5390625,
+     "used_growth_GiB": 1.5403022766113281,
+     "min_free_GiB": 1.2228355407714844
+    },
+    "poolfill": {
+     "non_torch_growth_GiB": 0.01070404052734375,
+     "non_torch_growth_raw_upper_GiB": 0.8782463073730469,
+     "reserved_growth_GiB": 2.41796875,
+     "used_growth_GiB": 2.435211181640625,
+     "min_free_GiB": 0.3279266357421875
+    },
+    "checks": {
+     "non_torch_growth_GiB": -0.13116073608398438,
+     "non_torch_growth_raw_upper_GiB": -0.13116073608398438,
+     "reserved_growth_GiB": 1.197265625,
+     "used_growth_GiB": 1.0661048889160156,
+     "min_free_GiB": 1.6970329284667969
+    },
+    "soak": {
+     "non_torch_growth_GiB": -0.12015914916992188,
+     "non_torch_growth_raw_upper_GiB": -0.12015914916992188,
+     "reserved_growth_GiB": 1.19921875,
+     "used_growth_GiB": 1.0790596008300781,
+     "min_free_GiB": 1.6840782165527344
+    }
+   }
+  },
+  "0000:23:00.0": {
+   "idle_used_GiB": 29.065269470214844,
+   "idle_used_pct": 91.22987965148357,
+   "idle_torch_reserved_GiB": 28.072265625,
+   "idle_non_torch_GiB": 0.9930038452148438,
+   "peak_used_GiB": 31.824039459228516,
+   "peak_used_pct": 99.88908903338033,
+   "min_free_GiB": 0.035335540771484375,
+   "max_non_torch_growth_GiB": 0.008747100830078125,
+   "max_non_torch_growth_raw_upper_GiB": 1.3097572326660156,
+   "max_reserved_growth_GiB": 2.888671875,
+   "max_used_growth_GiB": 2.758769989013672,
+   "torch_retries_end": 0,
+   "torch_ooms_end": 0,
+   "steps": {
+    "sweep": {
+     "non_torch_growth_GiB": 0.0010833740234375,
+     "non_torch_growth_raw_upper_GiB": 0.1749114990234375,
+     "reserved_growth_GiB": 0.17578125,
+     "used_growth_GiB": 0.1768646240234375,
+     "min_free_GiB": 2.6172409057617188
+    },
+    "depth c1": {
+     "non_torch_growth_GiB": 0.001190185546875,
+     "non_torch_growth_raw_upper_GiB": 1.3097572326660156,
+     "reserved_growth_GiB": 1.5390625,
+     "used_growth_GiB": 1.540252685546875,
+     "min_free_GiB": 1.2538528442382812
+    },
+    "depth c4": {
+     "non_torch_growth_GiB": 0.0012359619140625,
+     "non_torch_growth_raw_upper_GiB": 0.0012359619140625,
+     "reserved_growth_GiB": 1.5390625,
+     "used_growth_GiB": 1.5402984619140625,
+     "min_free_GiB": 1.2538070678710938
+    },
+    "depth c8": {
+     "non_torch_growth_GiB": 0.0012359619140625,
+     "non_torch_growth_raw_upper_GiB": 0.0012359619140625,
+     "reserved_growth_GiB": 1.5390625,
+     "used_growth_GiB": 1.5402984619140625,
+     "min_free_GiB": 1.2538070678710938
+    },
+    "poolfill": {
+     "non_torch_growth_GiB": 0.008747100830078125,
+     "non_torch_growth_raw_upper_GiB": 0.3297615051269531,
+     "reserved_growth_GiB": 2.88671875,
+     "used_growth_GiB": 2.747760772705078,
+     "min_free_GiB": 0.046344757080078125
+    },
+    "checks": {
+     "non_torch_growth_GiB": -0.13895797729492188,
+     "non_torch_growth_raw_upper_GiB": -0.13895797729492188,
+     "reserved_growth_GiB": 2.88671875,
+     "used_growth_GiB": 2.747760772705078,
+     "min_free_GiB": 0.046344757080078125
+    },
+    "soak": {
+     "non_torch_growth_GiB": -0.12794876098632812,
+     "non_torch_growth_raw_upper_GiB": -0.12794876098632812,
+     "reserved_growth_GiB": 2.888671875,
+     "used_growth_GiB": 2.758769989013672,
+     "min_free_GiB": 0.035335540771484375
+    }
+   }
+  },
+  "0000:83:00.0": {
+   "idle_used_GiB": 29.111915588378906,
+   "idle_used_pct": 91.37629218520108,
+   "idle_torch_reserved_GiB": 28.072265625,
+   "idle_non_torch_GiB": 1.0396499633789062,
+   "peak_used_GiB": 31.54712677001953,
+   "peak_used_pct": 99.01991727715792,
+   "min_free_GiB": 0.31224822998046875,
+   "max_non_torch_growth_GiB": 0.01070404052734375,
+   "max_non_torch_growth_raw_upper_GiB": 1.3097610473632812,
+   "max_reserved_growth_GiB": 2.41796875,
+   "max_used_growth_GiB": 2.435211181640625,
+   "torch_retries_end": 1,
+   "torch_ooms_end": 0,
+   "steps": {
+    "sweep": {
+     "non_torch_growth_GiB": 0.001087188720703125,
+     "non_torch_growth_raw_upper_GiB": 0.17491531372070312,
+     "reserved_growth_GiB": 0.17578125,
+     "used_growth_GiB": 0.17686843872070312,
+     "min_free_GiB": 2.5705909729003906
+    },
+    "depth c1": {
+     "non_torch_growth_GiB": 0.001194000244140625,
+     "non_torch_growth_raw_upper_GiB": 1.3097610473632812,
+     "reserved_growth_GiB": 1.5390625,
+     "used_growth_GiB": 1.5402565002441406,
+     "min_free_GiB": 1.2072029113769531
+    },
+    "depth c4": {
+     "non_torch_growth_GiB": 0.001239776611328125,
+     "non_torch_growth_raw_upper_GiB": 0.001239776611328125,
+     "reserved_growth_GiB": 1.5390625,
+     "used_growth_GiB": 1.5403022766113281,
+     "min_free_GiB": 1.2071571350097656
+    },
+    "depth c8": {
+     "non_torch_growth_GiB": 0.001239776611328125,
+     "non_torch_growth_raw_upper_GiB": 0.001239776611328125,
+     "reserved_growth_GiB": 1.5390625,
+     "used_growth_GiB": 1.5403022766113281,
+     "min_free_GiB": 1.2071571350097656
+    },
+    "poolfill": {
+     "non_torch_growth_GiB": 0.01070404052734375,
+     "non_torch_growth_raw_upper_GiB": 0.8782463073730469,
+     "reserved_growth_GiB": 2.41796875,
+     "used_growth_GiB": 2.435211181640625,
+     "min_free_GiB": 0.31224822998046875
+    },
+    "checks": {
+     "non_torch_growth_GiB": -0.13116073608398438,
+     "non_torch_growth_raw_upper_GiB": -0.13116073608398438,
+     "reserved_growth_GiB": 1.197265625,
+     "used_growth_GiB": 1.0661048889160156,
+     "min_free_GiB": 1.6813545227050781
+    },
+    "soak": {
+     "non_torch_growth_GiB": -0.12015151977539062,
+     "non_torch_growth_raw_upper_GiB": -0.12015151977539062,
+     "reserved_growth_GiB": 1.19921875,
+     "used_growth_GiB": 1.0790672302246094,
+     "min_free_GiB": 1.6683921813964844
+    }
+   }
+  },
+  "0000:c3:00.0": {
+   "idle_used_GiB": 29.111907958984375,
+   "idle_used_pct": 91.37626823810692,
+   "idle_torch_reserved_GiB": 28.072265625,
+   "idle_non_torch_GiB": 1.039642333984375,
+   "peak_used_GiB": 31.547119140625,
+   "peak_used_pct": 99.01989333006375,
+   "min_free_GiB": 0.312255859375,
+   "max_non_torch_growth_GiB": 0.01070404052734375,
+   "max_non_torch_growth_raw_upper_GiB": 1.3097610473632812,
+   "max_reserved_growth_GiB": 2.41796875,
+   "max_used_growth_GiB": 2.435211181640625,
+   "torch_retries_end": 1,
+   "torch_ooms_end": 0,
+   "steps": {
+    "sweep": {
+     "non_torch_growth_GiB": 0.001087188720703125,
+     "non_torch_growth_raw_upper_GiB": 0.17491531372070312,
+     "reserved_growth_GiB": 0.17578125,
+     "used_growth_GiB": 0.17686843872070312,
+     "min_free_GiB": 2.570598602294922
+    },
+    "depth c1": {
+     "non_torch_growth_GiB": 0.001194000244140625,
+     "non_torch_growth_raw_upper_GiB": 1.3097610473632812,
+     "reserved_growth_GiB": 1.5390625,
+     "used_growth_GiB": 1.5402565002441406,
+     "min_free_GiB": 1.2072105407714844
+    },
+    "depth c4": {
+     "non_torch_growth_GiB": 0.001239776611328125,
+     "non_torch_growth_raw_upper_GiB": 0.001239776611328125,
+     "reserved_growth_GiB": 1.5390625,
+     "used_growth_GiB": 1.5403022766113281,
+     "min_free_GiB": 1.2071647644042969
+    },
+    "depth c8": {
+     "non_torch_growth_GiB": 0.001239776611328125,
+     "non_torch_growth_raw_upper_GiB": 0.001239776611328125,
+     "reserved_growth_GiB": 1.5390625,
+     "used_growth_GiB": 1.5403022766113281,
+     "min_free_GiB": 1.2071647644042969
+    },
+    "poolfill": {
+     "non_torch_growth_GiB": 0.01070404052734375,
+     "non_torch_growth_raw_upper_GiB": 0.8782463073730469,
+     "reserved_growth_GiB": 2.41796875,
+     "used_growth_GiB": 2.435211181640625,
+     "min_free_GiB": 0.312255859375
+    },
+    "checks": {
+     "non_torch_growth_GiB": -0.159759521484375,
+     "non_torch_growth_raw_upper_GiB": -0.159759521484375,
+     "reserved_growth_GiB": 1.197265625,
+     "used_growth_GiB": 1.037506103515625,
+     "min_free_GiB": 1.7099609375
+    },
+    "soak": {
+     "non_torch_growth_GiB": -0.1487579345703125,
+     "non_torch_growth_raw_upper_GiB": -0.1487579345703125,
+     "reserved_growth_GiB": 1.19921875,
+     "used_growth_GiB": 1.0504608154296875,
+     "min_free_GiB": 1.6970062255859375
+    }
+   }
+  }
+ }
+}

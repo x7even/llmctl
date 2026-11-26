@@ -221,6 +221,40 @@ proceed to transition and tuning.
 
 Data: `bench/results/codetests-quality-isolation-20261125/`.
 
+## Phase 3a — KV pool sizing on 0.34.0 (`qwen3.8-27b-code`, 2026-11-25/26)
+
+0.34's default ("extensible") KV sizing leaves ~19 % of each card unused. Every arm ran the same
+stress: sweep, deep-context cells, a pool fill to ≥95 % with distinct ~120K prompts plus a
+32-request burst, 4×8,192-token generations, a 15-minute mixed soak; memory sampled every 2 s.
+One spawn per arm. Throughput was within noise of A5 on all of them.
+
+| Arm | Pool (tokens) | vs 0.26.0 | Min free VRAM | Result |
+|---|---|---|---|---|
+| default, `--gpu-memory-utilization 0.95` | 891,289 | 81.2 % | 3.30 GiB | pass |
+| flag removed | 891,289 | 81.2 % | 3.20 GiB | pass, identical |
+| margin floor 2 GiB (patched) | 948,344 | 86.4 % | 2.19 GiB | pass, no allocator retries |
+| margin floor 1 GiB (patched) | 1,005,399 | 91.6 % | 2.22 GiB | pass, one retry |
+| floor 1 GiB, reserve 0.5 GiB (NVIDIA values) | 1,005,399 | 91.6 % | 1.67 GiB | pass, one retry |
+| fixed `--kv-cache-memory-bytes` 18.67 GiB | 1,067,080 | 97.2 % | 0.40 GiB | pass |
+| fixed 19.17 GiB | 1,095,607 | 99.8 % | 0.05 GiB | **fail**: allocator OOM on three ranks during the fill, recovered by flushing |
+
+- **The cap we pass is not the limit**: removing `--gpu-memory-utilization` changes nothing.
+- **Memory outside PyTorch's allocator grew by at most 0.02 GiB** on any card in any arm. The
+  3 GiB ROCm floor's stated purpose (runtime scratch mapped outside the allocator) is not what
+  consumes memory here.
+- **What does consume it is the allocator's own reservation**, which grows 2.4–3.2 GiB under
+  load while live allocations grow only ~0.75–1 GiB. With the extensible path a per-process
+  cap bounds that growth; with a fixed KV size nothing does, which is why 19.17 GiB ran dry.
+  So some margin is genuinely needed; 3 GiB is more than this workload used.
+- Pass and fail on the fixed-size path are 0.5 GiB apart on one spawn each: do not deploy 18.67.
+- Offload connectors (from source, not run): the CPU offload connectors keep extensible sizing
+  and add no meaningful VRAM; their cost is pinned host RAM.
+
+Draft upstream patch (opt-in env vars for the floor and reserve, defaults unchanged):
+`bench/results/kv-sizing-v0.34.0-20261125/margin-patch.diff` with evidence in
+`margin-patch-notes.md`. Dry-run applied only; not filed. Open lever, untested: allocator
+settings that reduce reservation growth.
+
 ## Phase 2–4
 
-_In progress: KV pool sizing on 0.34, then bring-up of the remaining profiles._
+_In progress: bring-up of the remaining profiles._

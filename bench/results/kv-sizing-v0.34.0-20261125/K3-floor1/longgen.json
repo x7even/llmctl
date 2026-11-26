@@ -1,0 +1,92 @@
+{
+ "step": "longgen",
+ "streams": 4,
+ "gen": 8192,
+ "wall_s": 90.25652766227722,
+ "summary": {
+  "requests": 4,
+  "errors": 0,
+  "error_samples": [],
+  "completion_tokens": 32768,
+  "prompt_tokens": 130,
+  "ttft_max_s": 0.12166988600802142,
+  "wall_max_s": 90.25614079000661
+ },
+ "aggregate_tok_s": 363.501329418094,
+ "per_stream_tok_s": [
+  90.88,
+  92.84,
+  95.9,
+  96.0
+ ],
+ "metrics": {
+  "samples": 46,
+  "kv_usage_max": 0.05832693783576359,
+  "seconds_kv_usage_ge_0.95": 0.0,
+  "running_max": 4.0,
+  "waiting_max": 0.0,
+  "preemptions_delta": 0.0
+ },
+ "per_request": [
+  {
+   "ttft_s": 0.12166988600802142,
+   "decode_window_s": 90.13447090399859,
+   "wall_s": 90.25614079000661,
+   "t_first": 105099.133025774,
+   "t_last": 105189.267496678,
+   "prompt_tokens": 32,
+   "completion_tokens": 8192,
+   "decode_tokens": 8191,
+   "chunks": 3025,
+   "tok_s": 90.8753323545235,
+   "steps_s": 33.549872425842885,
+   "accepted_per_step": 2.7086640211640214,
+   "start_offset_s": 0
+  },
+  {
+   "ttft_s": 0.04861948599864263,
+   "decode_window_s": 88.2233424110018,
+   "wall_s": 88.27196189700044,
+   "t_first": 105099.060168672,
+   "t_last": 105187.283511083,
+   "prompt_tokens": 32,
+   "completion_tokens": 8192,
+   "decode_tokens": 8191,
+   "chunks": 2954,
+   "tok_s": 92.84390928923308,
+   "steps_s": 33.47186718729157,
+   "accepted_per_step": 2.7737893667456825,
+   "start_offset_s": 0
+  },
+  {
+   "ttft_s": 0.12136698901304044,
+   "decode_window_s": 85.41072379599791,
+   "wall_s": 85.53209078501095,
+   "t_first": 105099.133097034,
+   "t_last": 105184.54382083,
+   "prompt_tokens": 32,
+   "completion_tokens": 8192,
+   "decode_tokens": 8191,
+   "chunks": 2855,
+   "tok_s": 95.90130648657265,
+   "steps_s": 33.415007778376065,
+   "accepted_per_step": 2.8700070077084794,
+   "start_offset_s": 0
+  },
+  {
+   "ttft_s": 0.12133692199131474,
+   "decode_window_s": 85.32432207399688,
+   "wall_s": 85.4456589959882,
+   "t_first": 105099.133168794,
+   "t_last": 105184.457490868,
+   "prompt_tokens": 34,
+   "completion_tokens": 8192,
+   "decode_tokens": 8191,
+   "chunks": 2850,
+   "tok_s": 95.99841874977238,
+   "steps_s": 33.39024478306697,
+   "accepted_per_step": 2.875043875043875,
+   "start_offset_s": 0
+  }
+ ]
+}
