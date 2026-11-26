@@ -1,0 +1,150 @@
+=== spawn1 (legacy): 2026-11-26T20:57:01+00:00 profile=qwen3.8-27b-think FIX_DROP='' FIX_ADD='' ===
+--- changes vs live profile argv ---
+--rm -> (dropped), -d added
+--name llmstack-vllm-${MODEL_ID} -> llmstack-canary034-qwen3.8-27b-think
+vllm-cache mount -> canary-034
+triton-cache mount -> canary-034
+image docker.io/vllm/vllm-openai-rocm:v0.26.0 -> docker.io/vllm/vllm-openai-rocm:v0.34.0
+--- launch command (bash array, printf %q) ---
+podman run -d --replace --name llmstack-canary034-qwen3.8-27b-think --device=/dev/kfd --device=/dev/dri --group-add keep-groups --security-opt seccomp=unconfined --security-opt apparmor=unconfined --ipc=private --shm-size=32g --network=host -v /mnt/models/llm:/models:ro -v ~/.local/share/llmstack/canary-034/vllm-cache:/root/.cache/vllm -v ~/.local/share/llmstack/canary-034/triton-cache:/root/.triton/cache -e HSA_ENABLE_SDMA=0 -e GPU_MAX_HW_QUEUES=1 -e TORCH_BLAS_PREFER_HIPBLASLT=1 --entrypoint= docker.io/vllm/vllm-openai-rocm:v0.34.0 vllm serve /models/Qwen3.8-27B-FP8 --host 127.0.0.1 --port 9234 --served-model-name qwen3.8-27b-think --attention-backend TRITON_ATTN --dtype auto --tensor-parallel-size 4 --max-model-len 262144 --max-num-seqs 32 --max-num-batched-tokens 32768 --gpu-memory-utilization 0.95 --enable-prefix-caching --enable-chunked-prefill --trust-remote-code --reasoning-parser qwen3 --enable-auto-tool-choice --tool-call-parser qwen3_xml --default-chat-template-kwargs \{\"reasoning_effort\":\ \"medium\"\} --kv-transfer-config \{\"kv_connector\":\"SimpleCPUOffloadConnector\"\,\"kv_role\":\"kv_both\"\,\"kv_connector_extra_config\":\{\"cpu_bytes_to_use\":103079215104\}\} --cudagraph-capture-sizes 1 2 4 8 16 32 
+--- host MemFree before: MemFree:        19220056 kB
+--- VRAM before: GPU0 used=57MB GPU1 used=57MB GPU2 used=57MB GPU3 used=72MB 
+startup status=OK; 'startup complete' at 197 s, /health ok at 197 s
+--- idle VRAM after startup: GPU0 used=25158MB GPU1 used=25126MB GPU2 used=25174MB GPU3 used=25190MB 
+--- host MemFree after startup: MemFree:         1256992 kB
+--- image ---
+ImageName=docker.io/vllm/vllm-openai-rocm:v0.34.0 Image=9a5f9af8f20f129a8f0ccbe6c78499a1d0db8ddb17caaa848bb09f04f139d2b1 ImageDigest=sha256:3cb773d23f063afa86291ef75773cdd486154ddea94c213300f4ed7cc42b7af1
+--- container Id / created ---
+afe6dedbf153359701cc5b31a416f8830cf5f851ddea3ec7236e59910a0d31e1 2026-11-26 20:57:01.559957316 +0000 UTC
+--- argv ---
+["serve","/models/Qwen3.8-27B-FP8","--host","127.0.0.1","--port","9234","--served-model-name","qwen3.8-27b-think","--attention-backend","TRITON_ATTN","--dtype","auto","--tensor-parallel-size","4","--max-model-len","262144","--max-num-seqs","32","--max-num-batched-tokens","32768","--gpu-memory-utilization","0.95","--enable-prefix-caching","--enable-chunked-prefill","--trust-remote-code","--reasoning-parser","qwen3","--enable-auto-tool-choice","--tool-call-parser","qwen3_xml","--default-chat-template-kwargs","{\"reasoning_effort\": \"medium\"}","--kv-transfer-config","{\"kv_connector\":\"SimpleCPUOffloadConnector\",\"kv_role\":\"kv_both\",\"kv_connector_extra_config\":{\"cpu_bytes_to_use\":103079215104}}","--cudagraph-capture-sizes","1","2","4","8","16","32"]
+--- env (container) ---
+"HSA_ENABLE_SDMA=0"
+"TORCH_BLAS_PREFER_HIPBLASLT=1"
+"HIP_FORCE_DEV_KERNARG=1"
+"HSA_NO_SCRATCH_RECLAIM=1"
+"HIP_CLANG_PATH=/usr/local/lib/python3.12/dist-packages/_rocm_sdk_devel/lib/llvm/bin"
+"HSA_ENABLE_IPC_MODE_LEGACY=1"
+"HIP_DEVICE_LIB_PATH=/usr/local/lib/python3.12/dist-packages/_rocm_sdk_core/lib/llvm/amdgcn/bitcode"
+"HIP_PATH=/usr/local/lib/python3.12/dist-packages/_rocm_sdk_devel"
+"PYTORCH_ROCM_ARCH=gfx90a;gfx942;gfx950;gfx1100;gfx1101;gfx1200;gfx1201;gfx1150;gfx1151"
+"PYTORCH_NVML_BASED_CUDA_CHECK=1"
+"GPU_MAX_HW_QUEUES=1"
+### startinfo spawn1 (qwen3.8-27b-think) 2026-11-26T21:00:21+00:00
+startup status=OK; 'startup complete' at 197 s, /health ok at 197 s
+version 0.34.0
+-- attention backend:
+      1 Using TRITON_ATTN backend (selected via --attention-backend)
+-- resolved capture sizes:
+'cudagraph_capture_sizes': [1, 2, 4, 8, 16, 32]
+cudagraph_mode': <CUDAGraphMode.FULL_AND_PIECEWISE: (2
+decode_cudagraph_capture_request_sizes': [1, 2, 4, 8, 16, 32]
+prefill_cudagraph_capture_token_sizes': [1, 2, 4, 8, 16, 32]
+-- capture progress (first frame each):
+      1 Capturing CUDA graphs (FULL):   0%|          | 0/6
+      1 Capturing CUDA graphs (PIECEWISE):   0%|          | 0/6
+-- KV:
+APIServer INFO 11-26 20:57:21 [startup.py:96] non-default args: {'model_tag': '/models/Qwen3.8-27B-FP8', 'default_chat_template_kwargs': {'reasoning_effort': 'medium'}, 'enable_auto_tool_choice': True, 'tool_call_parser': 'qwen3_xml', 'host': '127.0.0.1', 'port': 9234, 'model': '/models/Qwen3.8-27B-
+EngineCore INFO 11-26 21:00:04 [kv_cache_utils.py:1168] GPU KV cache size: 969,607 tokens, Maximum concurrency for 262,144 tokens per request: 3.70x
+EngineCore INFO 11-26 21:00:10 [factory.py:62] Creating v1 connector with name: SimpleCPUOffloadConnector and engine_id: e16bd3c6-f968-4235-845e-e3af82e4ad17
+EngineCore INFO 11-26 21:00:10 [manager.py:198] SimpleCPUOffloadScheduler: Allocating 1890 offload blocks (24.00 GB, mode=eager, backend=cpu)
+EngineCore INFO 11-26 21:00:10 [simple_cpu_offload_connector.py:192] SimpleCPUOffloadConnector: role=SCHEDULER, per_rank=24.00 GB, world_size=4, mode=eager, backend=cpu, disk=none
+Worker_TP0 INFO 11-26 20:59:25 [gpu_worker.py:795] Available KV cache memory: 19.15 GiB
+Worker_TP0 INFO 11-26 21:00:04 [extensible_kv_cache.py:536] Extended KV cache to 1191 blocks (15.12 GiB).
+Worker_TP0 INFO 11-26 21:00:04 [extensible_kv_cache.py:693] Memory after warmup: 21.44 GiB free, 0.03 GiB committed to the KV cache, 3.29 GiB kept for transient activations (2.55 GiB allocated at peak, 3.29 GiB of torch reservation growth); 1193 KV cache blocks (15.15 GiB) fit within the requested 3
+Worker_TP0 INFO 11-26 21:00:04 [factory.py:62] Creating v1 connector with name: SimpleCPUOffloadConnector and engine_id: e16bd3c6-f968-4235-845e-e3af82e4ad17
+Worker_TP0 INFO 11-26 21:00:04 [simple_cpu_offload_connector.py:192] SimpleCPUOffloadConnector: role=WORKER, per_rank=24.00 GB, world_size=4, mode=eager, backend=cpu, disk=none
+Worker_TP0 INFO 11-26 21:00:04 [worker.py:236] SimpleCPUOffloadWorker [CPU]: 16 tensors, 1890 CPU blocks (23.99 GB)
+Worker_TP1 INFO 11-26 21:00:04 [extensible_kv_cache.py:536] Extended KV cache to 1191 blocks (15.12 GiB).
+Worker_TP1 INFO 11-26 21:00:04 [extensible_kv_cache.py:693] Memory after warmup: 21.41 GiB free, 0.03 GiB committed to the KV cache, 3.29 GiB kept for transient activations (2.55 GiB allocated at peak, 3.29 GiB of torch reservation growth); 1191 KV cache blocks (15.12 GiB) fit within the requested 3
+Worker_TP1 INFO 11-26 21:00:04 [factory.py:62] Creating v1 connector with name: SimpleCPUOffloadConnector and engine_id: e16bd3c6-f968-4235-845e-e3af82e4ad17
+Worker_TP1 INFO 11-26 21:00:04 [simple_cpu_offload_connector.py:192] SimpleCPUOffloadConnector: role=WORKER, per_rank=24.00 GB, world_size=4, mode=eager, backend=cpu, disk=none
+Worker_TP1 INFO 11-26 21:00:04 [worker.py:236] SimpleCPUOffloadWorker [CPU]: 16 tensors, 1890 CPU blocks (23.99 GB)
+Worker_TP2 INFO 11-26 21:00:04 [extensible_kv_cache.py:536] Extended KV cache to 1191 blocks (15.12 GiB).
+Worker_TP2 INFO 11-26 21:00:04 [extensible_kv_cache.py:693] Memory after warmup: 21.39 GiB free, 0.03 GiB committed to the KV cache, 3.29 GiB kept for transient activations (2.55 GiB allocated at peak, 3.29 GiB of torch reservation growth); 1191 KV cache blocks (15.12 GiB) fit within the requested 3
+Worker_TP2 INFO 11-26 21:00:04 [factory.py:62] Creating v1 connector with name: SimpleCPUOffloadConnector and engine_id: e16bd3c6-f968-4235-845e-e3af82e4ad17
+Worker_TP2 INFO 11-26 21:00:04 [simple_cpu_offload_connector.py:192] SimpleCPUOffloadConnector: role=WORKER, per_rank=24.00 GB, world_size=4, mode=eager, backend=cpu, disk=none
+Worker_TP2 INFO 11-26 21:00:04 [worker.py:236] SimpleCPUOffloadWorker [CPU]: 16 tensors, 1890 CPU blocks (23.99 GB)
+Worker_TP3 INFO 11-26 21:00:04 [extensible_kv_cache.py:536] Extended KV cache to 1191 blocks (15.12 GiB).
+Worker_TP3 INFO 11-26 21:00:04 [extensible_kv_cache.py:693] Memory after warmup: 21.45 GiB free, 0.03 GiB committed to the KV cache, 3.29 GiB kept for transient activations (2.55 GiB allocated at peak, 3.29 GiB of torch reservation growth); 1196 KV cache blocks (15.18 GiB) fit within the requested 3
+Worker_TP3 INFO 11-26 21:00:04 [factory.py:62] Creating v1 connector with name: SimpleCPUOffloadConnector and engine_id: e16bd3c6-f968-4235-845e-e3af82e4ad17
+Worker_TP3 INFO 11-26 21:00:04 [simple_cpu_offload_connector.py:192] SimpleCPUOffloadConnector: role=WORKER, per_rank=24.00 GB, world_size=4, mode=eager, backend=cpu, disk=none
+Worker_TP3 INFO 11-26 21:00:04 [worker.py:236] SimpleCPUOffloadWorker [CPU]: 16 tensors, 1890 CPU blocks (23.99 GB)
+-- graph capture / load:
+INFO 11-26 20:57:45 [model_runner.py:441] Model loading took 7.58 GiB memory and 7.094259 seconds
+INFO 11-26 20:57:45 [model_runner.py:441] Model loading took 7.58 GiB memory and 7.121215 seconds
+INFO 11-26 20:57:46 [model_runner.py:441] Model loading took 7.58 GiB memory and 7.061107 seconds
+INFO 11-26 20:57:46 [model_runner.py:441] Model loading took 7.58 GiB memory and 7.157528 seconds
+INFO 11-26 20:58:26 [backends.py:421] [backbone] Compiling a graph for compile range (1, 32768) takes 16.98 s
+INFO 11-26 20:58:26 [backends.py:421] [backbone] Compiling a graph for compile range (1, 32768) takes 17.05 s
+INFO 11-26 20:58:26 [backends.py:421] [backbone] Compiling a graph for compile range (1, 32768) takes 17.07 s
+INFO 11-26 20:58:26 [backends.py:421] [backbone] Compiling a graph for compile range (1, 32768) takes 17.14 s
+INFO 11-26 21:00:04 [model_runner.py:1216] Graph capturing finished in 6 secs, took -0.40 GiB
+INFO 11-26 21:00:04 [model_runner.py:1216] Graph capturing finished in 6 secs, took -1.34 GiB
+INFO 11-26 21:00:04 [model_runner.py:1216] Graph capturing finished in 6 secs, took -1.84 GiB
+INFO 11-26 21:00:04 [model_runner.py:1216] Graph capturing finished in 6 secs, took -2.18 GiB
+-- warnings (deduped, counted):
+     12 /usr/local/lib/python3.12/dist-packages/torch/distributed/c10d_logger.py:83: FutureWarning: `torch.distributed.all_gather_into_tensor` is deprecated. Please use `torch.distributed.all_gather_single` instead.
+      5 WARNING [base.py:238] Initializing KVConnectorBase_V1. This API is experimental and subject to change in the future as we iterate the design.
+      4 WARNING [utils.py:420] lm_head skinny-GEMM guard engaged: weight (62080, 5120) (635699200 bytes) exceeds the weight cap 67108864 (VLLM_SKINNY_GEMM_MAX_WEIGHT_BYTES, or the hardware memory-side cache size when unset) at n=2; skipping wvSplitK for the generic GE
+      4 WARNING [fp8_utils.py:953] Using default W8A8 Block FP8 kernel config. Performance might be sub-optimal! Config file not found at /usr/local/lib/python3.12/dist-packages/vllm/model_executor/layers/quantization/utils/configs/N=8704,K=5120,device_name=AMD_Radeon
+      4 WARNING [fp8_utils.py:953] Using default W8A8 Block FP8 kernel config. Performance might be sub-optimal! Config file not found at /usr/local/lib/python3.12/dist-packages/vllm/model_executor/layers/quantization/utils/configs/N=5120,K=4352,device_name=AMD_Radeon
+      4 WARNING [fp8_utils.py:953] Using default W8A8 Block FP8 kernel config. Performance might be sub-optimal! Config file not found at /usr/local/lib/python3.12/dist-packages/vllm/model_executor/layers/quantization/utils/configs/N=5120,K=1536,device_name=AMD_Radeon
+      4 WARNING [fp8_utils.py:953] Using default W8A8 Block FP8 kernel config. Performance might be sub-optimal! Config file not found at /usr/local/lib/python3.12/dist-packages/vllm/model_executor/layers/quantization/utils/configs/N=4096,K=5120,device_name=AMD_Radeon
+      4 WARNING [fp8_utils.py:953] Using default W8A8 Block FP8 kernel config. Performance might be sub-optimal! Config file not found at /usr/local/lib/python3.12/dist-packages/vllm/model_executor/layers/quantization/utils/configs/N=3584,K=5120,device_name=AMD_Radeon
+      1 WARNING [vllm.py:2588] cudagraph_capture_sizes and max_cudagraph_capture_size are deprecated. Set the token counts of prefill CUDA graphs with prefill_cudagraph_capture_token_sizes or max_prefill_cudagraph_capture_tokens, and the request counts of decode CUDA 
+      1 WARNING [vllm.py:1581] Auto-disabled DeepGemm for model_type=qwen3_5_text on Blackwell. To disable DeepGemm globally, set VLLM_USE_DEEP_GEMM=0.
+      1 WARNING [serving.py:320] The chat template requires system-first ordering, so inline system messages in /v1/messages requests (e.g. Claude Code's per-turn reminders) are merged into the leading system prompt. Each new one changes the prompt prefix, so the rest
+      1 WARNING [model.py:1931] Default vLLM sampling parameters have been overridden by the model's `generation_config.json`: `{'temperature': 1.0, 'top_k': 20, 'top_p': 0.95}`. If this is not intended, please relaunch vLLM instance with `--generation-config vllm`.
+      1 WARNING [compilation.py:1514] Op 'sparse_attn_indexer' not present in model, enabling with '+sparse_attn_indexer' has no effect
+      1 WARNING [activation.py:816] [ROCm] PyTorch's native GELU with tanh approximation is unstable. Falling back to GELU(approximate='none').
+-- errors:
+=== llmband (presweep) 2026-11-26T21:00:27+00:00 ===
+llmband: qwen3.8-27b-think -> UNDECIDED band
+  no baseline for this profile; run --calibrate against a server you have reason to believe is in the fast band
+  256 steps / 256 tok in 4.993s (1.0 accepted/step); 80/84 card-samples under load across 4 cards
+llmband exit code (presweep): 2
+=== smoke 2026-11-26T21:00:40+00:00 ===
+[plain] 0.1s finish=stop usage={'prompt_tokens': 21, 'total_tokens': 23, 'completion_tokens': 2, 'completion_tokens_details': {'reasoning_tokens': 0}}
+   fields with values: {"role": "assistant", "content": "Paris"}
+   has reasoning_content key: False; reasoning len: 0
+   plain correct: True
+[reasoning] 4.1s finish=stop usage={'prompt_tokens': 46, 'total_tokens': 254, 'completion_tokens': 208, 'completion_tokens_details': {'reasoning_tokens': 202}}
+   fields with values: {"role": "assistant", "content": "\n\n155", "reasoning": "The train leaves at 14:35 and arrives at 17:10.\n\nFrom 14:35 to 17:10:\n- From 14:35 to 17:35 would be 3 hours = 180 minutes\n- But it arrives at 17:10, which is 25 minutes before 17:35\n- So 180 - 25 = 1"}
+   has reasoning_content key: False; reasoning len: 373
+   reasoning answer 155 in content: True
+[toolcall] 2.0s finish=tool_calls usage={'prompt_tokens': 311, 'total_tokens': 390, 'completion_tokens': 79, 'completion_tokens_details': {'reasoning_tokens': 49}}
+   fields with values: {"role": "assistant", "tool_calls": [{"id": "chatcmpl-tool-8e5f783b816b6080", "type": "function", "function": {"name": "get_weather", "arguments": "{\"city\": \"Paris, France\"}"}}], "reasoning": "The user wants to know the current weather in Paris, France. I have a tool available called \"get_weather\" that takes a city name and optionally a unit. Let me call this tool with \"Paris, France\" as th"}
+   has reasoning_content key: False; reasoning len: 208
+   tool call well-formed: True
+SMOKE_ALL_OK
+=== metrics snapshot (presweep) 2026-11-26T21:00:46+00:00 ===
+vllm:num_preemptions_total{engine="0",model_name="qwen3.8-27b-think"} 0.0
+vllm:prompt_tokens_total{engine="0",model_name="qwen3.8-27b-think"} 474.0
+vllm:generation_tokens_total{engine="0",model_name="qwen3.8-27b-think"} 673.0
+=== sweep 2026-11-26T21:00:46+00:00 -> bench/baselines/qwen3.8-27b-think-v0.34.0-peak-nothink-20261126.json ===
+sweep exit 0
+=== metrics snapshot (postsweep) 2026-11-26T21:19:34+00:00 ===
+vllm:num_preemptions_total{engine="0",model_name="qwen3.8-27b-think"} 0.0
+vllm:prompt_tokens_total{engine="0",model_name="qwen3.8-27b-think"} 60254.0
+vllm:generation_tokens_total{engine="0",model_name="qwen3.8-27b-think"} 152465.0
+=== llmband (postsweep) 2026-11-26T21:19:34+00:00 ===
+llmband: qwen3.8-27b-think -> UNDECIDED band
+  no baseline for this profile; run --calibrate against a server you have reason to believe is in the fast band
+  256 steps / 256 tok in 5.026s (1.0 accepted/step); 84/84 card-samples under load across 4 cards
+llmband exit code (postsweep): 2
+=== depth 2026-11-26T21:19:42+00:00 mml=262144 deep=2048,16384,65536,129984,258000 metrics=http://127.0.0.1:9234/metrics ===
+depth cell c1 depths=2048,16384,65536,129984,258000 conc=1 nonce=1795727983 -> bench/baselines/depth/qwen3.8-27b-think-v0.34.0-depth-c1-prewarm-20261126.json
+depth c1 exit 0
+depth cell c8 depths=16384 conc=8 nonce=1795727984 -> bench/baselines/depth/qwen3.8-27b-think-v0.34.0-depth-c8-prewarm-20261126.json
+depth c8 exit 0
+depth cell c4 depths=65536 conc=4 nonce=1795727985 -> bench/baselines/depth/qwen3.8-27b-think-v0.34.0-depth-c4-prewarm-20261126.json
+depth c4 exit 0
+=== needle 2026-11-26T21:24:59+00:00 ===
+needle exit 0
+=== metrics snapshot (final) 2026-11-26T21:30:36+00:00 ===
+vllm:num_preemptions_total{engine="0",model_name="qwen3.8-27b-think"} 0.0
+vllm:prompt_tokens_total{engine="0",model_name="qwen3.8-27b-think"} 2.872503e+06
+vllm:generation_tokens_total{engine="0",model_name="qwen3.8-27b-think"} 155201.0
+server log saved (1500 lines)
+=== stopped 2026-11-26T21:30:58+00:00 VRAM: GPU0 used=57MB GPU1 used=57MB GPU2 used=57MB GPU3 used=72MB 

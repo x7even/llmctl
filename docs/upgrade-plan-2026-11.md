@@ -255,7 +255,7 @@ Draft upstream patch (opt-in env vars for the floor and reserve, defaults unchan
 `margin-patch-notes.md`. Dry-run applied only; not filed. Open lever, untested: allocator
 settings that reduce reservation growth.
 
-## Phase 2 — remaining profiles on 0.34.0 (2026-11-26) — 4 of 6 done, resumed after the drive swap
+## Phase 2 — remaining profiles on 0.34.0 (2026-11-26) — 5 of 6 done, resumed after the drive swap
 
 **Was blocked on hardware; resumed the same day.** The model drive (`nvme1`, `/mnt/models`) stopped responding at
 02:38 UTC while `qwen3.6-35b-code` was loading: read timeouts, failed controller reset, device
@@ -377,6 +377,43 @@ window) matches Phase 1's 27B on 0.34, where the 0.26 reference fell from 63.0 t
 - `llmband` exit 2 before and after (no stored baseline); 118 steps in 2.97 s and 3.00 s, i.e.
   ~40 steps/s, the same as Phase 1's fast 27B (39.4–39.9).
 - Needle 15/15. Smoke passed. 0 preemptions; acceptance 53 % of draft tokens.
+
+#### `qwen3.8-27b-think` (no MTP, TRITON_ATTN, 262K + CPU KV offload) — pass
+
+Live argv unchanged apart from image, name and port (legacy capture flag kept: no MTP). That
+includes the uncommitted live settings: `--max-model-len 262144` and
+`SimpleCPUOffloadConnector` with `cpu_bytes_to_use` 96 GiB. The connector's options are the
+same on 0.34 (read in the image source); it came up eager, 24.00 GB pinned per rank, 1,890 CPU
+blocks.
+
+| | serial | c8 | c16 | c32 |
+|---|---|---|---|---|
+| 0.26.0 | 44.5 | 276.2 | 482.0 | 759.0 |
+| 0.34.0 | 49.9 (+12 %) | 297.9 (+8 %) | 520.1 (+8 %) | 857.6 (+13 %) |
+
+c1 45.9 → 49.7, c2 82.3 → 87.8, c4 154.4 → 166.1. Phase 0 noted a latency tail on the 0.26
+serial cell (p90/mean 1.44); against its c1 cell the single-stream gain is +8 %.
+
+Depth, prewarmed, aggregate tok/s:
+
+| 2K | 16K | 64K | 130K | 258K | 16K×8 | 64K×4 |
+|---|---|---|---|---|---|---|
+| 47.6 → 50.5 | 45.4 → 49.6 | 39.5 → 46.8 | 33.5 → 43.6 (+30 %) | 26.0 → 38.4 (+48 %) | 192.6 → 219.6 | 108.1 → 111.3 |
+
+The deeper the prompt the larger the gain; decay across the window 1.83x → 1.32x. Prewarmed
+TTFT at 16K×8 1.55 → 1.06 s.
+
+- KV pool 1,150,051 → 969,607 tokens (−16 %). CPU offload pool on top, unchanged in size.
+  Exercised only lightly: 99 offload stores over the run, no preemptions. No test here forces
+  KV out to the CPU pool and back, so its recall path is not checked by this run.
+- Backend `Using TRITON_ATTN backend (selected via --attention-backend)` (the flag is in the
+  argv). Resolved capture sizes `[1, 2, 4, 8, 16, 32]` for both prefill and decode, as expected
+  without MTP.
+- Startup 197 s. Host MemFree fell from 19 GiB to 1.2 GiB at startup (page cache from the
+  re-download giving way to the 96 GiB pinned pool); the spawn read fast regardless.
+- `llmband` exit 2 before and after (no stored baseline): 256 steps in 4.99 s and 5.03 s,
+  ~51 steps/s, against a 0.26 serial of 44.5 tok/s, so not a slow draw (inferred).
+- Needle 15/15 (16K, 64K, 131,072). Smoke passed.
 
 ## Phase 3b — margin: upstream is already on it
 

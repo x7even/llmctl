@@ -1,0 +1,1 @@
+{"model": "qwen3.8-27b-think", "messages": [{"role": "user", "content": "A train leaves at 14:35 and arrives at 17:10 the same day. How many minutes is the journey? Answer with just the number."}], "max_tokens": 8192, "stream": false}

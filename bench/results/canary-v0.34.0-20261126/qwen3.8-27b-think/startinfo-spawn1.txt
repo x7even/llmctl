@@ -1,0 +1,69 @@
+### startinfo spawn1 (qwen3.8-27b-think) 2026-11-26T21:00:21+00:00
+startup status=OK; 'startup complete' at 197 s, /health ok at 197 s
+version 0.34.0
+-- attention backend:
+      1 Using TRITON_ATTN backend (selected via --attention-backend)
+-- resolved capture sizes:
+'cudagraph_capture_sizes': [1, 2, 4, 8, 16, 32]
+cudagraph_mode': <CUDAGraphMode.FULL_AND_PIECEWISE: (2
+decode_cudagraph_capture_request_sizes': [1, 2, 4, 8, 16, 32]
+prefill_cudagraph_capture_token_sizes': [1, 2, 4, 8, 16, 32]
+-- capture progress (first frame each):
+      1 Capturing CUDA graphs (FULL):   0%|          | 0/6
+      1 Capturing CUDA graphs (PIECEWISE):   0%|          | 0/6
+-- KV:
+APIServer INFO 11-26 20:57:21 [startup.py:96] non-default args: {'model_tag': '/models/Qwen3.8-27B-FP8', 'default_chat_template_kwargs': {'reasoning_effort': 'medium'}, 'enable_auto_tool_choice': True, 'tool_call_parser': 'qwen3_xml', 'host': '127.0.0.1', 'port': 9234, 'model': '/models/Qwen3.8-27B-
+EngineCore INFO 11-26 21:00:04 [kv_cache_utils.py:1168] GPU KV cache size: 969,607 tokens, Maximum concurrency for 262,144 tokens per request: 3.70x
+EngineCore INFO 11-26 21:00:10 [factory.py:62] Creating v1 connector with name: SimpleCPUOffloadConnector and engine_id: e16bd3c6-f968-4235-845e-e3af82e4ad17
+EngineCore INFO 11-26 21:00:10 [manager.py:198] SimpleCPUOffloadScheduler: Allocating 1890 offload blocks (24.00 GB, mode=eager, backend=cpu)
+EngineCore INFO 11-26 21:00:10 [simple_cpu_offload_connector.py:192] SimpleCPUOffloadConnector: role=SCHEDULER, per_rank=24.00 GB, world_size=4, mode=eager, backend=cpu, disk=none
+Worker_TP0 INFO 11-26 20:59:25 [gpu_worker.py:795] Available KV cache memory: 19.15 GiB
+Worker_TP0 INFO 11-26 21:00:04 [extensible_kv_cache.py:536] Extended KV cache to 1191 blocks (15.12 GiB).
+Worker_TP0 INFO 11-26 21:00:04 [extensible_kv_cache.py:693] Memory after warmup: 21.44 GiB free, 0.03 GiB committed to the KV cache, 3.29 GiB kept for transient activations (2.55 GiB allocated at peak, 3.29 GiB of torch reservation growth); 1193 KV cache blocks (15.15 GiB) fit within the requested 3
+Worker_TP0 INFO 11-26 21:00:04 [factory.py:62] Creating v1 connector with name: SimpleCPUOffloadConnector and engine_id: e16bd3c6-f968-4235-845e-e3af82e4ad17
+Worker_TP0 INFO 11-26 21:00:04 [simple_cpu_offload_connector.py:192] SimpleCPUOffloadConnector: role=WORKER, per_rank=24.00 GB, world_size=4, mode=eager, backend=cpu, disk=none
+Worker_TP0 INFO 11-26 21:00:04 [worker.py:236] SimpleCPUOffloadWorker [CPU]: 16 tensors, 1890 CPU blocks (23.99 GB)
+Worker_TP1 INFO 11-26 21:00:04 [extensible_kv_cache.py:536] Extended KV cache to 1191 blocks (15.12 GiB).
+Worker_TP1 INFO 11-26 21:00:04 [extensible_kv_cache.py:693] Memory after warmup: 21.41 GiB free, 0.03 GiB committed to the KV cache, 3.29 GiB kept for transient activations (2.55 GiB allocated at peak, 3.29 GiB of torch reservation growth); 1191 KV cache blocks (15.12 GiB) fit within the requested 3
+Worker_TP1 INFO 11-26 21:00:04 [factory.py:62] Creating v1 connector with name: SimpleCPUOffloadConnector and engine_id: e16bd3c6-f968-4235-845e-e3af82e4ad17
+Worker_TP1 INFO 11-26 21:00:04 [simple_cpu_offload_connector.py:192] SimpleCPUOffloadConnector: role=WORKER, per_rank=24.00 GB, world_size=4, mode=eager, backend=cpu, disk=none
+Worker_TP1 INFO 11-26 21:00:04 [worker.py:236] SimpleCPUOffloadWorker [CPU]: 16 tensors, 1890 CPU blocks (23.99 GB)
+Worker_TP2 INFO 11-26 21:00:04 [extensible_kv_cache.py:536] Extended KV cache to 1191 blocks (15.12 GiB).
+Worker_TP2 INFO 11-26 21:00:04 [extensible_kv_cache.py:693] Memory after warmup: 21.39 GiB free, 0.03 GiB committed to the KV cache, 3.29 GiB kept for transient activations (2.55 GiB allocated at peak, 3.29 GiB of torch reservation growth); 1191 KV cache blocks (15.12 GiB) fit within the requested 3
+Worker_TP2 INFO 11-26 21:00:04 [factory.py:62] Creating v1 connector with name: SimpleCPUOffloadConnector and engine_id: e16bd3c6-f968-4235-845e-e3af82e4ad17
+Worker_TP2 INFO 11-26 21:00:04 [simple_cpu_offload_connector.py:192] SimpleCPUOffloadConnector: role=WORKER, per_rank=24.00 GB, world_size=4, mode=eager, backend=cpu, disk=none
+Worker_TP2 INFO 11-26 21:00:04 [worker.py:236] SimpleCPUOffloadWorker [CPU]: 16 tensors, 1890 CPU blocks (23.99 GB)
+Worker_TP3 INFO 11-26 21:00:04 [extensible_kv_cache.py:536] Extended KV cache to 1191 blocks (15.12 GiB).
+Worker_TP3 INFO 11-26 21:00:04 [extensible_kv_cache.py:693] Memory after warmup: 21.45 GiB free, 0.03 GiB committed to the KV cache, 3.29 GiB kept for transient activations (2.55 GiB allocated at peak, 3.29 GiB of torch reservation growth); 1196 KV cache blocks (15.18 GiB) fit within the requested 3
+Worker_TP3 INFO 11-26 21:00:04 [factory.py:62] Creating v1 connector with name: SimpleCPUOffloadConnector and engine_id: e16bd3c6-f968-4235-845e-e3af82e4ad17
+Worker_TP3 INFO 11-26 21:00:04 [simple_cpu_offload_connector.py:192] SimpleCPUOffloadConnector: role=WORKER, per_rank=24.00 GB, world_size=4, mode=eager, backend=cpu, disk=none
+Worker_TP3 INFO 11-26 21:00:04 [worker.py:236] SimpleCPUOffloadWorker [CPU]: 16 tensors, 1890 CPU blocks (23.99 GB)
+-- graph capture / load:
+INFO 11-26 20:57:45 [model_runner.py:441] Model loading took 7.58 GiB memory and 7.094259 seconds
+INFO 11-26 20:57:45 [model_runner.py:441] Model loading took 7.58 GiB memory and 7.121215 seconds
+INFO 11-26 20:57:46 [model_runner.py:441] Model loading took 7.58 GiB memory and 7.061107 seconds
+INFO 11-26 20:57:46 [model_runner.py:441] Model loading took 7.58 GiB memory and 7.157528 seconds
+INFO 11-26 20:58:26 [backends.py:421] [backbone] Compiling a graph for compile range (1, 32768) takes 16.98 s
+INFO 11-26 20:58:26 [backends.py:421] [backbone] Compiling a graph for compile range (1, 32768) takes 17.05 s
+INFO 11-26 20:58:26 [backends.py:421] [backbone] Compiling a graph for compile range (1, 32768) takes 17.07 s
+INFO 11-26 20:58:26 [backends.py:421] [backbone] Compiling a graph for compile range (1, 32768) takes 17.14 s
+INFO 11-26 21:00:04 [model_runner.py:1216] Graph capturing finished in 6 secs, took -0.40 GiB
+INFO 11-26 21:00:04 [model_runner.py:1216] Graph capturing finished in 6 secs, took -1.34 GiB
+INFO 11-26 21:00:04 [model_runner.py:1216] Graph capturing finished in 6 secs, took -1.84 GiB
+INFO 11-26 21:00:04 [model_runner.py:1216] Graph capturing finished in 6 secs, took -2.18 GiB
+-- warnings (deduped, counted):
+     12 /usr/local/lib/python3.12/dist-packages/torch/distributed/c10d_logger.py:83: FutureWarning: `torch.distributed.all_gather_into_tensor` is deprecated. Please use `torch.distributed.all_gather_single` instead.
+      5 WARNING [base.py:238] Initializing KVConnectorBase_V1. This API is experimental and subject to change in the future as we iterate the design.
+      4 WARNING [utils.py:420] lm_head skinny-GEMM guard engaged: weight (62080, 5120) (635699200 bytes) exceeds the weight cap 67108864 (VLLM_SKINNY_GEMM_MAX_WEIGHT_BYTES, or the hardware memory-side cache size when unset) at n=2; skipping wvSplitK for the generic GE
+      4 WARNING [fp8_utils.py:953] Using default W8A8 Block FP8 kernel config. Performance might be sub-optimal! Config file not found at /usr/local/lib/python3.12/dist-packages/vllm/model_executor/layers/quantization/utils/configs/N=8704,K=5120,device_name=AMD_Radeon
+      4 WARNING [fp8_utils.py:953] Using default W8A8 Block FP8 kernel config. Performance might be sub-optimal! Config file not found at /usr/local/lib/python3.12/dist-packages/vllm/model_executor/layers/quantization/utils/configs/N=5120,K=4352,device_name=AMD_Radeon
+      4 WARNING [fp8_utils.py:953] Using default W8A8 Block FP8 kernel config. Performance might be sub-optimal! Config file not found at /usr/local/lib/python3.12/dist-packages/vllm/model_executor/layers/quantization/utils/configs/N=5120,K=1536,device_name=AMD_Radeon
+      4 WARNING [fp8_utils.py:953] Using default W8A8 Block FP8 kernel config. Performance might be sub-optimal! Config file not found at /usr/local/lib/python3.12/dist-packages/vllm/model_executor/layers/quantization/utils/configs/N=4096,K=5120,device_name=AMD_Radeon
+      4 WARNING [fp8_utils.py:953] Using default W8A8 Block FP8 kernel config. Performance might be sub-optimal! Config file not found at /usr/local/lib/python3.12/dist-packages/vllm/model_executor/layers/quantization/utils/configs/N=3584,K=5120,device_name=AMD_Radeon
+      1 WARNING [vllm.py:2588] cudagraph_capture_sizes and max_cudagraph_capture_size are deprecated. Set the token counts of prefill CUDA graphs with prefill_cudagraph_capture_token_sizes or max_prefill_cudagraph_capture_tokens, and the request counts of decode CUDA 
+      1 WARNING [vllm.py:1581] Auto-disabled DeepGemm for model_type=qwen3_5_text on Blackwell. To disable DeepGemm globally, set VLLM_USE_DEEP_GEMM=0.
+      1 WARNING [serving.py:320] The chat template requires system-first ordering, so inline system messages in /v1/messages requests (e.g. Claude Code's per-turn reminders) are merged into the leading system prompt. Each new one changes the prompt prefix, so the rest
+      1 WARNING [model.py:1931] Default vLLM sampling parameters have been overridden by the model's `generation_config.json`: `{'temperature': 1.0, 'top_k': 20, 'top_p': 0.95}`. If this is not intended, please relaunch vLLM instance with `--generation-config vllm`.
+      1 WARNING [compilation.py:1514] Op 'sparse_attn_indexer' not present in model, enabling with '+sparse_attn_indexer' has no effect
+      1 WARNING [activation.py:816] [ROCm] PyTorch's native GELU with tanh approximation is unstable. Falling back to GELU(approximate='none').
+-- errors:
