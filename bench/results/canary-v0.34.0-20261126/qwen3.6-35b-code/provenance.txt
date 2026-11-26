@@ -1,0 +1,80 @@
+=== spawn1 (legacy): 2026-11-26T02:37:50+00:00 profile=qwen3.6-35b-code FIX_DROP='' FIX_ADD='' ===
+--- changes vs live profile argv ---
+--rm -> (dropped), -d added
+--name llmstack-vllm-${MODEL_ID} -> llmstack-canary034-qwen3.6-35b-code
+vllm-cache mount -> canary-034
+triton-cache mount -> canary-034
+image docker.io/vllm/vllm-openai-rocm:v0.26.0 -> docker.io/vllm/vllm-openai-rocm:v0.34.0
+--- launch command (bash array, printf %q) ---
+podman run -d --replace --name llmstack-canary034-qwen3.6-35b-code --device=/dev/kfd --device=/dev/dri --group-add keep-groups --security-opt seccomp=unconfined --security-opt apparmor=unconfined --ipc=private --shm-size=32g --network=host -v /mnt/models/llm:/models:ro -v ~/.local/share/llmstack/canary-034/vllm-cache:/root/.cache/vllm -v ~/.local/share/llmstack/canary-034/triton-cache:/root/.triton/cache -e HSA_ENABLE_SDMA=0 -e GPU_MAX_HW_QUEUES=1 -e TORCH_BLAS_PREFER_HIPBLASLT=1 --entrypoint= docker.io/vllm/vllm-openai-rocm:v0.34.0 vllm serve /models/Qwen3.6-35B-A3B-FP8 --host 127.0.0.1 --port 9234 --served-model-name qwen3.6-35b-code --dtype auto --tensor-parallel-size 4 --enable-expert-parallel --max-num-seqs 32 --max-num-batched-tokens 32768 --max-model-len 131072 --gpu-memory-utilization 0.92 --enable-prefix-caching --enable-chunked-prefill --trust-remote-code --reasoning-parser qwen3 --enable-auto-tool-choice --tool-call-parser qwen3_xml --speculative-config \{\"method\":\ \"mtp\"\,\ \"num_speculative_tokens\":\ 2\} --cudagraph-capture-sizes 1 2 4 8 16 32 
+--- host MemFree before: MemFree:        22065996 kB
+--- VRAM before: GPU0 used=57MB GPU1 used=57MB GPU2 used=57MB GPU3 used=57MB 
+startup status=EXITED; 'startup complete' at 166 s, /health ok at 166 s
+STARTUP FAILED (EXITED); last 150 log lines:
+(APIServer pid=1) INFO 11-26 02:38:12 [startup.py:38] 
+(APIServer pid=1) INFO 11-26 02:38:12 [startup.py:38]        █     █     █▄   ▄█
+(APIServer pid=1) INFO 11-26 02:38:12 [startup.py:38]  ▄▄ ▄█ █     █     █ ▀▄▀ █  version 0.34.0
+(APIServer pid=1) INFO 11-26 02:38:12 [startup.py:38]   █▄█▀ █     █     █     █  model   /models/Qwen3.6-35B-A3B-FP8
+(APIServer pid=1) INFO 11-26 02:38:12 [startup.py:38]    ▀▀  ▀▀▀▀▀ ▀▀▀▀▀ ▀     ▀
+(APIServer pid=1) INFO 11-26 02:38:12 [startup.py:38] 
+(APIServer pid=1) INFO 11-26 02:38:12 [startup.py:96] non-default args: {'model_tag': '/models/Qwen3.6-35B-A3B-FP8', 'enable_auto_tool_choice': True, 'tool_call_parser': 'qwen3_xml', 'host': '127.0.0.1', 'port': 9234, 'model': '/models/Qwen3.6-35B-A3B-FP8', 'trust_remote_code': True, 'max_model_len': 131072, 'served_model_name': ['qwen3.6-35b-code'], 'reasoning_parser': 'qwen3', 'tensor_parallel_size': 4, 'enable_expert_parallel': True, 'gpu_memory_utilization': 0.92, 'enable_prefix_caching': True, 'max_num_batched_tokens': 32768, 'max_num_seqs': 32, 'enable_chunked_prefill': True, 'cudagraph_capture_sizes': [1, 2, 4, 8, 16, 32], 'speculative_config': {'method': 'mtp', 'num_speculative_tokens': 2}}
+Traceback (most recent call last):
+  File "/usr/local/bin/vllm", line 6, in <module>
+    sys.exit(main())
+             ^^^^^^
+  File "/usr/local/lib/python3.12/dist-packages/vllm/entrypoints/cli/main.py", line 117, in main
+    args.dispatch_function(args)
+  File "/usr/local/lib/python3.12/dist-packages/vllm/entrypoints/cli/serve.py", line 156, in cmd
+    uvloop.run(run_server(args))
+  File "/usr/local/lib/python3.12/dist-packages/uvloop/__init__.py", line 96, in run
+    return __asyncio.run(
+           ^^^^^^^^^^^^^^
+  File "/usr/lib/python3.12/asyncio/runners.py", line 195, in run
+    return runner.run(main)
+           ^^^^^^^^^^^^^^^^
+  File "/usr/lib/python3.12/asyncio/runners.py", line 118, in run
+    return self._loop.run_until_complete(task)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "uvloop/loop.pyx", line 1518, in uvloop.loop.Loop.run_until_complete
+  File "/usr/local/lib/python3.12/dist-packages/uvloop/__init__.py", line 48, in wrapper
+    return await main
+           ^^^^^^^^^^
+  File "/usr/local/lib/python3.12/dist-packages/vllm/entrypoints/launchers/api_server/entry.py", line 176, in run_server
+    await run_server_worker(listen_address, sock, args, **uvicorn_kwargs)
+  File "/usr/local/lib/python3.12/dist-packages/vllm/entrypoints/launchers/api_server/entry.py", line 190, in run_server_worker
+    async with build_async_engine_client(
+               ^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/usr/lib/python3.12/contextlib.py", line 210, in __aenter__
+    return await anext(self.gen)
+           ^^^^^^^^^^^^^^^^^^^^^
+  File "/usr/local/lib/python3.12/dist-packages/vllm/entrypoints/launchers/api_server/entry.py", line 60, in build_async_engine_client
+    async with build_async_engine_client_from_engine_args(
+               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/usr/lib/python3.12/contextlib.py", line 210, in __aenter__
+    return await anext(self.gen)
+           ^^^^^^^^^^^^^^^^^^^^^
+  File "/usr/local/lib/python3.12/dist-packages/vllm/entrypoints/launchers/api_server/entry.py", line 82, in build_async_engine_client_from_engine_args
+    vllm_config = engine_args.create_engine_config(usage_context=usage_context)
+                  ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/usr/local/lib/python3.12/dist-packages/vllm/engine/arg_utils.py", line 2303, in create_engine_config
+    maybe_override_with_speculators(
+  File "/usr/local/lib/python3.12/dist-packages/vllm/transformers_utils/config.py", line 864, in maybe_override_with_speculators
+    config_dict, _ = PreTrainedConfig.get_config_dict(
+                     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/usr/local/lib/python3.12/dist-packages/transformers/configuration_utils.py", line 933, in get_config_dict
+    config_dict, kwargs = cls._get_config_dict(pretrained_model_name_or_path, **kwargs)
+                          ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/usr/local/lib/python3.12/dist-packages/transformers/configuration_utils.py", line 1027, in _get_config_dict
+    config_dict = cls._dict_from_json_file(resolved_config_file)
+                  ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/usr/local/lib/python3.12/dist-packages/transformers/configuration_utils.py", line 1133, in _dict_from_json_file
+    text = reader.read()
+           ^^^^^^^^^^^^^
+OSError: [Errno 5] Input/output error
+server log saved (60 lines)
+=== stopped 2026-11-26T02:40:58+00:00 VRAM: GPU0 used=57MB GPU1 used=57MB GPU2 used=57MB GPU3 used=57MB 
+
+=== NOTE (added by hand) ===
+The "startup complete at 166 s, /health ok at 166 s" timers above are elapsed time only: the container EXITED and nothing came up.
+Cause: OSError [Errno 5] reading /models/Qwen3.6-35B-A3B-FP8/config.json -- host NVMe nvme1 (/mnt/models, ext4 on nvme1n1p1) failed 02:38:42-02:40:37,
+controller disabled (reset failure -19), ext4 shut down; /sys/class/nvme/nvme1/state = dead. See kernel-nvme1-failure.log. Profile not measured.

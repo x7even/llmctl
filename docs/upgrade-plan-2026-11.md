@@ -255,6 +255,50 @@ Draft upstream patch (opt-in env vars for the floor and reserve, defaults unchan
 `margin-patch-notes.md`. Dry-run applied only; not filed. Open lever, untested: allocator
 settings that reduce reservation growth.
 
-## Phase 2–4
+## Phase 2 — remaining profiles on 0.34.0 (2026-11-26) — BLOCKED, 2 of 6 done
 
-_In progress: bring-up of the remaining profiles._
+**Blocked on hardware.** The model drive (`nvme1`, `/mnt/models`) stopped responding at
+02:38 UTC while `qwen3.6-35b-code` was loading: read timeouts, failed controller reset, device
+disabled, ext4 shut down. Kernel excerpt in
+`bench/results/canary-v0.34.0-20261126/qwen3.6-35b-code/kernel-nvme1-failure.log`. The kernel
+log is clean up to that point, so the two profiles below were measured on a healthy drive.
+Not run: `qwen3.6-35b-code`, `qwen3.6-27b-code`, `qwen3.8-27b-think`, both Flash-Next profiles.
+
+Both completed profiles started on 0.34.0 with the live argv unchanged (image only), one spawn
+each, `medium-256` sweep as Phase 0, decode tok/s 0.26.0 → 0.34.0:
+
+| Profile | serial | c8 | c16 | c32 |
+|---|---|---|---|---|
+| qwen3.6-35b-128k-nomtp | 92.1 → 103.3 (+12 %) | 466.7 → 476.7 (+2 %) | 752.1 → 755.4 (0 %) | 1194.9 → 1220.5 (+2 %) |
+| gemma4-26b-a4b | 129.6 → 127.1 (−2 %) | 539.1 → 565.8 (+5 %) | 891.7 → 881.9 (−1 %) | 1434.9 → 1546.2 (+8 %) |
+
+Depth, prewarmed, aggregate tok/s:
+
+| Profile | 2K | 16K | 64K | 130K | 16K×8 | 64K×4 |
+|---|---|---|---|---|---|---|
+| nomtp | 95.5 → 107.5 | 90.3 → 103.6 | 75.6 → 95.0 | 62.0 → 86.4 (+39 %) | 381.9 → 435.1 | 216.0 → 227.2 |
+| gemma4 | 119.6 → 121.0 | 76.8 → 81.8 | 46.9 → 48.5 | 34.7 → 34.5 | 326.4 → 312.8 | 3.6 → 136.4 † |
+
+† Phase 0's 64K×4 cell on gemma4 was a stall (TTFT 113.7 s) that did not reproduce; not a speedup.
+
+- KV pools shrink as on the 27B: nomtp 1,538,425 → 1,338,166 (−13 %), gemma4 469,454 → 373,839 (−20 %).
+- The legacy capture-size flag resolves decode sizes to 1..32 on both (no MTP), so only MTP
+  profiles need the explicit `--compilation-config`.
+- Backend unchanged on both (TRITON_ATTN). Needle 15/15 on nomtp. Smoke passed; `reasoning`
+  replaces `reasoning_content`. gemma4 with `enable_thinking` returns raw thought text in
+  `content` (no reasoning parser in the live argv; not checked against 0.26).
+- Startup 192 s each (first compile on the canary cache).
+
+Driver scripts: `~/.local/share/llmstack/canary-034/drivers/` (copied off tmpfs).
+
+## Phase 3b — margin: upstream is already on it
+
+The 3 GiB ROCm floor is a three-week-old stopgap (vllm #65418, MI355 CI OOMs). Open upstream:
+#69471 (floor back to 2 GiB; one Gemma 4 MTP test still fails 5/20 at 2 GiB) and #69994
+(expandable segments under the torch cap, ROCm; TP>1 untested there). Consequences: do not file
+the env-var patch as drafted; one spawn per arm cannot clear a floor when failures are
+intermittent; next test is expandable segments at floors 3/2/1 GiB, several spawns each.
+
+## Phase 4
+
+_Not started._

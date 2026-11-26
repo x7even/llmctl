@@ -1,0 +1,49 @@
+### startinfo spawn1 (gemma4-26b-a4b) 2026-11-26T02:27:34+00:00
+startup status=OK; 'startup complete' at 192 s, /health ok at 192 s
+version 0.34.0
+-- attention backend:
+      1 forcing TRITON_ATTN backend
+      1 Using TRITON_ATTN backend (selected via --attention-backend)
+-- resolved capture sizes:
+'cudagraph_capture_sizes': [1, 2, 4, 8, 16, 32]
+cudagraph_mode': <CUDAGraphMode.FULL_AND_PIECEWISE: (2
+decode_cudagraph_capture_request_sizes': [1, 2, 4, 8, 16, 32]
+prefill_cudagraph_capture_token_sizes': [1, 2, 4, 8, 16, 32]
+-- capture progress (first frame each):
+      1 Capturing CUDA graphs (FULL):   0%|          | 0/6
+      1 Capturing CUDA graphs (PIECEWISE):   0%|          | 0/6
+-- KV:
+EngineCore INFO 11-26 02:27:24 [kv_cache_utils.py:1168] GPU KV cache size: 373,839 tokens, Maximum concurrency for 262,144 tokens per request: 1.43x
+Worker_TP0 INFO 11-26 02:26:51 [gpu_worker.py:795] Available KV cache memory: 11.13 GiB
+Worker_TP0 INFO 11-26 02:27:24 [extensible_kv_cache.py:536] Extended KV cache to 13264 blocks (8.10 GiB).
+Worker_TP0 INFO 11-26 02:27:24 [extensible_kv_cache.py:693] Memory after warmup: 13.66 GiB free, 0.01 GiB committed to the KV cache, 2.55 GiB kept for transient activations (1.44 GiB allocated at peak, 2.55 GiB of torch reservation growth); 13312 KV cache blocks (8.12 GiB) fit within the requested 2
+Worker_TP1 INFO 11-26 02:27:24 [extensible_kv_cache.py:536] Extended KV cache to 13264 blocks (8.10 GiB).
+Worker_TP1 INFO 11-26 02:27:24 [extensible_kv_cache.py:693] Memory after warmup: 13.64 GiB free, 0.01 GiB committed to the KV cache, 2.55 GiB kept for transient activations (1.44 GiB allocated at peak, 2.55 GiB of torch reservation growth); 13264 KV cache blocks (8.1 GiB) fit within the requested 29
+Worker_TP2 INFO 11-26 02:27:24 [extensible_kv_cache.py:536] Extended KV cache to 13264 blocks (8.10 GiB).
+Worker_TP2 INFO 11-26 02:27:24 [extensible_kv_cache.py:693] Memory after warmup: 13.64 GiB free, 0.01 GiB committed to the KV cache, 2.55 GiB kept for transient activations (1.44 GiB allocated at peak, 2.55 GiB of torch reservation growth); 13264 KV cache blocks (8.1 GiB) fit within the requested 29
+Worker_TP3 INFO 11-26 02:27:24 [extensible_kv_cache.py:536] Extended KV cache to 13264 blocks (8.10 GiB).
+Worker_TP3 INFO 11-26 02:27:24 [extensible_kv_cache.py:693] Memory after warmup: 13.73 GiB free, 0.01 GiB committed to the KV cache, 2.55 GiB kept for transient activations (1.44 GiB allocated at peak, 2.55 GiB of torch reservation growth); 13408 KV cache blocks (8.18 GiB) fit within the requested 2
+-- graph capture / load:
+INFO 11-26 02:25:25 [model_runner.py:441] Model loading took 13.35 GiB memory and 21.131263 seconds
+INFO 11-26 02:25:25 [model_runner.py:441] Model loading took 13.35 GiB memory and 21.225887 seconds
+INFO 11-26 02:25:25 [model_runner.py:441] Model loading took 13.35 GiB memory and 21.235550 seconds
+INFO 11-26 02:25:25 [model_runner.py:441] Model loading took 13.35 GiB memory and 21.260398 seconds
+INFO 11-26 02:26:40 [backends.py:421] [backbone] Compiling a graph for compile range (1, 32768) takes 46.65 s
+INFO 11-26 02:26:40 [backends.py:421] [backbone] Compiling a graph for compile range (1, 32768) takes 46.69 s
+INFO 11-26 02:26:41 [backends.py:421] [backbone] Compiling a graph for compile range (1, 32768) takes 46.97 s
+INFO 11-26 02:26:41 [backends.py:421] [backbone] Compiling a graph for compile range (1, 32768) takes 47.00 s
+INFO 11-26 02:27:23 [model_runner.py:1216] Graph capturing finished in 6 secs, took 0.00 GiB
+INFO 11-26 02:27:23 [model_runner.py:1216] Graph capturing finished in 6 secs, took -0.84 GiB
+INFO 11-26 02:27:23 [model_runner.py:1216] Graph capturing finished in 6 secs, took -0.86 GiB
+INFO 11-26 02:27:23 [model_runner.py:1216] Graph capturing finished in 6 secs, took -1.19 GiB
+-- warnings (deduped, counted):
+     12 /usr/local/lib/python3.12/dist-packages/torch/distributed/c10d_logger.py:83: FutureWarning: `torch.distributed.all_gather_into_tensor` is deprecated. Please use `torch.distributed.all_gather_single` instead.
+      4 WARNING [utils.py:420] lm_head skinny-GEMM guard engaged: weight (65536, 2816) (369098752 bytes) exceeds the weight cap 67108864 (VLLM_SKINNY_GEMM_MAX_WEIGHT_BYTES, or the hardware memory-side cache size when unset) at n=2; skipping wvSplitK for the generic GE
+      1 WARNING [vllm.py:2588] cudagraph_capture_sizes and max_cudagraph_capture_size are deprecated. Set the token counts of prefill CUDA graphs with prefill_cudagraph_capture_token_sizes or max_prefill_cudagraph_capture_tokens, and the request counts of decode CUDA 
+      1 WARNING [rocm.py:1224] Forcing --disable_chunked_mm_input for models with multimodal-bidirectional attention.
+      1 WARNING [model.py:1931] Default vLLM sampling parameters have been overridden by the model's `generation_config.json`: `{'temperature': 1.0, 'top_k': 64, 'top_p': 0.95}`. If this is not intended, please relaunch vLLM instance with `--generation-config vllm`.
+      1 WARNING [fused_moe.py:1253] Using default MoE config. Performance might be sub-optimal! Config file not found at /usr/local/lib/python3.12/dist-packages/vllm/model_executor/layers/fused_moe/configs/E=128,N=176,device_name=AMD_Radeon_R9700.json
+      1 WARNING [compilation.py:1514] Op 'sparse_attn_indexer' not present in model, enabling with '+sparse_attn_indexer' has no effect
+      1 WARNING [compilation.py:1514] Op 'rms_norm_gated' not present in model, enabling with '+rms_norm_gated' has no effect
+      1 WARNING [activation.py:441] [ROCm] PyTorch's native GELU with tanh approximation is unstable with torch.compile. For native implementation, fallback to 'none' approximation. The custom kernel implementation is unaffected.
+-- errors:

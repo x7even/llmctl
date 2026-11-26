@@ -1,0 +1,51 @@
+{
+ "id": "chatcmpl-81c5adcb7304c294",
+ "object": "chat.completion",
+ "created": 1795659132,
+ "model": "qwen3.6-35b-128k-nomtp",
+ "choices": [
+  {
+   "index": 0,
+   "message": {
+    "role": "assistant",
+    "content": null,
+    "refusal": null,
+    "audio": null,
+    "function_call": null,
+    "tool_calls": [
+     {
+      "id": "chatcmpl-tool-b5238a37b9ed6ebb",
+      "type": "function",
+      "function": {
+       "name": "get_weather",
+       "arguments": "{\"city\": \"Paris\"}"
+      }
+     }
+    ],
+    "reasoning": "Thinking Process:\n1.  **Identify User Intent**: The user wants to know the current weather in Paris, France.\n2.  **Check Available Tools**: I have `get_weather(city: string, unit: string)` available.\n3.  **Map Parameters**:\n    *   `city`: \"Paris\" (or \"Paris, France\")\n    *   `unit`: Not specified by user, so it's optional. I'll stick to the default or just omit it as per the schema (only `city` is required).\n4.  **Execute Tool Call**: Call `get_weather` with `city=\"Paris\"`.\n5.  **Formulate Response**: Present the weather data returned by the tool. Wait for the tool output first. I will generate the tool call now.\u2705\n   *   `get_weather(city=\"Paris\")` or `get_weather(city=\"Paris, France\")` -> I'll use \"Paris\".\n   *   Let's check the schema: `city` is required. `unit` is optional.\n   *   I will call the tool. \n   *   Proceed. \n   *   *Self-Correction/Verification during thought*: I should just call the tool directly. No extra fluff.\n   *   Tool: `get_weather`\n   *   Params: `{\"city\": \"Paris\"}`\n   *   Ready. \n   *   Output matches tool call format.\u2705\n   *   Proceeds. \n   *   [Output Generation] -> `get_weather(city=\"Paris\")` -> wait for response. \n   *   I will generate the tool call now. \n   *   *(Note: I'm acting as the model that generates the tool call.)* \n   *   Let's do it. \n   *   `print(tool_call)` -> done. \n   *   *Self-Correction/Refinement*: The prompt says \"Use the available tool.\" I will generate the exact function call.\n   *   `get_weather(city=\"Paris\")` is correct.\n   *   Proceeds. \n   *   [Output Generation] -> Tool Call. \n   *   *(Done.)*\n"
+   },
+   "logprobs": null,
+   "finish_reason": "tool_calls",
+   "stop_reason": null,
+   "token_ids": null,
+   "routed_experts": null,
+   "weight_versions": null
+  }
+ ],
+ "service_tier": null,
+ "system_fingerprint": "vllm-0.34.0-tp4-ep-48b2a3b8",
+ "usage": {
+  "prompt_tokens": 311,
+  "total_tokens": 799,
+  "completion_tokens": 488,
+  "completion_tokens_details": {
+   "reasoning_tokens": 460
+  }
+ },
+ "prompt_logprobs": null,
+ "prompt_token_ids": null,
+ "prompt_text": null,
+ "kv_transfer_params": null,
+ "ec_transfer_params": null,
+ "metrics": null
+}
