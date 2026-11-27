@@ -488,6 +488,174 @@ The 3 GiB ROCm floor is a three-week-old stopgap (vllm #65418, MI355 CI OOMs). O
 the env-var patch as drafted; one spawn per arm cannot clear a floor when failures are
 intermittent; next test is expandable segments at floors 3/2/1 GiB, several spawns each.
 
+## Phase 3c — margin tuning with repeated spawns (2026-11-27)
+
+**Result: with #69994 backported, a 1 GiB floor recovers part of the lost KV pool. It leaves
+about as much free VRAM as the stock config that ships now.** No arm failed in 15 spawns.
+
+| Profile | Stock pool, % of 0.26 | Floor 1 GiB + #69994, % of 0.26 |
+|---|---|---|
+| `qwen3.8-27b-code` | 81.2 % | 91.6 % |
+| `qwen3.6-35b-code` | 81.3 % | 90.9 % |
+| Flash-Next | 67 % | 94 % |
+
+That is about half the loss on the 27B and the 35B, and most of it on Flash-Next.
+
+Nothing is deployed: `config/models.yaml` is unchanged. The proposed lines are at the end of this
+section.
+
+### Step 0 — does expandable segments work on this torch?
+
+The image ships torch 2.13.0+rocm10.0.0 (HIP 7.15). I ran the PR's own scenario in the image on
+one GPU, with a 700 MiB cap set by `set_per_process_memory_fraction`, as 0.34 does. Script and
+output: `mech_test.py` and `mechanism-step0.txt`.
+
+| Mode | Result |
+|---|---|
+| stock | **OOM**: "Tried to allocate 300 MiB … 700 MiB allowed; 320 MiB allocated, 280 MiB reserved but unallocated" (1 retry, 1 OOM) |
+| runtime toggle under the cap (what #69994 does) | pass, `expandable_segments` live |
+| `PYTORCH_ALLOC_CONF=expandable_segments:True` | pass |
+| `PYTORCH_CUDA_ALLOC_CONF=…` | pass |
+| `PYTORCH_HIP_ALLOC_CONF=…` | pass |
+
+So all three env names work on this build, and so does the runtime toggle. The stock failure is
+exactly the one the PR describes: the cap counts memory that is reserved but unusable.
+
+**Every E arm below used the bind-mounted backport, not env-only.** The mounted file is
+`extensible_kv_cache.py` with the PR #69994 hunk (head `a150a16`, kept exactly in
+`config/patches/vllm-v0.34.0/pr69994-extensible-kv-cache-expandable-segments.diff`), the floor
+constant changed, and two log lines. Each spawn was gated on 4 floor lines and 4
+`expandable_segments live=True env=''` lines, one per rank. Every E spawn passed the gate.
+Env-only was not used because it would turn expandable segments on for the whole process,
+not just while the cap is set, which is a different configuration from the PR.
+
+### Step 1 — `qwen3.8-27b-code`, three fresh spawns per arm
+
+Every spawn ran:
+- a pool fill: 12 distinct ~120K prompts plus a 32-request burst, to ≥88 % KV usage;
+- tool-call and reasoning checks;
+- 4×8,192-token generations;
+- a 10-minute mixed soak at concurrency 8.
+
+Spawn 1 of each arm also ran the `medium-256` sweep and three depth cells. Host and torch memory
+were sampled every 2 s. `llmband` read **fast** on every spawn.
+
+| Arm | Spawns | Result | Pool (tokens) | % of 0.26.0 (1,097,728) | Min free VRAM, worst card | Torch reserved growth under load | Cap − peak reserved | Retries / OOMs | Request errors | Soak TTFT p99 s | serial / c8 / c32 tok/s (spawn 1) |
+|---|---|---|---|---|---|---|---|---|---|---|---|
+| S3 stock (floor 3) | 3 | 3 pass | 891,289 | 81.2 % | 3.27 GiB | +3.10 GiB | 1.15 GiB | 0 / 0 | 0 | 40.4 / 40.6 / 37.2 | 75.9 / 451.2 / 1018.6 |
+| E2 backport, floor 2 | 3 | 3 pass | 948,344 | 86.4 % | 4.17 GiB | +1.20 GiB | 2.05 GiB | 0 / 0 | 0 | 27.9 / 44.7 / 54.1 | 75.1 / 455.3 / 1002.4 |
+| E1 backport, floor 1 | 3 | 3 pass | 1,005,399 | 91.6 % | 3.18 GiB | +1.20 GiB | 1.06 GiB | 0 / 0 | 0 | 44.5 / 43.3 / 32.4 | 75.0 / 452.2 / 982.3 |
+| *F1 floor 1, no expandable (Phase 3a, 1 spawn)* | 1 | pass | 1,005,399 | 91.6 % | 2.22 GiB | +2.4–3.2 GiB | — | 1 / 0 | 0 | — | — |
+
+- **Expandable segments cut the allocator's growth under load from +3.10 to +1.20 GiB per
+  rank.** Live allocations grow the same ~0.6–0.75 GiB in every arm. The figures repeat to
+  0.01 GiB across all three spawns of each arm, so this is not noise.
+- With that growth gone, E2 ends with **more** free VRAM than stock (4.17 vs 3.27 GiB) on a
+  6 % larger pool. E1 ends level with stock (3.18 vs 3.27 GiB) on a 12.8 % larger pool, with
+  the same headroom under the cap (1.06 vs 1.15 GiB).
+- Without expandable segments (F1, Phase 3a), floor 1 left 2.22 GiB free and hit an allocator
+  retry. Expandable segments are what make floor 1 sound; the floor alone is not.
+- Memory outside torch's allocator did not grow on any spawn, as in Phase 3a.
+- Preemptions (0–12 per spawn) all came from the pool fill, which is built to cause them, and
+  appeared in every arm.
+- The soak's longest token gap was ~5.2 s on every arm: chunked-prefill pauses, not arm-specific.
+- Throughput is unchanged. The sweep cells are inside spawn-to-spawn spread. Prewarmed depth
+  cells (S3 / E2 / E1): 130K×1 74.7 / 80.2 / 70.8; 64K×4 170.7 / 169.7 / 170.9; 16K×8
+  309.2 / 323.8 / 309.4 tok/s.
+- Startup was 70–71 s on every spawn.
+
+**Arms not run:**
+- **E3** (expandable segments, floor 3) is dominated: the pool is fixed by the floor, so it
+  would give S3's pool with E2's slack. It answers no sizing question.
+- **F1** was not re-run. Phase 3a's single spawn above stands in for it, and it is already the
+  worse of the two floor-1 options.
+- **Fixed 18.67 GiB with expandable segments** was cut for budget. Note that the backport is
+  inert on the fixed `--kv-cache-memory-bytes` path, which sets no cap, so that arm would have
+  needed env-wide `PYTORCH_ALLOC_CONF`.
+
+### Step 2 — E1 against stock on Flash-Next and the 35B
+
+Argv was built from the live config, as `gen_argv.py` does. Flash-Next ran `llm-prestart` with
+its live arguments first. Flash-Next pools are compared with its 0.26-era nightly pool of
+589,824; the 35B with 0.26.0's 1,339,213.
+
+| Profile / arm | Spawns | Result | Pool (tokens) | % of 0.26 | Min free VRAM | Reserved growth | Cap − peak reserved | Retries / OOMs | Request errors | Preemptions | Soak TTFT p99 s | serial / c8 / c32 (spawn 1) |
+|---|---|---|---|---|---|---|---|---|---|---|---|---|
+| Flash-Next S3 | 2 | 2 pass | 393,619 / 395,232 | 66.7 / 67.0 % | 2.88 GiB | +2.60 GiB | 1.39 GiB | 0 / 0 | 0 | 13 / 12 | 51.4 / 60.6 | 60.6 / 247.6 / 446.5 |
+| Flash-Next E1 | 2 | 2 pass | 553,325 / 554,132 | 93.8 / 93.9 % | 2.40 GiB | +1.06 GiB | 0.92 GiB | 0 / 0 | 0 | 17 / 17 | 64.2 / 51.3 | 60.6 / 246.3 / 470.4 |
+| 35B-code S3 | 1 | pass | 1,088,989 | 81.3 % | 3.28 GiB | +3.29 GiB | 1.36 GiB | 0 / 0 | 0 | 0 | 9.8 | — |
+| 35B-code E1 | 1 | pass | 1,217,331 | 90.9 % | 3.89 GiB | +1.40 GiB | 2.06 GiB | 0 / 0 | 0 | 10 | 9.1 | — |
+
+- **Flash-Next gets back 160K tokens, +40 %.** That is most of its 36 % loss. Its full-length
+  (262K) concurrency goes from 1.50x to 2.11x.
+- The Flash-Next stock pool read 393–395K here, against 377,487 in Phase 2. That spawn was
+  taken on a different day, after a different page-cache state.
+- On Flash-Next, E1 leaves 0.5 GiB less free VRAM than stock (2.40 vs 2.88 GiB). This is the
+  one place E1 is tighter than the shipped config. Torch's headroom under the cap is still
+  0.92 GiB, with no retries.
+- The soak request counts differ between spawns (58–88 on Flash-Next) because the long/short
+  mix is random. Stock spawn 2 (25.3 tok/s) was as slow as E1 spawn 1 (24.1), so this is mix,
+  not arm.
+- **35B: +128K tokens (+11.8 %), and E1 leaves *more* free VRAM than stock** (3.89 vs 3.28
+  GiB).
+  - The torch cap fell only 1.19 GiB (16.51 → 15.32 GiB). So the pool gained ~1.2 GiB per
+    rank, not the full 2 GiB.
+  - The reason: at floor 1 the 35B's margin is set by the 0.75 × transient-peak term, not by
+    the floor.
+  - Meanwhile expandable segments removed 1.9 GiB of reserved growth, more than the pool took.
+  - One spawn per arm; the rest was cut for budget. The S3 fill
+  happened to preempt nothing and E1's preempted 10 times, with KV usage at ~1.0 on both; the
+  burst's timing decides that.
+
+### Recommendation
+
+**Adopt the backport with a 1 GiB floor on `qwen3.8-27b-code`, `qwen3.8-flash-next-vllm` and
+`qwen3.6-35b-code`.** On each it recovers 10–27 points of the 0.26 pool.
+No spawn had a failure or an allocator
+retry, and throughput did not change where it was measured: the 27B and Flash-Next sweeps and
+the 27B depth cells. The 35B was not swept. One memory cost: on Flash-Next it leaves 0.5 GiB
+less free VRAM than stock.
+
+**Confidence: moderate.** Memory behaviour repeats almost exactly from spawn to spawn, and every
+arm stays well clear of the cap. The thin part is the number of spawns. E1 ran
+on six spawns (3 on the 27B, 2 on Flash-Next, 1 on the 35B) with no failure.
+- Upstream saw 4–5 failures in 20 starts. Zero failures in six spawns cannot rule out a 1-in-5
+  failure rate: at that rate, about 1 run in 4 would still show zero.
+- Upstream's failures (#69471) were a Gemma 4 MTP test in upstream CI, at floor 2 without
+  expandable segments. That is a different model and allocator mode from this test.
+
+**Safer alternative: E2 (floor 2).** On the 27B it is strictly safer than stock on every
+measure (more free VRAM, twice the cap headroom) and still gives back +6.4 %. Take it if the
+1 GiB floor ever produces an OOM.
+
+Proposed change per profile (one extra mount; argv otherwise unchanged; `GPU_MAX_HW_QUEUES=1`
+and capture sizes untouched; no KV dtype change):
+
+```yaml
+-v __LLMSTACK_DIR__/config/patches/vllm-v0.34.0/extensible_kv_cache.py:/usr/local/lib/python3.12/dist-packages/vllm/v1/worker/extensible_kv_cache.py:ro
+```
+
+- `config/patches/vllm-v0.34.0/extensible_kv_cache.py` is the 0.34.0 file plus the #69994 hunk
+  plus `KV_CACHE_MARGIN_FLOOR_BYTES = 1 << 30`. It is the canary file minus its two log lines.
+  The full diff against 0.34.0 is `extensible_kv_cache-pr69994-floor1.diff`.
+- The mount is pinned to the 0.34.0 file. Drop it on the next image bump: #69994 or #69471 may
+  have landed by then, and an old file shadowing new code would be worse than either.
+- Do not set `PYTORCH_ALLOC_CONF` alongside it. The backport defers to any `expandable_segments`
+  value set in env, which would change what was tested.
+
+**Not tested:**
+- The gemma4 profiles. These are where upstream's failures are; leave them on stock until they
+  have their own spawns.
+- `qwen3.8-27b-think`, `-fast`, `qwen3.6-27b-code`, `qwen3.6-35b-128k-nomtp`, and the
+  Flash-Next `-text` clone.
+- The fixed-KV path with expandable segments.
+- Workloads longer than the 10-minute soak, and request mixes other than this harness's.
+- A second 35B spawn per arm (cut for budget).
+- Repeated cold starts at the rate upstream used (20 per arm).
+
+Data: `bench/results/kv-margin-v0.34.0-20261127/`. Each spawn directory has `spawnsum.json`,
+traces, argv, provenance and stress outputs. Logs are gitignored.
+
 ## Phase 4 — transition (2026-11-27)
 
 **Transition (branch `vllm-upgrade-2026-11`).** What the transition commit changed:
