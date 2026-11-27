@@ -409,7 +409,7 @@ The containers and config in this repo are built for the **AMD Radeon AI PRO R97
 
 | Backend | Requirement | Notes |
 |---------|-------------|-------|
-| **vLLM** | ROCm-compatible AMD GPU | Container image is `vllm/vllm-openai-rocm` (ROCm 7.2). Other AMD cards need `HSA_OVERRIDE_GFX_VERSION` set appropriately. NVIDIA requires a CUDA build of vLLM instead. |
+| **vLLM** | ROCm-compatible AMD GPU | Container image is `vllm/vllm-openai-rocm:v0.34.0` (ROCm 10.0 userspace). Other AMD cards need `HSA_OVERRIDE_GFX_VERSION` set appropriately. NVIDIA requires a CUDA build of vLLM instead. |
 | **llama-server (Vulkan)** | Any Vulkan-capable GPU | Works on AMD, NVIDIA, and Intel out of the box. No code changes needed — just point the `-m` path at your GGUF. |
 | **llama-swap** | None | CPU-only router; hardware-agnostic. |
 | **GPU monitoring** | AMD with `rocm-smi` | `llmpanel` displays `rocm-smi unavailable` gracefully on other platforms. |

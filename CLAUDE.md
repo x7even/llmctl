@@ -9,7 +9,7 @@ the stack more reliable, faster, or better documented than you found it.
 ## Hardware
 
 - **4× AMD Radeon AI PRO R9700** (gfx1201 / RDNA4), 32 GB VRAM each = **128 GB total**
-- ROCm 7.2, Vulkan/RADV available
+- Host ROCm 10.1 (amd-smi, 2026-11-27); the v0.34.0 vLLM image carries ROCm 10.0 userspace. Vulkan/RADV available
 - Models stored at `/mnt/models/llm/` (read-only mount inside containers)
 - Host OS: Linux, rootless podman, no sudo needed for containers
 
