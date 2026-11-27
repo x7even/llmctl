@@ -24,10 +24,18 @@
 # 2026-11 canary, every vLLM profile family started and passed on it
 # (docs/upgrade-plan-2026-11.md). Earlier records: docs/upgrade-plan-2026-07.md
 # (v0.26.0) and docs/upgrade-plan-2026-10.md (v0.31.0, held back).
-# Rollback: docker.io/vllm/vllm-openai-rocm:v0.26.0 is still in local storage (and
-# localhost/llmstack-vllm-rollback:v0.26.0 is the same image). Revert a profile by
-# swapping its ref back AND restoring --cudagraph-capture-sizes 1 2 4 8 16 32 on the
-# MTP profiles (0.26 has no request-size capture keys); Flash-Next's previous pin was
+# Policy (2026-11-27): v0.34.0 is the MINIMUM for all new work, canaries, profiles
+# and benchmarks. Older images are emergency rollback only.
+# KV margin patch: qwen3.8-27b-code, qwen3.8-flash-next-vllm and qwen3.6-35b-code
+# bind-mount config/patches/vllm-v0.34.0/extensible_kv_cache.py over the image's
+# module (PR #69994 backport + 1 GiB margin floor; upgrade-plan-2026-11 Phase 3c).
+# It is tied to v0.34.0: drop or re-validate it on any image bump
+# (tests/test_configure.py fails until you do).
+# Emergency rollback: docker.io/vllm/vllm-openai-rocm:v0.26.0 is still in local storage
+# (localhost/llmstack-vllm-rollback:v0.26.0 is the same image). Revert a profile by
+# swapping its ref back, REMOVING the KV margin patch mount (it would shadow a different
+# module), and restoring --cudagraph-capture-sizes 1 2 4 8 16 32 on the MTP profiles
+# (0.26 has no request-size capture keys); Flash-Next's previous pin was
 # nightly-8cbd5d03006c33185f402249ff2b448efd594986.
 # CLIENT NOTE: on 0.34 the reasoning text is only in `reasoning` (message and
 # stream delta); `reasoning_content` is gone. Clients must read `reasoning`.
@@ -97,6 +105,12 @@ models:
     # profile (see the header): the legacy flag resolves decode capture to {1,2,3,6}
     # under MTP on 0.34. On 0.34 TRITON_ATTN is auto-selected here and works with MTP:
     # 130K prewarmed decode 5.0 (0.26) -> 73-77 tok/s.
+    # KV margin patch (the config/patches/vllm-v0.34.0 mount): the v0.34.0 file plus the
+    # upstream PR #69994 hunk (expandable segments while the torch cap is set) and a 1 GiB
+    # margin floor in place of ROCm's 3 GiB. KV pool 891,289 stock -> 1,005,399 tokens,
+    # 3 spawns per arm, no failures (upgrade-plan-2026-11 Phase 3c, moderate confidence).
+    # Do not set PYTORCH_ALLOC_CONF alongside it. Drop it at the next image bump. If it
+    # ever OOMs, fall back to floor 2 (2 << 30 in the file), then to no mount (stock).
     cmd: |
       podman run --replace --rm
         --name llmstack-vllm-${MODEL_ID}
@@ -111,6 +125,7 @@ models:
         -v /mnt/models/llm:/models:ro
         -v __LLMSTACK_DIR__/.vllm-cache:/root/.cache/vllm
         -v __LLMSTACK_DIR__/.triton-cache:/root/.triton/cache
+        -v __LLMSTACK_DIR__/config/patches/vllm-v0.34.0/extensible_kv_cache.py:/usr/local/lib/python3.12/dist-packages/vllm/v1/worker/extensible_kv_cache.py:ro
         -e HSA_ENABLE_SDMA=0
         -e GPU_MAX_HW_QUEUES=1
         -e TORCH_BLAS_PREFER_HIPBLASLT=1
@@ -390,6 +405,11 @@ models:
     # llama-swap forwards the client's model string upstream; vLLM only
     # answers to --served-model-name, so without this every alias 404s.
     useModelName: qwen3.6-35b-code
+    # KV margin patch (the config/patches/vllm-v0.34.0 mount): the v0.34.0 file plus the
+    # upstream PR #69994 hunk and a 1 GiB margin floor in place of ROCm's 3 GiB. KV pool
+    # 1,088,989 stock -> 1,217,331 tokens, ONE spawn per arm and no throughput sweep on
+    # the patched arm (upgrade-plan-2026-11 Phase 3c). Do not set PYTORCH_ALLOC_CONF
+    # alongside it. Drop it at the next image bump. Fallback: floor 2, then no mount.
     cmd: |
       podman run --replace --rm
         --name llmstack-vllm-${MODEL_ID}
@@ -404,6 +424,7 @@ models:
         -v /mnt/models/llm:/models:ro
         -v __LLMSTACK_DIR__/.vllm-cache:/root/.cache/vllm
         -v __LLMSTACK_DIR__/.triton-cache:/root/.triton/cache
+        -v __LLMSTACK_DIR__/config/patches/vllm-v0.34.0/extensible_kv_cache.py:/usr/local/lib/python3.12/dist-packages/vllm/v1/worker/extensible_kv_cache.py:ro
         -e HSA_ENABLE_SDMA=0
         -e GPU_MAX_HW_QUEUES=1
         -e TORCH_BLAS_PREFER_HIPBLASLT=1
@@ -708,6 +729,12 @@ models:
     # llama-swap forwards the client's model string upstream; vLLM only
     # answers to --served-model-name, so without this every alias 404s.
     useModelName: qwen3.8-flash-next-vllm
+    # KV margin patch (the config/patches/vllm-v0.34.0 mount): the v0.34.0 file plus the
+    # upstream PR #69994 hunk and a 1 GiB margin floor in place of ROCm's 3 GiB. KV pool
+    # ~394K stock -> ~553K tokens, 2 spawns per arm, no failures; it leaves 0.5 GiB less
+    # free VRAM than stock (2.40 vs 2.88 GiB) (upgrade-plan-2026-11 Phase 3c). Not on the
+    # -text clone (untested). Do not set PYTORCH_ALLOC_CONF alongside it. Drop it at the
+    # next image bump. Fallback: floor 2, then no mount.
     cmd: |
       __LLMSTACK_DIR__/scripts/llm-prestart
         --need-free-gib 80
@@ -727,6 +754,7 @@ models:
         -v /mnt/models/llm:/models:ro
         -v __LLMSTACK_DIR__/.vllm-cache:/root/.cache/vllm
         -v __LLMSTACK_DIR__/.triton-cache:/root/.triton/cache
+        -v __LLMSTACK_DIR__/config/patches/vllm-v0.34.0/extensible_kv_cache.py:/usr/local/lib/python3.12/dist-packages/vllm/v1/worker/extensible_kv_cache.py:ro
         -e HSA_ENABLE_SDMA=0
         -e TORCH_BLAS_PREFER_HIPBLASLT=1
         -e VLLM_ROCM_USE_AITER=0
@@ -915,7 +943,7 @@ models:
   # ─── vLLM: Gemma 4 26B-A4B BF16 — high-concurrency agent serving ────────
   # Best for: concurrent agent workloads hitting Gemma 4 in parallel
   # Architecture: MoE, 26B total / 4B active params → fast decode at high concurrency
-  # Backend: vLLM via pinned AMD official image (see header pin) (ROCm 7.2)
+  # Backend: vLLM via pinned AMD official image (see header pin; v0.34.0 carries ROCm 10.0 userspace)
   # VRAM:    ~52 GB BF16 ÷ 4 GPUs = ~13 GB each; ~76 GB free for KV cache
   # Note:    No --reasoning-parser (Gemma 4 IT has no thinking mode by default)
   #          No --kv-cache-dtype fp8 (BF16 model; leave KV at default bf16)
@@ -982,12 +1010,15 @@ models:
   #   Layer types: 25 sliding_attention (window=1024) + 5 full_attention (every 6th)
   #   At 20K context, reads only ~21% of KV vs a full-attention model of the same
   #   size — the 25 sliding layers always cost 1024 tokens regardless of ctx length
-  # Backend: vLLM via pinned AMD official image (see header pin) (ROCm 7.2)
+  # Backend: vLLM via pinned AMD official image (see header pin; v0.34.0 carries ROCm 10.0 userspace)
   # VRAM:    ~26 GB FP8 weights + BF16 KV cache across 4 GPUs
   # Source:  RedHatAI/gemma-4-26B-A4B-it-FP8-Dynamic (weights+activations FP8)
   # Note:    No --kv-cache-dtype fp8 (BF16 KV avoids calibration; ~2x VRAM per KV token)
   #          No --reasoning-parser (no thinking mode); --tool-call-parser gemma4
   #          No --enable-expert-parallel (not confirmed supported for Gemma 4 MoE)
+  #          -e GPU_MAX_HW_QUEUES=1 added 2026-11-27 so every vLLM profile carries
+  #          mandatory item 5. Unmeasured on this profile; the sibling gemma4-26b-a4b
+  #          gained 2.27x serial / 1.71x conc=8 from it (2026-10-19). Not canaried on 0.34.
   gemma4-26b-fp8:
     name: "Gemma 4 26B-A4B (FP8 weights, BF16 KV)"
     ttl: 43200
@@ -1018,6 +1049,7 @@ models:
         -v __LLMSTACK_DIR__/.vllm-cache:/root/.cache/vllm
         -v __LLMSTACK_DIR__/.triton-cache:/root/.triton/cache
         -e HSA_ENABLE_SDMA=0
+        -e GPU_MAX_HW_QUEUES=1
         -e TORCH_BLAS_PREFER_HIPBLASLT=1
         --entrypoint=""
         docker.io/vllm/vllm-openai-rocm:v0.34.0

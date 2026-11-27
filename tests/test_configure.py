@@ -653,6 +653,96 @@ def test_every_vllm_profile_pins_one_image_and_the_right_capture_form():
     assert not problems, "; ".join(problems)
 
 
+def test_every_vllm_profile_sets_gpu_max_hw_queues_1():
+    """Mandatory item 5 on every live vLLM profile, not only the commented template.
+
+    Without `-e GPU_MAX_HW_QUEUES=1` a gfx1201 container can draw the slow decode band
+    and serve at about half speed with nothing in the logs. On 0.34 leaving it unset or
+    at 2 gave the slow band, -35% serial (docs/upgrade-plan-2026-11.md, Phase 1 A4).
+    `gemma4-26b-fp8` lacked it until 2026-11-27 while the docs said every profile had it.
+    """
+    import shlex
+    import yaml
+
+    models = yaml.safe_load((REPO / "config" / "models.yaml").read_text())["models"]
+    missing = []
+    for name, prof in models.items():
+        cmd = prof.get("cmd", "")
+        if "vllm serve" not in cmd:
+            continue
+        toks = shlex.split(cmd.replace("\n", " "))
+        pairs = {(a, b) for a, b in zip(toks, toks[1:])}
+        if ("-e", "GPU_MAX_HW_QUEUES=1") not in pairs:
+            missing.append(name)
+    assert not missing, f"vLLM profiles without -e GPU_MAX_HW_QUEUES=1: {missing}"
+
+
+def test_vllm_source_patches_exist_and_match_the_pinned_image():
+    """A bind-mounted vLLM source file is tied to the exact image it was cut from.
+
+    `config/patches/vllm-vX.Y.Z/<file>` replaces a module inside the image (today the
+    KV margin patch: v0.34.0 `extensible_kv_cache.py` + upstream PR #69994 + a 1 GiB
+    floor, docs/upgrade-plan-2026-11.md Phase 3c). Mounted over a different image it
+    would shadow newer code with old, which is worse than either. So:
+      - the mounted file must exist in the repo (a missing source makes podman create an
+        empty directory and the container fail to import vLLM);
+      - the profile's image tag must equal the version in the patch directory name, so an
+        image bump fails here until the patch is dropped or re-validated;
+      - no PYTORCH_*ALLOC_CONF env alongside it: the backport defers to any
+        expandable_segments value in env, which would change what was tested.
+    """
+    import shlex
+    import yaml
+
+    models = yaml.safe_load((REPO / "config" / "models.yaml").read_text())["models"]
+    problems, seen = [], 0
+    for name, prof in models.items():
+        cmd = prof.get("cmd", "")
+        toks = shlex.split(cmd.replace("\n", " "))
+        images = [t for t in toks if t.startswith("docker.io/vllm/vllm-openai-rocm:")]
+        for a, b in zip(toks, toks[1:]):
+            if a != "-v":
+                continue
+            m = re.match(r"__LLMSTACK_DIR__/(config/patches/vllm-(v[0-9][^/]*)/[^:]+):", b)
+            if not m:
+                continue
+            seen += 1
+            rel, ver = m.group(1), m.group(2)
+            if not (REPO / rel).is_file():
+                problems.append(f"{name}: mounted patch {rel} is not in the repo")
+            if images != [f"docker.io/vllm/vllm-openai-rocm:{ver}"]:
+                problems.append(f"{name}: patch from vllm-{ver} mounted on image {images}; "
+                                "drop or re-validate the patch for the new image")
+            if not b.endswith(":ro"):
+                problems.append(f"{name}: patch mount {b} is not read-only")
+            alloc = [t for t in toks if re.match(r"PYTORCH_(HIP_|CUDA_)?ALLOC_CONF=", t)]
+            if alloc:
+                problems.append(f"{name}: {alloc} set alongside the KV margin patch")
+    assert seen, "no profile mounts a config/patches file; update or remove this test"
+    assert not problems, "; ".join(problems)
+
+
+def test_kv_margin_patch_is_on_exactly_the_validated_profiles():
+    """Phase 3c validated the patch on three profiles only. gemma4 stays stock on
+    purpose (upstream's failures, #69471, were a Gemma 4 test); the rest are untested.
+    Widening the set should be a deliberate edit here, with spawns behind it."""
+    import yaml
+
+    models = yaml.safe_load((REPO / "config" / "models.yaml").read_text())["models"]
+    got = sorted(n for n, p in models.items()
+                 if "config/patches/vllm-v0.34.0/extensible_kv_cache.py" in p.get("cmd", ""))
+    assert got == ["qwen3.6-35b-code", "qwen3.8-27b-code", "qwen3.8-flash-next-vllm"], got
+
+
+def test_configure_substitutes_the_patch_mount_placeholder():
+    """scripts/configure must turn the patch mount into an absolute host path too."""
+    src = (REPO / "config" / "models.yaml").read_text()
+    out, _ = cfg.patch(src, _hw(4), "/opt/llmstack")
+    assert "__LLMSTACK_DIR__" not in out
+    assert ("-v /opt/llmstack/config/patches/vllm-v0.34.0/extensible_kv_cache.py:"
+            "/usr/local/lib/python3.12/dist-packages/vllm/v1/worker/extensible_kv_cache.py:ro") in out
+
+
 def test_shipped_config_ships_placeholders_not_a_configured_path():
     """The *committed* models.yaml must carry __LLMSTACK_DIR__, never a real path.
 
