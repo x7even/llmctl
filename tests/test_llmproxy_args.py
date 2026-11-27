@@ -124,6 +124,20 @@ def test_strip_args_only_chunk_suppressed():
     assert arg_buf == {0: '{"' + '"filePath": "/tmp/x"}'}
 
 
+def test_strip_args_chunk_carrying_reasoning_is_kept():
+    """vLLM 0.34 names the thinking field `reasoning` (older: `reasoning_content`).
+    A chunk whose args are stripped but which also carries reasoning text must still reach
+    the client, under either name."""
+    for field in ("reasoning", "reasoning_content"):
+        data = json.loads(_chunk(idx=0, args_frag='{"a": 1}')[6:])
+        data["choices"][0]["delta"][field] = "thinking..."
+        arg_buf = {}
+        out, _, _ = _strip_args_from_line(_sse(data), arg_buf)
+        assert out is not None, f"chunk with {field} was suppressed"
+        assert json.loads(out[6:])["choices"][0]["delta"][field] == "thinking..."
+        assert arg_buf == {0: '{"a": 1}'}
+
+
 def test_strip_finish_chunk_detected():
     line = _finish_chunk()
     arg_buf = {}

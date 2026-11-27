@@ -245,7 +245,7 @@ func unloadAll(baseURL string) error {
 }
 
 func swapModel(baseURL, profile string) error {
-	client := &http.Client{Timeout: 2100 * time.Second} // matches llmctl swap timeout; safety ceiling only — v0.26.0 first-boot typically ~2-3 min
+	client := &http.Client{Timeout: 2100 * time.Second} // matches llmctl swap timeout; safety ceiling only — measured first boots ~2-4 min (v0.26.0 and v0.34.0)
 	body := strings.NewReader(fmt.Sprintf(
 		`{"model":%q,"messages":[{"role":"user","content":"hi"}],"max_tokens":1}`,
 		profile,

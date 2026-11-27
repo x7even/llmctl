@@ -59,6 +59,9 @@ MEM_SPLIT_RE = re.compile(
     r"Actual usage is ([\d.]+) GiB for weight, ([\d.]+) GiB for peak activation, "
     r"([\d.]+) GiB for non-torch memory, and ([\d.]+) GiB for CUDAGraph memory")
 REQUESTED_CAPTURE_RE = re.compile(r"cudagraph_capture_sizes': \[([^]]*)\]")
+# vLLM >= 0.34 (Model Runner V2) captures decode graphs by request count and logs that list
+# separately; under MTP the legacy key above is then empty or None. Prefer this one.
+DECODE_CAPTURE_RE = re.compile(r"decode_cudagraph_capture_request_sizes': \[([^]]*)\]")
 # vLLM's own note that cudagraph memory profiling has eaten into the KV budget.
 EFFECTIVE_UTIL_RE = re.compile(
     r"--gpu-memory-utilization=([\d.]+) is equivalent to --gpu-memory-utilization=([\d.]+)")
@@ -203,7 +206,9 @@ def parse_startup(log):
     graphs = GRAPHS_RE.findall(log)
     cost = GRAPH_COST_RE.search(log)
     split = MEM_SPLIT_RE.search(log)
-    req_sizes = REQUESTED_CAPTURE_RE.search(log)
+    # First non-empty list wins: a 0.34 log prints an empty legacy list before the resolved one.
+    req_sizes = next((m for m in DECODE_CAPTURE_RE.finditer(log) if m.group(1).strip()), None) \
+        or next((m for m in REQUESTED_CAPTURE_RE.finditer(log) if m.group(1).strip()), None)
     util = EFFECTIVE_UTIL_RE.search(log)
     return {
         "kv_cache_tokens": int(kv.group(1).replace(",", "")) if kv else None,

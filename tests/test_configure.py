@@ -43,7 +43,7 @@ models:
       podman run --rm
         -v __LLMSTACK_DIR__/.vllm-cache:/root/.cache/vllm
         --entrypoint=""
-        docker.io/vllm/vllm-openai-rocm:v0.26.0
+        docker.io/vllm/vllm-openai-rocm:v0.34.0
         vllm serve /models/x
         --tensor-parallel-size 4
         --enable-expert-parallel
@@ -611,6 +611,45 @@ def test_every_vllm_profile_sets_use_model_name_to_its_served_model_name():
             problems.append(f"{name}: no useModelName (aliases would 404)")
         elif got != served.group(1):
             problems.append(f"{name}: useModelName={got!r} != --served-model-name={served.group(1)!r}")
+    assert not problems, "; ".join(problems)
+
+
+def test_every_vllm_profile_pins_one_image_and_the_right_capture_form():
+    """Mandatory item 2 as it reads on vLLM 0.34, plus the single-pin policy.
+
+    On 0.34 (Model Runner V2) the legacy `--cudagraph-capture-sizes 1 2 4 8 16 32` resolves
+    as written without speculative decoding, but under MTP it captures decode graphs for
+    request sizes {1,2,3,6} only (docs/upgrade-plan-2026-11.md, Phase 1). So an MTP profile
+    must carry the explicit `--compilation-config` with `decode_cudagraph_capture_request_sizes`
+    and must not also carry the legacy flag; every other profile keeps the legacy flag.
+    """
+    import json
+    import shlex
+    import yaml
+
+    models = yaml.safe_load((REPO / "config" / "models.yaml").read_text())["models"]
+    images, problems = set(), []
+    for name, prof in models.items():
+        cmd = prof.get("cmd", "")
+        if "vllm serve" not in cmd:
+            continue
+        toks = shlex.split(cmd.replace("\n", " "))
+        images.update(t for t in toks if t.startswith("docker.io/vllm/vllm-openai-rocm:"))
+        mtp = "--speculative-config" in toks
+        legacy = "--cudagraph-capture-sizes" in toks
+        comp = toks[toks.index("--compilation-config") + 1] if "--compilation-config" in toks else None
+        if mtp:
+            if legacy:
+                problems.append(f"{name}: MTP profile still passes --cudagraph-capture-sizes")
+            if comp is None:
+                problems.append(f"{name}: MTP profile has no --compilation-config")
+                continue
+            cfg = json.loads(comp)  # must be one valid JSON argv token
+            if not cfg.get("decode_cudagraph_capture_request_sizes"):
+                problems.append(f"{name}: --compilation-config lacks decode request sizes")
+        elif not legacy and comp is None:
+            problems.append(f"{name}: no explicit capture sizes (18+ min startup)")
+    assert len(images) == 1, f"vLLM profiles name {len(images)} images: {sorted(images)}"
     assert not problems, "; ".join(problems)
 
 

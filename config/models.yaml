@@ -17,21 +17,33 @@
 #   llmstack-llama-<profile>  ← llama-server containers  (GGUF)
 #
 # Image pinning: every vLLM profile uses the same pinned tag
-#   docker.io/vllm/vllm-openai-rocm:v0.26.0
+#   docker.io/vllm/vllm-openai-rocm:v0.34.0
+# Flash-Next included (it was on a nightly-8cbd5d0 pin before 2026-11).
 # Never reference the moving :latest tag. Version bumps happen deliberately —
-# canary first, then update all refs at once (validation record and bench
-# results: docs/upgrade-plan-2026-07.md). v0.31.0 was canaried in 2026-10 and held
-# back — conc=8/16 decode is 6-9% below v0.26.0 (docs/upgrade-plan-2026-10.md).
-# Rollback anchor: localhost/llmstack-vllm-rollback:v0.26.0 (same image as the v0.26.0
-# pin, kept under a local tag so it survives a registry pull) — revert a profile by
-# swapping its ref back. Older anchors (v0.22.1-baseline, v0.24.0) were pruned in 2026-10.
-# CLIENT NOTE: vLLM 0.24.0 renames the chat reasoning field from
-# message.reasoning_content to message.reasoning — adapt clients that parse it.
+# canary first, then update all refs at once. v0.34.0 replaced v0.26.0 after the
+# 2026-11 canary, every vLLM profile family started and passed on it
+# (docs/upgrade-plan-2026-11.md). Earlier records: docs/upgrade-plan-2026-07.md
+# (v0.26.0) and docs/upgrade-plan-2026-10.md (v0.31.0, held back).
+# Rollback: docker.io/vllm/vllm-openai-rocm:v0.26.0 is still in local storage (and
+# localhost/llmstack-vllm-rollback:v0.26.0 is the same image). Revert a profile by
+# swapping its ref back AND restoring --cudagraph-capture-sizes 1 2 4 8 16 32 on the
+# MTP profiles (0.26 has no request-size capture keys); Flash-Next's previous pin was
+# nightly-8cbd5d03006c33185f402249ff2b448efd594986.
+# CLIENT NOTE: on 0.34 the reasoning text is only in `reasoning` (message and
+# stream delta); `reasoning_content` is gone. Clients must read `reasoning`.
+#
+# Capture sizes on 0.34 (Model Runner V2): profiles WITHOUT speculative decoding keep
+# --cudagraph-capture-sizes, which resolves as written. Profiles WITH MTP must use
+#   --compilation-config '{"prefill_cudagraph_capture_token_sizes":[...],"decode_cudagraph_capture_request_sizes":[...]}'
+# because under MTP the legacy flag resolves decode capture to request sizes {1,2,3,6}
+# only; the explicit form gives [1,2,4,8,16,32] (+3.9% conc=8, +2% conc=4 on
+# qwen3.8-27b-code, docs/upgrade-plan-2026-11.md Phase 1). Never pass both flags.
 
 healthCheckTimeout: 2100  # seconds; conservative ceiling, not the expected wait — measured
 # v0.26.0 first boots (4 profiles, 2026-07-27) all landed at ~2-3 min (see CLAUDE.md
-# "vLLM cold start"). Kept high as headroom for profiles not covered by that measurement
-# (dense 27B, long contexts). Warm starts ~2-3 min.
+# "vLLM cold start"); v0.34.0 canary startups were 171-217 s with a cold compile cache
+# (the 0.34 compile-cache key changed, so the first start after the bump recompiles).
+# Kept high as headroom. Warm starts 70-147 s (qwen3.8-27b-code on 0.34, Phase 1).
 startPort: 9100           # llama-swap assigns backends ports starting here
 globalTTL: 0              # 0 = never auto-unload (set per-model below)
 
@@ -79,7 +91,12 @@ models:
     # conc=8 320.9 -> 357.6, conc=16 460.5 -> 536.8, i.e. within 4% of the stored
     # baseline at every level. A fixed per-step tax, so it amortises with batch size
     # (1.89x serial, 1.11x at conc=8) and costs nothing measurable either way.
-    # See docs/rdna4-decode-bands.md.
+    # See docs/rdna4-decode-bands.md. On 0.34 the same rule held: without the flag
+    # (or with =2) the spawn drew the slow band, -35% serial (upgrade-plan-2026-11).
+    # --compilation-config replaces --cudagraph-capture-sizes on this and every MTP
+    # profile (see the header): the legacy flag resolves decode capture to {1,2,3,6}
+    # under MTP on 0.34. On 0.34 TRITON_ATTN is auto-selected here and works with MTP:
+    # 130K prewarmed decode 5.0 (0.26) -> 73-77 tok/s.
     cmd: |
       podman run --replace --rm
         --name llmstack-vllm-${MODEL_ID}
@@ -98,7 +115,7 @@ models:
         -e GPU_MAX_HW_QUEUES=1
         -e TORCH_BLAS_PREFER_HIPBLASLT=1
         --entrypoint=""
-        docker.io/vllm/vllm-openai-rocm:v0.26.0
+        docker.io/vllm/vllm-openai-rocm:v0.34.0
         vllm serve /models/Qwen3.8-27B-FP8
         --host 127.0.0.1
         --port ${PORT}
@@ -117,7 +134,7 @@ models:
         --tool-call-parser qwen3_xml
         --default-chat-template-kwargs '{"reasoning_effort": "medium"}'
         --speculative-config '{"method": "mtp", "num_speculative_tokens": 2}'
-        --cudagraph-capture-sizes 1 2 4 8 16 32
+        --compilation-config '{"prefill_cudagraph_capture_token_sizes":[1,2,4,8,16,32],"decode_cudagraph_capture_request_sizes":[1,2,4,8,16,32]}'
     cmdStop: podman stop llmstack-vllm-${MODEL_ID}
 
   # ─── vLLM: Qwen3.8-27B FP8 — thinking, no MTP (parallel agent fleets) ────
@@ -156,7 +173,8 @@ models:
     #
     # The 3D path also closes if num_seqs exceeds the threshold derived from
     # --cudagraph-capture-sizes (here: 32). Do NOT raise --max-num-seqs above 32
-    # without re-measuring -- the path would silently switch off.
+    # without re-measuring -- the path would silently switch off. (0.26 source; on 0.34
+    # the release review suggests the threshold may be ~16 with 16-bit KV -- untested.)
     # -e GPU_MAX_HW_QUEUES=1 in cmd is load-bearing on gfx1201, not a tuning knob.
     # Without it this profile can come up in a slow decode band -- same kernels, same
     # compiled graphs, ~15 us of idle between small kernel launches -- and serve at
@@ -184,7 +202,7 @@ models:
         -e GPU_MAX_HW_QUEUES=1
         -e TORCH_BLAS_PREFER_HIPBLASLT=1
         --entrypoint=""
-        docker.io/vllm/vllm-openai-rocm:v0.26.0
+        docker.io/vllm/vllm-openai-rocm:v0.34.0
         vllm serve /models/Qwen3.8-27B-FP8
         --host 127.0.0.1
         --port ${PORT}
@@ -249,7 +267,7 @@ models:
         -e GPU_MAX_HW_QUEUES=1
         -e TORCH_BLAS_PREFER_HIPBLASLT=1
         --entrypoint=""
-        docker.io/vllm/vllm-openai-rocm:v0.26.0
+        docker.io/vllm/vllm-openai-rocm:v0.34.0
         vllm serve /models/Qwen3.8-27B-FP8
         --host 127.0.0.1
         --port ${PORT}
@@ -268,7 +286,7 @@ models:
         --tool-call-parser qwen3_xml
         --default-chat-template-kwargs '{"enable_thinking": false}'
         --speculative-config '{"method": "mtp", "num_speculative_tokens": 2}'
-        --cudagraph-capture-sizes 1 2 4 8 16 32
+        --compilation-config '{"prefill_cudagraph_capture_token_sizes":[1,2,4,8,16,32],"decode_cudagraph_capture_request_sizes":[1,2,4,8,16,32]}'
     cmdStop: podman stop llmstack-vllm-${MODEL_ID}
 
   # ─── vLLM: Qwen3.6-27B FP8 — previous-generation dense 27B, MTP ──────────
@@ -325,7 +343,7 @@ models:
         -e GPU_MAX_HW_QUEUES=1
         -e TORCH_BLAS_PREFER_HIPBLASLT=1
         --entrypoint=""
-        docker.io/vllm/vllm-openai-rocm:v0.26.0
+        docker.io/vllm/vllm-openai-rocm:v0.34.0
         vllm serve /models/Qwen3.6-27B-FP8
         --host 127.0.0.1
         --port ${PORT}
@@ -343,7 +361,7 @@ models:
         --enable-auto-tool-choice
         --tool-call-parser qwen3_xml
         --speculative-config '{"method": "mtp", "num_speculative_tokens": 2}'
-        --cudagraph-capture-sizes 1 2 4 8 16 32
+        --compilation-config '{"prefill_cudagraph_capture_token_sizes":[1,2,4,8,16,32],"decode_cudagraph_capture_request_sizes":[1,2,4,8,16,32]}'
     cmdStop: podman stop llmstack-vllm-${MODEL_ID}
 
   # ─── vLLM: Qwen3.6-35B-A3B FP8 — previous generation, MTP + thinking ────
@@ -390,7 +408,7 @@ models:
         -e GPU_MAX_HW_QUEUES=1
         -e TORCH_BLAS_PREFER_HIPBLASLT=1
         --entrypoint=""
-        docker.io/vllm/vllm-openai-rocm:v0.26.0
+        docker.io/vllm/vllm-openai-rocm:v0.34.0
         vllm serve /models/Qwen3.6-35B-A3B-FP8
         --host 127.0.0.1
         --port ${PORT}
@@ -409,7 +427,7 @@ models:
         --enable-auto-tool-choice
         --tool-call-parser qwen3_xml
         --speculative-config '{"method": "mtp", "num_speculative_tokens": 2}'
-        --cudagraph-capture-sizes 1 2 4 8 16 32
+        --compilation-config '{"prefill_cudagraph_capture_token_sizes":[1,2,4,8,16,32],"decode_cudagraph_capture_request_sizes":[1,2,4,8,16,32]}'
     cmdStop: podman stop llmstack-vllm-${MODEL_ID}
 
   # ─── vLLM: Qwen3.6-35B-A3B FP8 — 128K, no MTP (high-concurrency serving) ───
@@ -454,7 +472,8 @@ models:
     # 35b-code's advantage at short prompts is MTP, not its attention backend.
     #
     # --max-num-seqs must stay at 32: above the nearest --cudagraph-capture-sizes
-    # entry the 3D path closes silently, with nothing in the log.
+    # entry the 3D path closes silently, with nothing in the log. (0.26 source; on 0.34
+    # the threshold may be ~16 with 16-bit KV -- untested, docs/upgrade-plan-2026-11.md.)
     # llama-swap forwards the client's model string upstream; vLLM only
     # answers to --served-model-name, so without this every alias 404s.
     useModelName: qwen3.6-35b-128k-nomtp
@@ -476,7 +495,7 @@ models:
         -e GPU_MAX_HW_QUEUES=1
         -e TORCH_BLAS_PREFER_HIPBLASLT=1
         --entrypoint=""
-        docker.io/vllm/vllm-openai-rocm:v0.26.0
+        docker.io/vllm/vllm-openai-rocm:v0.34.0
         vllm serve /models/Qwen3.6-35B-A3B-FP8
         --host 127.0.0.1
         --port ${PORT}
@@ -540,7 +559,7 @@ models:
         -e GPU_MAX_HW_QUEUES=1
         -e TORCH_BLAS_PREFER_HIPBLASLT=1
         --entrypoint=""
-        docker.io/vllm/vllm-openai-rocm:v0.26.0
+        docker.io/vllm/vllm-openai-rocm:v0.34.0
         vllm serve /models/Qwen3.6-35B-A3B-FP8
         --host 127.0.0.1
         --port ${PORT}
@@ -713,7 +732,7 @@ models:
         -e VLLM_ROCM_USE_AITER=0
         -e GPU_MAX_HW_QUEUES=1
         --entrypoint=""
-        docker.io/vllm/vllm-openai-rocm:nightly-8cbd5d03006c33185f402249ff2b448efd594986
+        docker.io/vllm/vllm-openai-rocm:v0.34.0
         vllm serve /models/albucino/Qwen3.8-Flash-Next-W4A16-FP8PLE
         --host 127.0.0.1
         --port ${PORT}
@@ -784,7 +803,7 @@ models:
         -e VLLM_ROCM_USE_AITER=0
         -e GPU_MAX_HW_QUEUES=1
         --entrypoint=""
-        docker.io/vllm/vllm-openai-rocm:nightly-8cbd5d03006c33185f402249ff2b448efd594986
+        docker.io/vllm/vllm-openai-rocm:v0.34.0
         vllm serve /models/albucino/Qwen3.8-Flash-Next-W4A16-FP8PLE
         --host 127.0.0.1
         --port ${PORT}
@@ -939,7 +958,7 @@ models:
         -e GPU_MAX_HW_QUEUES=1
         -e TORCH_BLAS_PREFER_HIPBLASLT=1
         --entrypoint=""
-        docker.io/vllm/vllm-openai-rocm:v0.26.0
+        docker.io/vllm/vllm-openai-rocm:v0.34.0
         vllm serve /models/google/gemma-4-26B-A4B-it
         --host 127.0.0.1
         --port ${PORT}
@@ -1001,7 +1020,7 @@ models:
         -e HSA_ENABLE_SDMA=0
         -e TORCH_BLAS_PREFER_HIPBLASLT=1
         --entrypoint=""
-        docker.io/vllm/vllm-openai-rocm:v0.26.0
+        docker.io/vllm/vllm-openai-rocm:v0.34.0
         vllm serve /models/RedHatAI/gemma-4-26B-A4B-it-FP8-Dynamic
         --host 127.0.0.1
         --port ${PORT}
@@ -1035,10 +1054,13 @@ models:
 # #
 # #   (1) --entrypoint="" nullifies the AMD image's broken ENTRYPOINT; then invoke
 # #       "vllm serve" explicitly.
-# #   (2) --cudagraph-capture-sizes: without it vLLM enumerates ~2000+ shapes and the
-# #       first start takes 18+ minutes. Never reach for --enforce-eager instead -- it
-# #       costs 10-20% throughput permanently. The listed values are measured; see
-# #       docs/rdna4-decode-bands.md before changing them.
+# #   (2) explicit CUDA-graph capture sizes: without them vLLM enumerates ~2000+ shapes
+# #       and the first start takes 18+ minutes. Never reach for --enforce-eager instead
+# #       -- it costs 10-20% throughput permanently. No speculative decoding: use
+# #       --cudagraph-capture-sizes 1 2 4 8 16 32 (as below). With MTP, replace that line
+# #       with --compilation-config '{"prefill_cudagraph_capture_token_sizes":[1,2,4,8,16,32],"decode_cudagraph_capture_request_sizes":[1,2,4,8,16,32]}'
+# #       -- on 0.34 the legacy flag under MTP captures decode request sizes {1,2,3,6}
+# #       only (docs/upgrade-plan-2026-11.md Phase 1). Never pass both.
 # #   (3) both compile-cache mounts: without them torch.compile and Triton re-run on
 # #       every start (~14 min). __LLMSTACK_DIR__ is a placeholder -- run
 # #       scripts/configure to write the real path into your working copy, and never
@@ -1098,7 +1120,7 @@ models:
 #       -e GPU_MAX_HW_QUEUES=1
 #       -e TORCH_BLAS_PREFER_HIPBLASLT=1
 #       --entrypoint=""
-#       docker.io/vllm/vllm-openai-rocm:v0.26.0
+#       docker.io/vllm/vllm-openai-rocm:v0.34.0
 #       vllm serve /models/<local-model-dir>
 #       --host 127.0.0.1
 #       --port ${PORT}

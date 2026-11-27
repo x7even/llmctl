@@ -59,7 +59,7 @@ import time
 
 SYS_DEV = "/sys/bus/pci/devices"
 DRM_ROOT = "/sys/class/drm"
-DEFAULT_IMAGE = "docker.io/vllm/vllm-openai-rocm:v0.26.0"
+DEFAULT_IMAGE = "docker.io/vllm/vllm-openai-rocm:v0.34.0"
 
 # Keep copies in flight on every visible device so all chains are loaded at once. Doing every
 # GPU together also avoids having to map HIP device indices onto PCI addresses, which do not
