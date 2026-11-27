@@ -273,7 +273,7 @@ See `tui/CLAUDE.md` for architecture and coding conventions.
 
 | Profile | Backend | VRAM | Active params | Notes |
 |---------|---------|------|--------------|-------|
-| `qwen3.8-27b-code` ✓ | vLLM + MTP | ~31 GB + KV | 27B (dense) | **Default.** Thinking (medium effort); 131K ctx; 350 tok/s @ conc=8, 843 @ conc=32 (v0.26); **v0.34: 456 @ conc=8, 1006 @ conc=32, 73-77 at 130K** |
+| `qwen3.8-27b-code` ✓ | vLLM + MTP | ~31 GB + KV | 27B (dense) | **Default.** Thinking (medium effort); 131K ctx; 350 tok/s @ conc=8, 843 @ conc=32 (v0.26); **v0.34: 456 @ conc=8, 991 @ conc=32, 73-77 at 130K** |
 | `qwen3.8-27b-think` ✓ | vLLM + TRITON_ATTN | ~31 GB + KV | 27B (dense) | Thinking, no MTP — parallel agent fleets. **The long-context profile:** 33 tok/s at 131K vs 1.4 without the backend flag (v0.26); **v0.34: 43.6 at 130K, 38.4 at 258K** |
 | `qwen3.8-27b-fast` | vLLM + MTP | ~31 GB + KV | 27B (dense) | Thinking OFF by default |
 | `qwen3.8-flash-next` | llama-server (Vulkan) | ~81 GB | 6B (MoE, 125B) | UD-IQ4_XS GGUF, custom llama.cpp fork; single-user |
@@ -313,13 +313,14 @@ profile**, so read differences of a few percent between rows as inside spawn spr
 | gemma4-26b-a4b (BF16, 4B active) | 127.1 | 565.8 | 881.9 | 1546.2 |
 | qwen3.6-35b-128k-nomtp (TRITON_ATTN, no MTP) | 103.3 | 476.7 | 755.4 | 1220.5 |
 | qwen3.6-27b-code (MTP, 131K ctx) | 75.1 | 448.9 | 714.2 | 1011.4 |
-| qwen3.8-27b-code (MTP, 131K ctx) ¹ | 76.9 | 456.0 | 720.9 | 1006.2 |
+| qwen3.8-27b-code (MTP, 131K ctx) ¹ | 75.4 | 455.9 | 714.6 | 991.2 |
 | qwen3.8-27b-think (TRITON_ATTN, no MTP) | 49.9 | 297.9 | 520.1 | 857.6 |
 | qwen3.8-flash-next-vllm (no MTP, 262K ctx) | 60.8 | 244.9 | 242.8 | 461.6 |
 
-¹ Phase 1 arm A5, which combines the shipped `--compilation-config` capture form with extensible
-KV switched off (A1). The shipped profile leaves extensible KV at its default. In the plan doc,
-extensible KV cost pool but no throughput (A1 ≈ A0).
+¹ Phase 1 arm A3, which is the shipped config: the production flags plus the
+`--compilation-config` decode capture to 32, with extensible KV at its default. Arm A5 adds
+extensible KV off and reads 76.9 / 456.0 / 720.9 / 1006.2. In the plan doc, extensible KV costs
+pool, not throughput.
 
 Most of the `qwen3.6-35b-code` conc=8 gain is the 0.26 dip at that level going away. At depth
 the change is larger: at 130K, single-stream, `qwen3.6-35b-code` went from 7.3 to 140.4 tok/s

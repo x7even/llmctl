@@ -125,7 +125,7 @@ See `docs/models.md` for benchmark data, architecture details, and tuning notes.
 **The stack is now pinned to `v0.34.0`.** The table below is the 2026-10-19 `v0.26.0`
 campaign. For the 0.34 figures, see the labelled v0.34.0 table in `CLAUDE.md` and
 `docs/upgrade-plan-2026-11.md`. Each is one spawn per profile, 2026-11-25/26, at
-`--requests 128`. For example, `qwen3.8-27b-code` reads 456 tok/s at conc=8 and 1006 at
+`--requests 128`. For example, `qwen3.8-27b-code` reads 456 tok/s at conc=8 and 991 at
 conc=32, and `qwen3.6-35b-code` 1563 at conc=32. Two other changes come with 0.34: KV pools
 are 13-36% smaller, and responses use `reasoning` in place of `reasoning_content`.
 
