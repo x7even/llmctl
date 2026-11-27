@@ -726,7 +726,14 @@ router:
 - `medium-256`: serial 77.1, conc=8 450.7, conc=32 1009.9 tok/s.
 - KV pool 891,289 tokens. That is stock sizing: the live check ran **before** the KV margin
   patch was added. The patched pools above were measured with the canary file (the shipped file
-  minus two log lines). The shipped file itself has not booted yet.
+  minus two log lines).
+
+**Shipped patch file, live (2026-11-27):** the router was restarted with the mount on the three
+profiles and `qwen3.8-27b-code` reloaded. One spawn:
+- KV pool 1,005,399 tokens, the Phase 3c E1 figure exactly.
+- `llmband`: fast band, `mem_busy` 49% against a 46% baseline.
+- `medium-256`, `--requests 128`: serial 76.3, conc=8 455.0, conc=32 992.1 tok/s.
+- No out-of-memory lines in the container log.
 
 **Then (same day):** the KV margin patch mount went onto `qwen3.8-27b-code`,
 `qwen3.8-flash-next-vllm` and `qwen3.6-35b-code`, and `-e GPU_MAX_HW_QUEUES=1` went onto
@@ -735,8 +742,9 @@ patch sits on the image its directory names.
 
 ### Open items
 
-- **The shipped patch file has booted only as its canary twin.** First start of each patched
-  profile: check the pool against Phase 3c (27B 1,005,399; Flash-Next ~553K; 35B 1,217,331).
+- **The shipped patch file has booted on `qwen3.8-27b-code` only** (see above). First start of
+  the other two patched profiles: check the pool against Phase 3c (Flash-Next ~553K; 35B
+  1,217,331).
 - **Profiles the patch was not tested on** stay stock: `qwen3.8-27b-think`, `qwen3.8-27b-fast`,
   `qwen3.6-27b-code`, `qwen3.6-35b-128k-nomtp`, `qwen3.6-35b-fast`, `qwen3.8-flash-next-vllm-text`,
   and both gemma4 vLLM profiles (where upstream's failures were).
