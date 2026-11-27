@@ -1,0 +1,137 @@
+{
+ "spawn": "FN-S3-s1",
+ "invalid": "",
+ "failure": false,
+ "startup": "OK",
+ "startup_s": 136,
+ "respawns": 0,
+ "pool_tokens": 393619,
+ "profile": "qwen3.8-flash-next-vllm",
+ "ref_pool_026": 589824,
+ "pool_pct_of_026": 66.7,
+ "floor_lines": 0,
+ "exp_live_lines": 0,
+ "ranks": {
+  "TP2": {
+   "bdf": "0000:c3:00.0",
+   "reserved_start_GiB": 20.189453125,
+   "reserved_max_GiB": 22.791015625,
+   "reserved_growth_GiB": 2.6015625,
+   "allocated_start_GiB": 20.12395715713501,
+   "allocated_max_GiB": 20.8044171333313,
+   "allocated_growth_GiB": 0.6804599761962891,
+   "reserved_peak_GiB": 22.791015625,
+   "retries": 0,
+   "ooms": 0,
+   "cap_GiB": 24.18,
+   "cap_minus_max_reserved_GiB": 1.3889843749999997
+  },
+  "TP1": {
+   "bdf": "0000:83:00.0",
+   "reserved_start_GiB": 20.189453125,
+   "reserved_max_GiB": 22.791015625,
+   "reserved_growth_GiB": 2.6015625,
+   "allocated_start_GiB": 20.12395715713501,
+   "allocated_max_GiB": 20.79533863067627,
+   "allocated_growth_GiB": 0.6713814735412598,
+   "reserved_peak_GiB": 22.791015625,
+   "retries": 0,
+   "ooms": 0,
+   "cap_GiB": 24.18,
+   "cap_minus_max_reserved_GiB": 1.3889843749999997
+  },
+  "TP3": {
+   "bdf": "0000:23:00.0",
+   "reserved_start_GiB": 20.189453125,
+   "reserved_max_GiB": 22.791015625,
+   "reserved_growth_GiB": 2.6015625,
+   "allocated_start_GiB": 20.12395715713501,
+   "allocated_max_GiB": 20.74806547164917,
+   "allocated_growth_GiB": 0.6241083145141602,
+   "reserved_peak_GiB": 22.791015625,
+   "retries": 0,
+   "ooms": 0,
+   "cap_GiB": 24.18,
+   "cap_minus_max_reserved_GiB": 1.3889843749999997
+  },
+  "TP0": {
+   "bdf": "0000:03:00.0",
+   "reserved_start_GiB": 20.189453125,
+   "reserved_max_GiB": 22.791015625,
+   "reserved_growth_GiB": 2.6015625,
+   "allocated_start_GiB": 20.12395715713501,
+   "allocated_max_GiB": 20.783629417419434,
+   "allocated_growth_GiB": 0.6596722602844238,
+   "reserved_peak_GiB": 22.791015625,
+   "retries": 0,
+   "ooms": 0,
+   "cap_GiB": 24.18,
+   "cap_minus_max_reserved_GiB": 1.3889843749999997
+  }
+ },
+ "min_free_GiB": {
+  "0000:03:00.0": 2.94,
+  "0000:23:00.0": 2.987,
+  "0000:83:00.0": 2.917,
+  "0000:c3:00.0": 2.902
+ },
+ "min_free_min_GiB": 2.902,
+ "retries_total": 0,
+ "ooms_total": 0,
+ "cap_minus_reserved_min_GiB": 1.3889843749999997,
+ "preemptions": 13.0,
+ "hip_lines": 0,
+ "hip_samples": [],
+ "traceback_lines": 0,
+ "poolfill": {
+  "long_err": 0,
+  "short_err": 0,
+  "kv_usage_max": 1.0,
+  "preempt": 13.0,
+  "wall_s": 257.8,
+  "max_gap_s": 3.007730403995083
+ },
+ "longgen": {
+  "err": 0,
+  "agg_tok_s": 177.8
+ },
+ "soak": {
+  "reqs": 76,
+  "err": 0,
+  "duration_s": 600,
+  "gen_tok_s": 31.5,
+  "kv_usage_max": 0.6673511293634498,
+  "ttft_p50": 9.8,
+  "ttft_p99": 51.35,
+  "ttft_max": 51.35,
+  "wall_p50": 62.81,
+  "wall_p99": 103.24,
+  "wall_max": 103.24,
+  "gap_p99": 2.91,
+  "gap_max": 2.91,
+  "stalls_gt5s": 0
+ },
+ "request_errors": 0,
+ "checks_finish": [
+  "tool_calls",
+  "stop"
+ ],
+ "sweep": {
+  "serial": 60.6,
+  "conc=1": 60.7,
+  "conc=8": 247.6,
+  "conc=32": 446.5
+ },
+ "depth_files": [],
+ "llmband": [
+  [
+   "presweep-spawn1",
+   "2"
+  ],
+  [
+   "postsweep",
+   "2"
+  ]
+ ],
+ "verdict": "PASS"
+}

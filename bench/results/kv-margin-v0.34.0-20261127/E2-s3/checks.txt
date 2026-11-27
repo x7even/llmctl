@@ -1,0 +1,4 @@
+toolcall-response.json finish_reason: tool_calls usage: {'prompt_tokens': 311, 'total_tokens': 410, 'completion_tokens': 99, 'completion_tokens_details': {'reasoning_tokens': 56}}
+  tool_calls: [{"id": "chatcmpl-tool-83b547d6fdd91d19", "type": "function", "function": {"name": "get_weather", "arguments": "{\"city\": \"Paris, France\", \"unit\": \"celsius\"}"}}] | reasoning chars: 247 | content chars: 0
+reasoning-response.json finish_reason: stop usage: {'prompt_tokens': 46, 'total_tokens': 255, 'completion_tokens': 209, 'completion_tokens_details': {'reasoning_tokens': 203}}
+  tool_calls: null | reasoning chars: 366 | content chars: 5
