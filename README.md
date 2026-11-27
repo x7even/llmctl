@@ -18,7 +18,7 @@ Before cloning, confirm these are in place:
 - **GPU device group membership** — your user must be in the `render` (and optionally `video`) group: `groups | grep render`. If not: `sudo usermod -aG render,video $USER` then log out and back in.
 - **Models on disk** — the config expects models at `/mnt/models/llm/`. Adjust the `-v` mount paths in `config/models.yaml` if yours are elsewhere.
 
-The vLLM container image (`docker.io/vllm/vllm-openai-rocm:v0.26.0`) is large (~35 GB) and will be pulled automatically on first `llmctl swap`. Make sure you have the disk space and a reasonable connection before starting.
+The vLLM container image (`docker.io/vllm/vllm-openai-rocm:v0.34.0`) is large (tens of GB) and will be pulled automatically on first `llmctl swap`. Make sure you have the disk space and a reasonable connection before starting.
 
 ---
 
@@ -85,7 +85,7 @@ llmpanel
 | `qwen3.8-27b-think` | vLLM TP=4 + TRITON_ATTN | ~31 GB + KV | 131K | **The deep-context and agent-fleet profile.** Same weights, no MTP, `--attention-backend TRITON_ATTN` — keeps scaling with concurrency at 16K+, where the MTP default peaks at ~8 streams and then falls back |
 | `qwen3.8-27b-fast` | vLLM TP=4 + MTP | ~31 GB + KV | 131K | Thinking off by default — quick answers, bulk work |
 | `qwen3.8-flash-next` | llama-server Vulkan | ~81 GB | 262K (2 slots) | Qwen3.8-Flash-Next 125B (6B active), UD-IQ4_XS GGUF; single-user — throughput plateaus early, so for concurrent agents use `qwen3.8-flash-next-vllm` |
-| `qwen3.8-flash-next-vllm` | vLLM TP=4 + EP (nightly image) | ~19 GB/GPU + ~48 GB pinned host RAM (~96 GB host RAM) | 262K | Same model, W4A16 INT4. Decode scales with concurrency and stays flat all the way out to its full 262K window — the one profile here whose speed barely cares how deep the prompt is. Defaults to medium reasoning effort. Exclusive VRAM; needs all 4 GPUs |
+| `qwen3.8-flash-next-vllm` | vLLM TP=4 + EP (v0.34.0) | ~19 GB/GPU + ~48 GB pinned host RAM (~96 GB host RAM) | 262K | Same model, W4A16 INT4. Decode scales with concurrency and stays flat all the way out to its full 262K window — the one profile here whose speed barely cares how deep the prompt is. Defaults to medium reasoning effort. Exclusive VRAM; needs all 4 GPUs |
 | `qwen3.6-27b-code` | vLLM TP=4 + MTP | ~31 GB + KV | 131K | Previous-generation dense 27B (FP8) — MTP + thinking; fast on short prompts |
 | `qwen3.6-35b-code` | vLLM TP=4 + MTP | ~35 GB | 131K | Previous generation (MoE, 3B active) — MTP + thinking |
 | `qwen3.6-35b-128k-nomtp` | vLLM TP=4 + TRITON_ATTN | ~35 GB | 131K | Previous-generation MoE (3B active) — thinking, no MTP, and it ships `--attention-backend TRITON_ATTN`, so the deep-context fix in `docs/rdna4-long-context.md` **is** applied: 62 tok/s on a 130K prompt against 2.2 without it, measured on a single stream with no arrivals. Also the second-fastest profile here on short-prompt aggregate |
@@ -121,6 +121,13 @@ See `docs/models.md` for benchmark data, architecture details, and tuning notes.
 ---
 
 ## Benchmarks
+
+**The stack is now pinned to `v0.34.0`.** The table below is the 2026-10-19 `v0.26.0`
+campaign. For the 0.34 figures, see the labelled v0.34.0 table in `CLAUDE.md` and
+`docs/upgrade-plan-2026-11.md`. Each is one spawn per profile, 2026-11-25/26, at
+`--requests 128`. For example, `qwen3.8-27b-code` reads 456 tok/s at conc=8 and 1006 at
+conc=32, and `qwen3.6-35b-code` 1563 at conc=32. Two other changes come with 0.34: KV pools
+are 13-36% smaller, and responses use `reasoning` in place of `reasoning_content`.
 
 Best-case aggregate decode throughput, run-averaged over each cell.
 `concurrent_bench.py --prompt medium-256 --no-thinking`: a 41-word prompt with

@@ -10,6 +10,14 @@ This document records the mechanism, the measurements, and which profile setting
 and off. Companion documents: `docs/rdna4-decode-bands.md` (a different ~2× loss, with
 overlapping symptoms) and `docs/gpu-counts.md`.
 
+> **v0.34.0 update (2026-11).** This document was written against v0.26.0, and the gate analysis
+> reads that image's source. On v0.34.0, TRITON_ATTN is auto-selected for the Qwen3.x profiles,
+> and its split-KV path admits MTP, so **gate 3 is 0.26-era**. The MTP profiles no longer collapse
+> at depth. Single-stream decode at 130K, 0.26 → 0.34: `qwen3.6-35b-code` 7.3 → 140.4 (19x),
+> `qwen3.8-27b-code` 5.0 → 73.4-77.4, `qwen3.6-35b-128k-nomtp` 62.0 → 86.4, `qwen3.8-27b-think`
+> 33.5 → 43.6 (258K: 26.0 → 38.4), Flash-Next 56.6 → 61.7. Gate 4 and the `--max-num-seqs`
+> threshold have not been re-read in the 0.34 source. Data: `docs/upgrade-plan-2026-11.md`.
+
 ---
 
 ## The symptom

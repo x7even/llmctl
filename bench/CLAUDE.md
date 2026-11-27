@@ -113,6 +113,12 @@ python3 bench/codetests/run_codetests.py run --url http://127.0.0.1:8080/v1/chat
 Rules learned the hard way (details in `docs/hard-code-tasks.md`):
 - Use a generation cap of 64K-96K for the hard tasks; at 32K Flash-Next truncates and the zeros measure the cap.
 - 4 samples per cell is small: read differences under ~15 points as noise.
+- **4 samples per task cannot gate the suite.** In the 0.34 canary, the 0.26 arm first scored
+  85.7 / 78.6 at n=4. A 12-sample re-check gave 64.9% / 44.6% on 0.26 against 78.6% / 53.0% on
+  0.34. So the n=4 draw had been a favourable one, and there was no regression. Single samples
+  on one task ranged from 0 to 14/14. Gate image changes on at least 12 samples per task,
+  with both arms at the same n. Data: `bench/results/codetests-quality-isolation-20261125/`,
+  write-up in `docs/upgrade-plan-2026-11.md`.
 - A `finish_reason=stop` with empty content is a premature end-of-turn from the model, not a test failure; count
   it separately (the 27B does this at a rate that rises with temperature). The runner now does: the summary's
   "early stops (empty/cut)" column counts replies that were empty or ended inside an unterminated code fence,

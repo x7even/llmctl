@@ -41,7 +41,7 @@ nothing in the logs to say so.
 ```yaml
 cmd: podman run --rm --entrypoint="" \
   ... \
-  docker.io/vllm/vllm-openai-rocm:v0.26.0 \
+  docker.io/vllm/vllm-openai-rocm:v0.34.0 \
   vllm serve /models/<dir> ...
 ```
 
@@ -58,6 +58,26 @@ Without `--entrypoint=""` plus an explicit `vllm serve` prefix, the command beco
 Without this, vLLM's default formula generates ~2000 batch sizes to capture.
 At ~5 ms each = 10+ minutes just for graph capture, every startup.
 With 6 explicit sizes = 13 s capture.
+
+**On v0.34.0, MTP profiles use a different form.** The four MTP profiles (`qwen3.8-27b-code`,
+`qwen3.8-27b-fast`, `qwen3.6-27b-code`, `qwen3.6-35b-code`) carry the following in place of the
+legacy flag:
+
+```yaml
+--compilation-config '{"prefill_cudagraph_capture_token_sizes":[1,2,4,8,16,32],"decode_cudagraph_capture_request_sizes":[1,2,4,8,16,32]}'
+```
+
+Model Runner V2 splits capture into prefill token sizes and decode *request* sizes. Under MTP,
+the legacy flag resolves decode capture to request sizes {1,2,3,6}. Stating both lists
+explicitly was worth +3.9% at conc=8 and +2% at conc=4 on the 27B
+(`docs/upgrade-plan-2026-11.md`, Phase 1 arm A5). No-MTP profiles keep
+`--cudagraph-capture-sizes`, and Flash-Next keeps `1 2 4 8`. llama-swap word-splits `cmd`
+itself and honours single quotes, as it does for `--default-chat-template-kwargs '{...}'`.
+`tests/test_configure.py` checks that every MTP profile has the JSON form and no legacy flag.
+`scripts/llmkv` reads the decode request sizes out of a 0.34 log.
+
+The analysis and table below are **0.26-era**: they describe the legacy flag under MTP on the
+V1 model runner. Keep them for rollback, and do not apply them to 0.34.
 
 **With speculative decoding the list is not the list you get.** `adjust_cudagraph_sizes_for_spec_decode`
 (`vllm/config/compilation.py`) rounds every requested size *up* to a multiple of
@@ -346,6 +366,10 @@ Two detection notes, both learned the hard way:
 
 Full write-up, including what was ruled out: `docs/rdna4-decode-bands.md`.
 
+**It is still required on v0.34.0.** In Phase 1 of `docs/upgrade-plan-2026-11.md` (arm A4),
+leaving it unset or setting it to `=2` both gave the slow band, at −35% serial. Every profile
+keeps `=1`.
+
 ---
 
 ## Critical incompatibilities
@@ -373,12 +397,17 @@ dimension 1 with size 1`. FP8 profiles can keep `--enable-expert-parallel`.
 This image (vLLM 0.10.2rc2) is broken with transformers 5.x — crashes with
 `AttributeError: 'Qwen3Config' object has no attribute 'all_special_tokens_extended'`.
 
-All vLLM profiles must use the same **pinned** tag: `docker.io/vllm/vllm-openai-rocm:v0.26.0`.
+All vLLM profiles must use the same **pinned** tag: `docker.io/vllm/vllm-openai-rocm:v0.34.0`,
+both Flash-Next profiles included (they were on a nightly pin before).
 Never reference the moving `:latest` tag — it silently changes what vLLM version
 production runs. Version bumps happen deliberately: canary first, then update the
 pin everywhere at once (models.yaml, this file, root CLAUDE.md, scripts/) — see
-docs/upgrade-plan-2026-07.md (v0.26.0) and docs/upgrade-plan-2026-10.md (v0.31.0 canary,
-held). Rollback anchor: `localhost/llmstack-vllm-rollback:v0.26.0` (older anchors pruned 2026-10).
+docs/upgrade-plan-2026-11.md (v0.34.0, every profile passed), docs/upgrade-plan-2026-07.md
+(v0.26.0) and docs/upgrade-plan-2026-10.md (v0.31.0 canary, held). Rollback: re-pin
+`docker.io/vllm/vllm-openai-rocm:v0.26.0`, which is still local and is the same image as
+`localhost/llmstack-vllm-rollback:v0.26.0`. Then put `--cudagraph-capture-sizes 1 2 4 8 16 32`
+back on the MTP profiles, and Flash-Next's nightly pin back on its two profiles (plan doc,
+Phase 4). On 0.34, responses carry `reasoning` in place of `reasoning_content`.
 
 ### MTP requires the draft head file
 
@@ -526,7 +555,7 @@ unsupported profiles, and the file's line endings (LF or CRLF) are preserved.
             -v /mnt/models/llm:/models:ro \
             -v __LLMSTACK_DIR__/.vllm-cache:/root/.cache/vllm \
             -v __LLMSTACK_DIR__/.triton-cache:/root/.triton/cache \
-            docker.io/vllm/vllm-openai-rocm:v0.26.0 \
+            docker.io/vllm/vllm-openai-rocm:v0.34.0 \
             vllm serve /models/<model-dir> \
               --served-model-name <profile-id> \
               --tensor-parallel-size 4 \
@@ -659,7 +688,7 @@ neither of which predicted the failure:
   `docs/rdna4-long-context.md` depends entirely on TRITON_ATTN's 3D decode kernel, and a KV
   dtype change is exactly the sort of thing that silently drops a kernel to a fallback. It
   does not, and the place to confirm that is the `use_3d` predicate itself, not the backend's
-  advertised dtype list. In the pinned v0.26.0 image,
+  advertised dtype list. In the v0.26.0 image (the pin when this was measured),
   `vllm/v1/attention/ops/triton_unified_attention.py` decides the grid from eight disjuncts:
   five "are the softmax segment buffers allocated" checks, `max_seqlen_q > 1` (the MTP /
   prefill gate), `num_seqs > seq_threshold_3D` (the 32 ceiling) and `is_batch_invariant`.

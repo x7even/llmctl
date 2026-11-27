@@ -2,7 +2,7 @@
 
 **Status: in progress.** Phase 0 (fresh baseline of the stack as it runs today) finished
 2026-11-25. Phase 1 (bring-up on `v0.34.0`): `qwen3.8-27b-code` starts and is faster everywhere, and a
-12-sample quality re-check found no regression. Tuning and the other profiles are next. Nothing in `config/models.yaml` references 0.34 yet.
+12-sample quality re-check found no regression. Phase 2: every other profile passes on 0.34. Phase 4 (transition): the branch's `config/models.yaml` now pins `v0.34.0` on every vLLM profile; the live switch is pending. KV-margin tuning (Phase 3) is still open.
 
 Why now: the stack has been pinned to `v0.26.0` since the October 0.31.0 canary failed its gate
 (`docs/upgrade-plan-2026-10.md`). Eight releases have shipped since. New model support
@@ -488,6 +488,38 @@ The 3 GiB ROCm floor is a three-week-old stopgap (vllm #65418, MI355 CI OOMs). O
 the env-var patch as drafted; one spawn per arm cannot clear a floor when failures are
 intermittent; next test is expandable segments at floors 3/2/1 GiB, several spawns each.
 
-## Phase 4
+## Phase 4 — transition (2026-11-27)
 
-_Not started._
+**Transition (branch `vllm-upgrade-2026-11`).** What the transition commit changed:
+
+- `config/models.yaml`: every vLLM profile pins `docker.io/vllm/vllm-openai-rocm:v0.34.0`,
+  both Flash-Next profiles included (from `nightly-8cbd5d03006c33185f402249ff2b448efd594986`),
+  and so does the template at the bottom.
+- The four MTP profiles (`qwen3.8-27b-code`, `qwen3.8-27b-fast`, `qwen3.6-27b-code`,
+  `qwen3.6-35b-code`) replace `--cudagraph-capture-sizes 1 2 4 8 16 32` with
+  `--compilation-config '{"prefill_cudagraph_capture_token_sizes":[1,2,4,8,16,32],"decode_cudagraph_capture_request_sizes":[1,2,4,8,16,32]}'`.
+  Under MTP on Model Runner V2 the legacy flag resolves decode capture to request sizes
+  {1,2,3,6}. The explicit form was worth +3.9% at c8 and +2% at c4 in Phase 1 (A5). The no-MTP
+  profiles keep the legacy flag, and Flash-Next keeps `1 2 4 8`.
+- No other flag changed. `GPU_MAX_HW_QUEUES=1` stays on every profile; it is still required on
+  0.34 (unset or `=2` gives the slow band, −35% serial). Extensible KV stays at its default.
+- Other live pins moved to `v0.34.0`: `scripts/pcie-link-check`, `scripts/tune-dense-fp8`, and
+  `scripts/tunableop-tune` (which also takes the `--compilation-config` form, since it runs the MTP
+  27B). The test fixtures moved too.
+- `scripts/llmkv` reads the 0.34 `decode_cudagraph_capture_request_sizes` config dump. Before
+  this it returned `[]` for a 0.34 log.
+- `bin/llmproxy` no longer drops a stripped tool-call chunk that also carries `reasoning` or
+  `reasoning_content`.
+- Docs: root `CLAUDE.md`, `config/CLAUDE.md`, `bench/CLAUDE.md`, `README.md`, `docs/models.md` and
+  `docs/rdna4-long-context.md` now describe the 0.34 pin, both capture forms, the `reasoning` field,
+  the smaller KV pools and TRITON_ATTN with MTP.
+- **Not canaried on 0.34.** `qwen3.8-27b-fast` has the same weights and flags as `-code` apart
+  from template defaults. `qwen3.6-35b-fast` carries `--kv-cache-dtype fp8`, which was left as is.
+  `gemma4-26b-fp8` has no `GPU_MAX_HW_QUEUES=1`, which was also left as is. Smoke-test all three
+  after the switch.
+- **Rollback.** Re-pin `docker.io/vllm/vllm-openai-rocm:v0.26.0`, which is still local and is the
+  same image as `localhost/llmstack-vllm-rollback:v0.26.0`. Restore the legacy capture flag on
+  the four MTP profiles, and Flash-Next's nightly pin. The 0.34 compile-cache key differs, so
+  the first 0.34 start is a cold compile (171-217 s measured; warm starts 70-147 s).
+
+Live switch: pending.

@@ -17,12 +17,24 @@ No screen; GPU-only headless rig. PCIe 5.0 ×16 per slot.
 
 | Image | vLLM | ROCm | Use when |
 |---|---|---|---|
-| `docker.io/vllm/vllm-openai-rocm:v0.26.0` | 0.26.0+rocm723 | 7.2.3 | All vLLM profiles (FP8, AWQ, safetensors) |
+| `docker.io/vllm/vllm-openai-rocm:v0.34.0` | 0.34.0 | — | All vLLM profiles, Flash-Next included (pinned 2026-11, `docs/upgrade-plan-2026-11.md`) |
+| `docker.io/vllm/vllm-openai-rocm:v0.26.0` | 0.26.0+rocm723 | 7.2.3 | Previous pin; kept locally as the rollback image (same image as `localhost/llmstack-vllm-rollback:v0.26.0`) |
 | `localhost/llmstack-llama:latest` | llama.cpp | Vulkan | GGUF models |
 
 All vLLM profiles use `--entrypoint="" ... vllm serve` because the AMD official
 image has `ENTRYPOINT ["vllm", "serve"]` — omitting the explicit `vllm serve`
 prefix results in `vllm serve serve /models/...` which fails.
+
+**v0.34.0 notes** (from `docs/upgrade-plan-2026-11.md`):
+- MTP profiles state their capture sizes with `--compilation-config` (prefill token sizes and
+  decode request sizes). No-MTP profiles keep `--cudagraph-capture-sizes`.
+- TRITON_ATTN is auto-selected and works with MTP. At 130K, `qwen3.6-35b-code` went from 7.3 to
+  140.4 tok/s.
+- KV pools are 13-36% smaller than on 0.26: 0.34's default (extensible) KV sizing keeps a 3 GiB
+  ROCm margin per card. Tuning is in
+  progress.
+- Responses carry `reasoning` in place of `reasoning_content`.
+- The per-profile history below is mostly 0.26-era.
 
 ### vLLM cold start time
 
