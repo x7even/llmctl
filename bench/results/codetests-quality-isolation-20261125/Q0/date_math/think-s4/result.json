@@ -1,0 +1,68 @@
+{
+ "passed": 11,
+ "total": 14,
+ "fatal": null,
+ "timed_out": false,
+ "stderr_tail": "",
+ "tests": [
+  {
+   "test": "test_no_forbidden_imports",
+   "ok": true
+  },
+  {
+   "test": "test_leap_and_month_lengths",
+   "ok": true
+  },
+  {
+   "test": "test_ordinal_weekday",
+   "ok": true
+  },
+  {
+   "test": "test_iso_week_vs_stdlib",
+   "ok": false,
+   "err": "AssertionError: iso_week(1951, 12, 31) = (1951, 53, 1), want (1952, 1, 1)"
+  },
+  {
+   "test": "test_from_iso_week_rules",
+   "ok": true
+  },
+  {
+   "test": "test_add_days",
+   "ok": true
+  },
+  {
+   "test": "test_add_months_oracle",
+   "ok": true
+  },
+  {
+   "test": "test_parse_accepts",
+   "ok": true
+  },
+  {
+   "test": "test_parse_rejects",
+   "ok": true
+  },
+  {
+   "test": "test_format_date",
+   "ok": false,
+   "err": "AssertionError: format_date((2001, 12, 31), 'week') = '2001-W53-1', want '2002-W01-1'"
+  },
+  {
+   "test": "test_diff_rule",
+   "ok": true
+  },
+  {
+   "test": "test_diff_oracle_and_identity",
+   "ok": true
+  },
+  {
+   "test": "test_validation_and_types",
+   "ok": true
+  },
+  {
+   "test": "test_scale",
+   "ok": false,
+   "err": "ValueError: week 53 out of range 1..52"
+  }
+ ]
+}

@@ -1,0 +1,27 @@
+sampling for 20s - drive the GPUs now (a serving model is fine), or use --load
+
+0000:03:00.0 (card0)
+  link 0  0000:00:01.1 <-> 0000:01:00.0 peak  32.0 GT/s x16  rated  32.0 GT/s x16   slot/riser ok
+  link 1  0000:02:00.0 <-> 0000:03:00.0 peak  32.0 GT/s x16  rated  32.0 GT/s x16   on-card    ok
+
+0000:83:00.0 (card1)
+  link 0  0000:80:01.1 <-> 0000:81:00.0 peak  32.0 GT/s x16  rated  32.0 GT/s x16   slot/riser ok
+  link 1  0000:82:00.0 <-> 0000:83:00.0 peak  32.0 GT/s x16  rated  32.0 GT/s x16   on-card    ok
+
+0000:c3:00.0 (card2)
+  link 0  0000:c0:01.1 <-> 0000:c1:00.0 peak  32.0 GT/s x16  rated  32.0 GT/s x16   slot/riser ok
+  link 1  0000:c2:00.0 <-> 0000:c3:00.0 peak  32.0 GT/s x16  rated  32.0 GT/s x16   on-card    ok
+
+0000:23:00.0 (card3)
+  link 0  0000:20:01.1 <-> 0000:21:00.0 peak  16.0 GT/s x16  rated  32.0 GT/s x16   slot/riser DOWNTRAINED
+  link 1  0000:22:00.0 <-> 0000:23:00.0 peak  32.0 GT/s x16  rated  32.0 GT/s x16   on-card    ok
+
+DOWNTRAINED: 1 link(s) never reached their rated speed under load.
+  0000:23:00.0: link 0000:20:01.1 <-> 0000:21:00.0 peaked at 16.0 GT/s, rated 32.0 GT/s (slot/riser)
+
+A downtrain on the slot/riser link is physical: try a full cold power-off (a warm
+reboot may not power-cycle the slot), then reseat the card and any riser at both
+ends, then swap the card into a known-good slot to tell a bad card from a bad slot.
+Check max_link_speed too - if it is also low, something is capping the slot in BIOS.
+Treat every tensor-parallel benchmark taken in this state as invalid.
+exit 1

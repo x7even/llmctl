@@ -100,7 +100,7 @@ They **must exist on the host** — created automatically by `mkdir -p .vllm-cac
 and mounted into every vLLM container. Without the mounts, every start is a cold compile.
 
 To watch startup progress: `llmctl logs <profile>` — wait for "Application startup complete."
-`healthCheckTimeout: 300` in models.yaml is set for warm starts. For first boot, wait manually.
+`healthCheckTimeout` in models.yaml is 2100 s, a ceiling for slow or cold first boots, not the expected wait.
 
 ---
 
@@ -117,7 +117,12 @@ Every vLLM profile **must** have these five things:
 vllm serve /models/...
 
 # 2. Explicit CUDA graph sizes — without this, vLLM generates ~2000+ sizes = 18+ min startup
+#    No-MTP profiles (and Flash-Next, which uses 1 2 4 8):
 --cudagraph-capture-sizes 1 2 4 8 16 32
+#    MTP profiles on v0.34.0: under Model Runner V2 the legacy flag resolves decode capture
+#    to request sizes {1,2,3,6}, so state both lists explicitly. Measured +3.9% at conc=8,
+#    +2% at conc=4 (docs/upgrade-plan-2026-11.md, Phase 1 A5):
+--compilation-config '{"prefill_cudagraph_capture_token_sizes":[1,2,4,8,16,32],"decode_cudagraph_capture_request_sizes":[1,2,4,8,16,32]}'
 
 # 3. Persistent cache volumes — without these, torch.compile re-runs every start (~14 min)
 -v __LLMSTACK_DIR__/.vllm-cache:/root/.cache/vllm
@@ -142,7 +147,8 @@ vllm serve /models/...
 #    profiles (2026-10-19), which both wanted it: 2.11x / 2.27x serial, and gemma4 keeps 1.71x
 #    at conc=8. Now set on every vLLM profile, Flash-Next included: a medium-256 pair there said
 #    no, but long generations say 1.66x (4x8192-token streams, 104 -> 173 tok/s) for no
-#    short-prompt cost. Details: config/CLAUDE.md item 5.
+#    short-prompt cost. Still required on v0.34.0: unset or =2 gave the slow band, -35% serial
+#    (docs/upgrade-plan-2026-11.md). Details: config/CLAUDE.md item 5.
 -e GPU_MAX_HW_QUEUES=1
 ```
 
@@ -162,6 +168,26 @@ commit the configured file: the committed `config/models.yaml` carries `__LLMSTA
 `tests/test_configure.py` fails if a real `/home/...` path reaches HEAD. Committing the
 configured form is what broke every fresh clone between `8f42c4e` and `89179ce` — the
 substitution silently no-ops when there is no placeholder left to replace.
+
+### KV margin patch — three profiles, v0.34.0 only
+
+`qwen3.8-27b-code`, `qwen3.8-flash-next-vllm` and `qwen3.6-35b-code` bind-mount
+`config/patches/vllm-v0.34.0/extensible_kv_cache.py` over the image's
+`vllm/v1/worker/extensible_kv_cache.py`. It is the v0.34.0 file plus the upstream PR #69994 hunk
+(expandable segments under the torch cap) and a 1 GiB margin floor in place of ROCm's 3 GiB.
+Rules:
+- **Do not set `PYTORCH_ALLOC_CONF`** (or `PYTORCH_HIP_ALLOC_CONF`) on a patched profile; the
+  backport defers to it, which changes what was tested.
+- **Drop or re-validate it at the next image bump.** `tests/test_configure.py` fails if the mount
+  sits on any image other than the one its directory names.
+- **Do not add it to another profile without spawns.** Untested: `27b-think`, `27b-fast`,
+  `qwen3.6-27b-code`, `nomtp`, `35b-fast`, the Flash-Next `-text` clone, and both gemma4 vLLM
+  profiles (upstream's floor-2 failures were Gemma 4). The test pins the set.
+- **If it ever OOMs:** set the floor to `2 << 30` (E2: 948,344 tokens on the 27B), then fall back
+  to stock (no mount).
+- Evidence is moderate: 15 clean spawns across all arms, only 6 of them at floor 1, one spawn per
+  arm on the 35B and no 35B throughput sweep. The patched pools were measured with the canary
+  file (the shipped file plus two log lines). Details: `docs/upgrade-plan-2026-11.md` Phase 3c.
 
 ### AWQ + expert-parallel = hard crash
 
@@ -186,11 +212,17 @@ throughput by ~10–20%. The user explicitly rejected this trade-off. Use
 ### localhost/llmstack-vllm:latest is broken
 
 The locally-built image (`localhost/llmstack-vllm:latest`, deleted from the build host in the 2026-10 podman
-cleanup; the rollback image is `localhost/llmstack-vllm-rollback:v0.26.0`) used vLLM 0.10.2rc2 with
+cleanup; the rollback image is now `docker.io/vllm/vllm-openai-rocm:v0.26.0` itself, still local, which
+`localhost/llmstack-vllm-rollback:v0.26.0` also tags) used vLLM 0.10.2rc2 with
 transformers 5.7.0.dev0. Transformers 5.x removed `all_special_tokens_extended`, which
 causes `AttributeError` on Qwen3 models at startup. **Do not use this image.**
 
-All vLLM profiles must use: `docker.io/vllm/vllm-openai-rocm:v0.26.0` (vLLM 0.26.0, ROCm 7.2.3). Pinned tag policy: never reference the moving `:latest` tag — bump the pin here, in config/models.yaml, config/CLAUDE.md, and scripts/ together after canary validation (see docs/upgrade-plan-2026-07.md; the 2026-10 v0.31.0 canary was held back for a conc=8/16 throughput regression — docs/upgrade-plan-2026-10.md)
+All vLLM profiles must use: `docker.io/vllm/vllm-openai-rocm:v0.34.0` (vLLM 0.34.0), both Flash-Next profiles included. It was adopted after the 2026-11 canary, in which every profile passed (docs/upgrade-plan-2026-11.md). Pinned tag policy: never reference the moving `:latest` tag — bump the pin here, in config/models.yaml, config/CLAUDE.md, and scripts/ together after canary validation (history: docs/upgrade-plan-2026-07.md for v0.26.0; the 2026-10 v0.31.0 canary was held back for a conc=8/16 throughput regression, see docs/upgrade-plan-2026-10.md). **Policy (2026-11-27): v0.34.0 is the minimum** for all new work, canaries, profiles and benchmarks. v0.26.0 and the old Flash-Next nightly are emergency rollback only, and the 0.26 figures in this file are history. Emergency rollback: re-pin `docker.io/vllm/vllm-openai-rocm:v0.26.0` (still local), remove the KV margin patch mount, and restore `--cudagraph-capture-sizes 1 2 4 8 16 32` on the MTP profiles; the steps are in the plan doc's Phase 4.
+
+Three things 0.34 changes for clients and operators:
+- **`reasoning` replaces `reasoning_content`** in chat responses and stream deltas. Readers in this repo accept both.
+- **Stock KV pools are 13-36% smaller** than on 0.26 (e.g. 27b-code 1,097,728 → 891,289 tokens, nomtp −13%, Flash-Next 589,824 → ~394K). The cause is 0.34's default ("extensible") KV sizing and its 3 GiB ROCm margin floor. **Tuned (Phase 3c, 2026-11-27):** `qwen3.8-27b-code`, `qwen3.8-flash-next-vllm` and `qwen3.6-35b-code` mount the KV margin patch (below), measured at 891,289 → 1,005,399, ~394K → ~553K and 1,088,989 → 1,217,331 tokens, same-day pairs. Every other vLLM profile keeps stock sizing.
+- **The compile-cache key changed**, so the first 0.34 start is a cold compile (171-217 s measured; warm starts 70-147 s).
 
 ### FP8 kernel config — MoE experts are tuned, dense layers are not
 
@@ -261,17 +293,17 @@ See `tui/CLAUDE.md` for architecture and coding conventions.
 
 | Profile | Backend | VRAM | Active params | Notes |
 |---------|---------|------|--------------|-------|
-| `qwen3.8-27b-code` ✓ | vLLM + MTP | ~31 GB + KV | 27B (dense) | **Default.** Thinking (medium effort); 131K ctx; 350 tok/s @ conc=8, 843 @ conc=32 |
-| `qwen3.8-27b-think` ✓ | vLLM + TRITON_ATTN | ~31 GB + KV | 27B (dense) | Thinking, no MTP — parallel agent fleets. **The long-context profile:** 33 tok/s at 131K vs 1.4 without the backend flag |
+| `qwen3.8-27b-code` ✓ | vLLM + MTP | ~31 GB + KV | 27B (dense) | **Default.** Thinking (medium effort); 131K ctx; 350 tok/s @ conc=8, 843 @ conc=32 (v0.26, history); **v0.34: 456 @ conc=8, 991 @ conc=32, 73-77 at 130K; KV pool 1,005,399 tokens with the KV margin patch (891,289 stock)** |
+| `qwen3.8-27b-think` ✓ | vLLM + TRITON_ATTN | ~31 GB + KV | 27B (dense) | Thinking, no MTP — parallel agent fleets. **The long-context profile:** 33 tok/s at 131K vs 1.4 without the backend flag (v0.26); **v0.34: 43.6 at 130K, 38.4 at 258K** |
 | `qwen3.8-27b-fast` | vLLM + MTP | ~31 GB + KV | 27B (dense) | Thinking OFF by default |
 | `qwen3.8-flash-next` | llama-server (Vulkan) | ~81 GB | 6B (MoE, 125B) | UD-IQ4_XS GGUF, custom llama.cpp fork; single-user |
-| `qwen3.8-flash-next-vllm` | vLLM TP4+EP (nightly image) | ~19 GB/GPU + ~48 GB pinned PLE in host RAM (~96 GB host RAM recommended) | 6B (MoE, 125B) | W4A16 INT4 + FP8 PLE; **vision on** (images capped at 4,096 tokens, 4 per prompt); 262K ctx, **medium effort by default** (xhigh runs away); 55.5 tok/s serial (**intermittent single-stream latency tail, cause not established** -- see `docs/models.md`), 204 @ conc=8, 251 @ conc=16, 460 @ conc=32, flat ~55 out to 258K; gained `GPU_MAX_HW_QUEUES=1` on 2026-10-19 (worth 1.66x on long generations; at `medium-256` it moved conc=8 only, from 140.1-181.5 to 204.1/204.3, and conc=16/32 are inside the unflagged spread); needs `--ulimit memlock=-1:-1` and all 4 GPUs; exclusive VRAM |
-| `qwen3.8-flash-next-vllm-text` | vLLM TP4+EP (nightly image) | as above | 6B (MoE, 125B) | Same profile with the vision tower off (`--language-model-only`, as shipped before 2026-11-20); for pure-text fleets, where the vision canary measured text ~4.5% faster at conc=8 and ~11% at conc=16 (one spawn pair). Alias `flash-next-vllm-text`; exclusive VRAM with the vision profile, so switching is a full respawn |
+| `qwen3.8-flash-next-vllm` | vLLM TP4+EP (v0.34.0; was a nightly pin) | ~19 GB/GPU + ~48 GB pinned PLE in host RAM (~96 GB host RAM recommended) | 6B (MoE, 125B) | W4A16 INT4 + FP8 PLE; **vision on** (images capped at 4,096 tokens, 4 per prompt); 262K ctx, **medium effort by default** (xhigh runs away); 55.5 tok/s serial (**intermittent single-stream latency tail, cause not established** -- see `docs/models.md`), 204 @ conc=8, 251 @ conc=16, 460 @ conc=32, flat ~55 out to 258K; gained `GPU_MAX_HW_QUEUES=1` on 2026-10-19 (worth 1.66x on long generations; at `medium-256` it moved conc=8 only, from 140.1-181.5 to 204.1/204.3, and conc=16/32 are inside the unflagged spread); needs `--ulimit memlock=-1:-1` and all 4 GPUs; exclusive VRAM. **v0.34: 60.8 serial, 245 @ conc=8, 462 @ conc=32, 61.7 at 130K; KV pool ~553K tokens with the KV margin patch (~394K stock same day; 589,824 on the nightly)** |
+| `qwen3.8-flash-next-vllm-text` | vLLM TP4+EP (v0.34.0) | as above | 6B (MoE, 125B) | Same profile with the vision tower off (`--language-model-only`, as shipped before 2026-11-20); for pure-text fleets, where the vision canary measured text ~4.5% faster at conc=8 and ~11% at conc=16 (one spawn pair). Alias `flash-next-vllm-text`; exclusive VRAM with the vision profile, so switching is a full respawn |
 | `qwen3.6-27b-code` ✓ | vLLM + MTP | ~31 GB + KV | 27B (dense) | Previous-gen dense 27B, restored 2026-10-19; 131K ctx; matches `qwen3.8-27b-code` at `medium-256`, 6-9% behind it at depth |
-| `qwen3.6-35b-code` | vLLM + MTP | ~35 GB | 3B (MoE) | Previous gen, MTP + thinking |
-| `qwen3.6-35b-128k-nomtp` ✓ | vLLM + TRITON_ATTN | ~35 GB | 3B (MoE) | **The deep-context profile.** 62 tok/s at 130K serial (vs 33 on `27b-think`), 440 at 16K×8, 231 at 64K×4; no short-prompt cost either (TRITON +3.9% at conc=8, matched n=128) |
+| `qwen3.6-35b-code` | vLLM + MTP | ~35 GB | 3B (MoE) | Previous gen, MTP + thinking. **v0.34: 150.2 serial, 1563 @ conc=32, 140.4 at 130K** (was 7.3 on v0.26); **KV pool 1,217,331 tokens with the KV margin patch (1,088,989 stock; one spawn each)** |
+| `qwen3.6-35b-128k-nomtp` ✓ | vLLM + TRITON_ATTN | ~35 GB | 3B (MoE) | **The deep-context profile.** 62 tok/s at 130K serial (vs 33 on `27b-think`), 440 at 16K×8, 231 at 64K×4; no short-prompt cost either (TRITON +3.9% at conc=8, matched n=128) (v0.26). **v0.34: 86.4 at 130K, 103.3 serial** |
 | `qwen3.6-35b-fast` | vLLM | ~35 GB | 3B (MoE) | Previous gen, thinking OFF |
-| `gemma4-26b-a4b` ✓ | vLLM BF16 | ~123 GB | 4B (MoE) | **the stack's throughput leader:** 891 tok/s @ conc=16, 1443 @ conc=32; exclusive VRAM |
+| `gemma4-26b-a4b` ✓ | vLLM BF16 | ~123 GB | 4B (MoE) | 891 tok/s @ conc=16, 1443 @ conc=32 (v0.26); **v0.34: 882 @ conc=16, 1546 @ conc=32**; exclusive VRAM |
 | `gemma4-26b-fp8` | vLLM FP8 | — | 4B (MoE) | Long-context Gemma 4 |
 | `gemma4-26b-q8` ✓ | llama-server + mmproj | ~32 GB | 4B (MoE) | **Vision**; alias `gemma4` |
 | `gemma4-12b-q4` ✓ | llama-server + mmproj | ~13 GB | 12B (dense) | Lightest vision; co-loadable |
@@ -288,6 +320,34 @@ Use aliases for common swaps: `llmctl swap qwen3.8` (→ 27b-code), `llmctl swap
 ---
 
 ## Benchmark baselines summary
+
+### v0.34.0 (the current pin) — 2026-11-25/26
+
+`medium-256`, decode tok/s, `--no-thinking`, `--requests 128`, `--serial-n 8`. **One spawn per
+profile**, so read differences of a few percent between rows as inside spawn spread. Source:
+`docs/upgrade-plan-2026-11.md` (Phases 1-2), files `bench/baselines/*-v0.34.0-*`.
+
+| Profile | serial | conc=8 | conc=16 | conc=32 |
+|---------|--------|--------|---------|---------|
+| qwen3.6-35b-code (MTP, 3B active) | 150.2 | 671.4 | 986.9 | **1562.9** |
+| gemma4-26b-a4b (BF16, 4B active) | 127.1 | 565.8 | 881.9 | 1546.2 |
+| qwen3.6-35b-128k-nomtp (TRITON_ATTN, no MTP) | 103.3 | 476.7 | 755.4 | 1220.5 |
+| qwen3.6-27b-code (MTP, 131K ctx) | 75.1 | 448.9 | 714.2 | 1011.4 |
+| qwen3.8-27b-code (MTP, 131K ctx) ¹ | 75.4 | 455.9 | 714.6 | 991.2 |
+| qwen3.8-27b-think (TRITON_ATTN, no MTP) | 49.9 | 297.9 | 520.1 | 857.6 |
+| qwen3.8-flash-next-vllm (no MTP, 262K ctx) | 60.8 | 244.9 | 242.8 | 461.6 |
+
+¹ Phase 1 arm A3, which is the shipped config: the production flags plus the
+`--compilation-config` decode capture to 32, with extensible KV at its default. Arm A5 adds
+extensible KV off and reads 76.9 / 456.0 / 720.9 / 1006.2. In the plan doc, extensible KV costs
+pool, not throughput.
+
+Most of the `qwen3.6-35b-code` conc=8 gain is the 0.26 dip at that level going away. At depth
+the change is larger: at 130K, single-stream, `qwen3.6-35b-code` went from 7.3 to 140.4 tok/s
+(19x) and `qwen3.8-27b-code` from 5.0 to 73-77, because TRITON_ATTN is now auto-selected and
+its split-KV path admits MTP (see the long-context section).
+
+### v0.26.0 (previous pin) — 2026-10-19
 
 `medium-256` prompt, decode tok/s, `--no-thinking`, 4× R9700, MTP where noted. **Every row below
 is one fresh spawn of the shipped profile, all seven re-measured on 2026-10-19 at `--requests 128`**
@@ -487,7 +547,8 @@ spawn.
 keeps **1.71x at conc=8** (305.1 → 522.1), where the 35B-code curve is flat by then (1.00x).
 So "the band only costs you on one stream" is a property of particular models, not of the band;
 on gemma4 a slow draw costs fleet throughput outright. The flag now ships on every vLLM
-profile. Two rows of the baseline table above — `gemma4-26b-a4b` and
+profile (`gemma4-26b-fp8` only since 2026-11-27, unmeasured there; `tests/test_configure.py`
+now enforces it). Two rows of the baseline table above — `gemma4-26b-a4b` and
 `qwen3.6-35b-code` — were measured *before* the flag reached their profiles, so they were
 superseded readings of a configuration the stack no longer ships rather than slow draws on the
 shipped one. See `config/CLAUDE.md` for the dating and `bench/band_audit.py` for the check.
@@ -559,7 +620,16 @@ churn is still unmeasured, so do not quote 11x or 28x as fleet numbers. One thin
 with no TRITON cost at short prompts, `bfe8115`'s cost for `27b-think` points back at losing
 MTP.
 
-The cause is parallelism starvation: no kernel on this GPU parallelises over context length
+**On v0.34.0 the picture changes for MTP profiles.** TRITON_ATTN is auto-selected for these
+Qwen3.x profiles, and its split-KV path now admits MTP. So the MTP profiles stop collapsing at
+depth. Single-stream decode at 130K, 0.26 → 0.34: `qwen3.6-35b-code` 7.3 → **140.4** (19x),
+`qwen3.8-27b-code` 5.0 → 73.4-77.4, `qwen3.6-35b-128k-nomtp` 62.0 → 86.4, `qwen3.8-27b-think`
+33.5 → 43.6 (258K: 26.0 → 38.4), Flash-Next 56.6 → 61.7, and `qwen3.6-27b-code` 72.3 (no 0.26
+figure). Source: `docs/upgrade-plan-2026-11.md`. The gate analysis below was read from the 0.26
+source. Gate 3 is 0.26-era. The `--max-num-seqs` threshold has not been re-read for 0.34 and may
+be lower there (around 16, untested).
+
+The cause (as of 0.26) is parallelism starvation: no kernel on this GPU parallelises over context length
 unless TRITON_ATTN's 3D split-KV path is open. Four gates decide it, all keyed on `query_len`:
 
 1. ROCm's custom paged-attention kernel needs `head_size == 128`. **Every Qwen3.x checkpoint
@@ -568,7 +638,8 @@ unless TRITON_ATTN's 3D split-KV path is open. Four gates decide it, all keyed o
 2. The 2D fallback launches `(num_seqs, num_kv_heads)`. At TP4 with 2-4 KV heads that is
    **one workgroup** at conc=1, however long the context is.
 3. TRITON_ATTN's 3D path adds a segment dimension and is the only depth-scaling kernel — but
-   its predicate excludes `max_query_len > 1`, so **MTP closes it**.
+   its predicate excludes `max_query_len > 1`, so **MTP closes it** (0.26-era; no longer true
+   on v0.34.0, see above).
 4. The predicate is evaluated per *batch*. A step carrying a prefill chunk drops every
    co-batched deep decoder to the 2D grid. This one cannot be configured away.
 
@@ -613,6 +684,9 @@ Operational consequences:
   auto-selection, since MTP gates the 3D path shut), `qwen3.6-35b-128k-nomtp` drops MTP and
   carries TRITON_ATTN. **Route that pair by depth only** — TRITON_ATTN itself costs nothing at
   `medium-256`, so arrival rate is not the axis an earlier version of this file claimed it was.
+  (That routing advice is from the 0.26 measurements. On v0.34.0 `qwen3.6-35b-code` gets
+  TRITON_ATTN with MTP and read 140.4 tok/s at 130K, against 86.4 for `nomtp`. The routing has
+  not been re-decided yet.)
 - **Benchmark depth, and check retrieval.** `bench/depth_bench.py` sweeps depth x concurrency
   (`--prewarm` for steady-state decode); `concurrent_bench.py` at `medium-256` cannot see any
   of this. A split-KV kernel that mis-combines its softmax segments benchmarks perfectly while
@@ -635,6 +709,7 @@ bin/llmproxy         Python SSE shim — fixes vLLM null tool-call names for @ai
 bin/llmpanel         TUI binary built by `cd tui && make build` (gitignored, never commit)
 config/models.yaml   Single source of truth for all model profiles
 config/templates/    Custom Jinja chat templates
+config/patches/vllm-v0.34.0/  KV margin patch (bind-mounted on three profiles) + its diffs against 0.34.0
 tui/                 Go source for llmpanel (Bubbletea)
 bench/               Benchmark scripts + saved baselines
 tests/smoke.sh       Integration smoke test (both backends)
@@ -651,6 +726,7 @@ docs/rdna4-decode-bands.md     gfx1201 bimodal decode bands: detection with llmb
 docs/rdna4-long-context.md     Why decode collapses at depth on gfx1201 and the TRITON_ATTN fix (four query_len gates)
 docs/hard-code-tasks.md        Harder code tests: caps vs 4-bit weights, 27B early stops, ceiling check
 docs/upgrade-plan-2026-*.md    Image/ROCm upgrade canaries and their gates
+bench/results/kv-margin-v0.34.0-20261127/  Phase 3c KV margin spawns: armtable.md, per-spawn memory traces
 scripts/llm-prestart  exec wrapper in front of Flash-Next's podman run (drops page cache first)
 scripts/pcie-link-check  Checks every GPU's PCIe link reaches its rated speed UNDER LOAD
 scripts/llmhw.py     Hardware/requirements checker used by configure, llmctl and llmpanel

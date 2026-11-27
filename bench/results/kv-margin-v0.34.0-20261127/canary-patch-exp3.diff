@@ -1,0 +1,70 @@
+--- a/vllm/v1/worker/extensible_kv_cache.py
++++ b/vllm/v1/worker/extensible_kv_cache.py
+@@ -14,6 +14,14 @@
+ import torch
+ 
+ from vllm.config.kv_transfer import KVCacheAccess
++from vllm.device_allocator.alloc_conf import (
++    EXPANDABLE_SEGMENTS,
++    alloc_conf_from_env,
++    current_alloc_conf,
++    expandable_segments_enabled,
++    set_alloc_conf,
++    with_conf_flag,
++)
+ from vllm.distributed.kv_transfer import (
+     ensure_kv_transfer_initialized,
+     get_kv_transfer_group,
+@@ -61,7 +69,7 @@
+ # the allocator could serve it, and adversarial workloads reached up to 45%.
+ # ROCr also maps kernel scratch outside the allocator when a kernel first needs
+ # it, so ROCm keeps a larger floor.
+-KV_CACHE_MARGIN_FLOOR_BYTES = (3 if current_platform.is_rocm() else 1) << 30
++KV_CACHE_MARGIN_FLOOR_BYTES = 3 << 30  # kv-sizing canary patch
+ KV_CACHE_MARGIN_FRACTION = 0.75
+ # Part of the margin kept for allocations outside torch's caching allocator
+ # (kernel scratch, NCCL/RCCL buffers, lazily loaded code objects); the
+@@ -72,6 +80,7 @@
+ # Share of the headroom warmup leaves uncommitted, on top of the profiled
+ # activation peak, for transients the profiling run does not exercise.
+ KV_CACHE_WARMUP_RESERVE_FRACTION = 0.1
++logger.info("kv-sizing canary patch exp3: KV_CACHE_MARGIN_FLOOR_BYTES=%d KV_CACHE_NON_TORCH_RESERVE_BYTES=%d", KV_CACHE_MARGIN_FLOOR_BYTES, KV_CACHE_NON_TORCH_RESERVE_BYTES)
+ 
+ 
+ class ExtensibleKVCache:
+@@ -377,12 +386,34 @@
+     def set_torch_memory_limit(self, num_bytes: int | None) -> None:
+         """Cap what torch's caching allocator reserves on this device, or lift
+         the cap (None). At the cap it releases cached segments before growing,
+-        rather than taking memory other allocations need."""
++        rather than taking memory other allocations need.
++
++        On ROCm, torch allocates from expandable segments while capped, whose
++        free memory it can release in 20 MiB chunks. Otherwise a small tensor
++        placed in a cached block keeps the rest of the block reserved, and a
++        larger request fails at the cap with that memory free. An
++        `expandable_segments` setting in the environment is left alone.
++        """
+         self.torch_memory_limit = num_bytes
+         total = torch.accelerator.get_memory_info(self.buffer.device)[1]
+         fraction = 1.0 if num_bytes is None else min(num_bytes / total, 1.0)
+         # torch.accelerator has no per-process memory fraction.
+         torch.cuda.set_per_process_memory_fraction(fraction, self.buffer.device)
++        if current_platform.is_rocm():
++            self._set_expandable_segments(num_bytes is not None)
++        logger.info("kv-margin canary: torch memory limit %s, expandable_segments live=%s env=%r", num_bytes, expandable_segments_enabled(), alloc_conf_from_env())  # kv-margin canary log
++
++    @staticmethod
++    def _set_expandable_segments(enabled: bool) -> None:
++        if EXPANDABLE_SEGMENTS in alloc_conf_from_env():
++            return
++        if expandable_segments_enabled() is (not enabled):
++            if not enabled:
++                # Torch does not reuse cached expandable blocks once it is off.
++                torch.accelerator.empty_cache()
++            set_alloc_conf(
++                with_conf_flag(current_alloc_conf(), EXPANDABLE_SEGMENTS, enabled)
++            )
+ 
+     def free(self) -> None:
+         # The process may start another engine, which must not inherit the cap.

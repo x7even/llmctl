@@ -1,0 +1,3 @@
+llmband: qwen3.8-flash-next-vllm -> UNDECIDED band
+  no baseline for this profile; run --calibrate against a server you have reason to believe is in the fast band
+  256 steps / 256 tok in 4.021s (1.0 accepted/step); 68/68 card-samples under load across 4 cards

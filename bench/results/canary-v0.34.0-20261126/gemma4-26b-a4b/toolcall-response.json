@@ -1,0 +1,49 @@
+{
+ "id": "chatcmpl-986a21972557f37f",
+ "object": "chat.completion",
+ "created": 1795660079,
+ "model": "gemma4-26b-a4b",
+ "choices": [
+  {
+   "index": 0,
+   "message": {
+    "role": "assistant",
+    "content": null,
+    "refusal": null,
+    "audio": null,
+    "function_call": null,
+    "tool_calls": [
+     {
+      "id": "chatcmpl-tool-93ca2b5f17aa77ec",
+      "type": "function",
+      "function": {
+       "name": "get_weather",
+       "arguments": "{\"city\": \"Paris, France\"}"
+      }
+     }
+    ],
+    "reasoning": null
+   },
+   "logprobs": null,
+   "finish_reason": "tool_calls",
+   "stop_reason": 50,
+   "token_ids": null,
+   "routed_experts": null,
+   "weight_versions": null
+  }
+ ],
+ "service_tier": null,
+ "system_fingerprint": "vllm-0.34.0-tp4-ed443cbe",
+ "usage": {
+  "prompt_tokens": 104,
+  "total_tokens": 121,
+  "completion_tokens": 17,
+  "completion_tokens_details": null
+ },
+ "prompt_logprobs": null,
+ "prompt_token_ids": null,
+ "prompt_text": null,
+ "kv_transfer_params": null,
+ "ec_transfer_params": null,
+ "metrics": null
+}

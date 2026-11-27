@@ -1,0 +1,41 @@
+{
+ "id": "chatcmpl-8c7bdb46bb39f452",
+ "object": "chat.completion",
+ "created": 1795728924,
+ "model": "qwen3.8-flash-next-vllm",
+ "choices": [
+  {
+   "index": 0,
+   "message": {
+    "role": "assistant",
+    "content": "\n\n155",
+    "refusal": null,
+    "audio": null,
+    "function_call": null,
+    "reasoning": "The user wants me to calculate the duration of a train journey from 14:35 to 17:10.\n\nFrom 14:35 to 17:10:\n- From 14:35 to 16:35 = 2 hours\n- From 16:35 to 17:10 = 35 minutes\n- Total = 2 hours and 35 minutes = 155 minutes\n\nThey want just the number.\n"
+   },
+   "logprobs": null,
+   "finish_reason": "stop",
+   "stop_reason": null,
+   "token_ids": null,
+   "routed_experts": null,
+   "weight_versions": null
+  }
+ ],
+ "service_tier": null,
+ "system_fingerprint": "vllm-0.34.0-tp4-ep-1d9f2182",
+ "usage": {
+  "prompt_tokens": 46,
+  "total_tokens": 162,
+  "completion_tokens": 116,
+  "completion_tokens_details": {
+   "reasoning_tokens": 110
+  }
+ },
+ "prompt_logprobs": null,
+ "prompt_token_ids": null,
+ "prompt_text": null,
+ "kv_transfer_params": null,
+ "ec_transfer_params": null,
+ "metrics": null
+}

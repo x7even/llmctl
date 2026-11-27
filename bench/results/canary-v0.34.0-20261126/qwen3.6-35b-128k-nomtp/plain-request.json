@@ -1,0 +1,1 @@
+{"model": "qwen3.6-35b-128k-nomtp", "messages": [{"role": "user", "content": "Name the capital of France in one word."}], "max_tokens": 256, "stream": false, "chat_template_kwargs": {"enable_thinking": false}}

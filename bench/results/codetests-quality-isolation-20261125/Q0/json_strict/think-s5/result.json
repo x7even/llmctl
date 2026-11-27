@@ -1,0 +1,72 @@
+{
+ "passed": 7,
+ "total": 14,
+ "fatal": null,
+ "timed_out": false,
+ "stderr_tail": "",
+ "tests": [
+  {
+   "test": "test_basic_values",
+   "ok": false,
+   "err": "AssertionError: "
+  },
+  {
+   "test": "test_number_values",
+   "ok": true
+  },
+  {
+   "test": "test_number_errors_pos",
+   "ok": true
+  },
+  {
+   "test": "test_string_values",
+   "ok": true
+  },
+  {
+   "test": "test_string_errors_pos",
+   "ok": false,
+   "err": "AssertionError: '\"\\\\u1\"': pos 3, expected 4"
+  },
+  {
+   "test": "test_structure_whitespace_trailing_pos",
+   "ok": true
+  },
+  {
+   "test": "test_duplicate_keys",
+   "ok": false,
+   "err": "AssertionError: "
+  },
+  {
+   "test": "test_depth_limit_ok",
+   "ok": false,
+   "err": "AssertionError: '{\"a\":{\"a\":null}}': got \"{None: {'a': None}}\", expected \"{'a': {'a': None}}\""
+  },
+  {
+   "test": "test_depth_limit_exceeded",
+   "ok": true
+  },
+  {
+   "test": "test_error_api",
+   "ok": true
+  },
+  {
+   "test": "test_no_json_module_no_eval",
+   "ok": true
+  },
+  {
+   "test": "test_differential_valid",
+   "ok": false,
+   "err": "AssertionError: '{ \\r\"\"\\t:60870.0247035580556E+309,\"\"\\r:{\\n\\r\\t\"c\\\\\"\":false,\"\\\\ud83dAZ\":\"b\\\\f-\\\\u0001\\ude00\",\"\\\\udbff\\\\udfff\\xa0-\":[\\t[\\n \" A\u00e9\\\\\\\\\\\\r\\u2028A\"\\n ,\\n\\r[true'\n got  {'': inf, None: {'-': [], None: {'c': [], None: [{'aZc': None, '\u00e9\\x01': '_ / Z\\ud83d\\x08\\n'}, -4.0, \n want {'': {'c\"': Fal"
+  },
+  {
+   "test": "test_differential_mutations",
+   "ok": false,
+   "err": "AssertionError: '\\n\"\\\\u0009y\\\\u01f\ud83d\ude00\\\\f\"': pos 11, expected 14"
+  },
+  {
+   "test": "test_performance_scale",
+   "ok": false,
+   "err": "AssertionError: "
+  }
+ ]
+}

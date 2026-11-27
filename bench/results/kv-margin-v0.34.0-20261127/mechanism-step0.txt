@@ -1,0 +1,43 @@
+# Step 0 mechanism probe, 2026-11-27T03:27:41+00:00, image docker.io/vllm/vllm-openai-rocm:v0.34.0, one GPU (HIP_VISIBLE_DEVICES=0)
+# script: mech_test.py (same dir). PR #69994 head a150a1606382592cf226cf166c39b4f94217e4be
+
+===== stock =====
+mode stock torch 2.13.0+rocm10.0.0 hip 7.15.26333
+env conf: ''
+live expandable before: False live conf: ''
+segment types: ['large', 'small'] is_expandable: [False]
+PR scenario: OOM: CUDA out of memory. Tried to allocate 300.00 MiB. GPU 0 has a total capacity of 31.86 GiB of which 31.19 GiB is free. 700.00 MiB allowed; Of the allocated memory 320.00 MiB is allocated by PyTorch, and 280.00 MiB is reserved by PyTorch but unallocated. If reserved but unallocated memory is large try
+num_alloc_retries 1 num_ooms 1
+
+===== runtime =====
+mode runtime torch 2.13.0+rocm10.0.0 hip 7.15.26333
+env conf: ''
+live expandable before: False live conf: ''
+live expandable after runtime set: True
+segment types: ['large', 'small'] is_expandable: [False, True]
+PR scenario: PASS reserved=620 MiB limit=700 MiB
+num_alloc_retries 0 num_ooms 0
+
+===== env-PYTORCH_ALLOC_CONF =====
+mode stock torch 2.13.0+rocm10.0.0 hip 7.15.26333
+env conf: 'expandable_segments:True'
+live expandable before: True live conf: 'expandable_segments:True'
+segment types: ['large', 'small'] is_expandable: [True]
+PR scenario: PASS reserved=620 MiB limit=700 MiB
+num_alloc_retries 0 num_ooms 0
+
+===== env-PYTORCH_CUDA_ALLOC_CONF =====
+mode stock torch 2.13.0+rocm10.0.0 hip 7.15.26333
+env conf: 'expandable_segments:True'
+live expandable before: True live conf: 'expandable_segments:True'
+segment types: ['large', 'small'] is_expandable: [True]
+PR scenario: PASS reserved=620 MiB limit=700 MiB
+num_alloc_retries 0 num_ooms 0
+
+===== env-PYTORCH_HIP_ALLOC_CONF =====
+mode stock torch 2.13.0+rocm10.0.0 hip 7.15.26333
+env conf: 'expandable_segments:True'
+live expandable before: True live conf: 'expandable_segments:True'
+segment types: ['large', 'small'] is_expandable: [True]
+PR scenario: PASS reserved=620 MiB limit=700 MiB
+num_alloc_retries 0 num_ooms 0

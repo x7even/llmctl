@@ -1,0 +1,132 @@
+=== spawn1 (legacy): 2026-11-26T02:24:19+00:00 profile=gemma4-26b-a4b FIX_DROP='' FIX_ADD='' ===
+--- changes vs live profile argv ---
+--rm -> (dropped), -d added
+--name llmstack-vllm-${MODEL_ID} -> llmstack-canary034-gemma4-26b-a4b
+vllm-cache mount -> canary-034
+triton-cache mount -> canary-034
+image docker.io/vllm/vllm-openai-rocm:v0.26.0 -> docker.io/vllm/vllm-openai-rocm:v0.34.0
+--- launch command (bash array, printf %q) ---
+podman run -d --replace --name llmstack-canary034-gemma4-26b-a4b --device=/dev/kfd --device=/dev/dri --group-add keep-groups --security-opt seccomp=unconfined --security-opt apparmor=unconfined --ipc=private --shm-size=32g --network=host -v /mnt/models/llm:/models:ro -v ~/.local/share/llmstack/canary-034/vllm-cache:/root/.cache/vllm -v ~/.local/share/llmstack/canary-034/triton-cache:/root/.triton/cache -e HSA_ENABLE_SDMA=0 -e GPU_MAX_HW_QUEUES=1 -e TORCH_BLAS_PREFER_HIPBLASLT=1 --entrypoint= docker.io/vllm/vllm-openai-rocm:v0.34.0 vllm serve /models/google/gemma-4-26B-A4B-it --host 127.0.0.1 --port 9234 --served-model-name gemma4-26b-a4b --dtype auto --tensor-parallel-size 4 --max-num-seqs 32 --max-num-batched-tokens 32768 --gpu-memory-utilization 0.92 --enable-prefix-caching --enable-chunked-prefill --trust-remote-code --enable-auto-tool-choice --tool-call-parser gemma4 --cudagraph-capture-sizes 1 2 4 8 16 32 
+--- host MemFree before: MemFree:        27966188 kB
+--- VRAM before: GPU0 used=57MB GPU1 used=57MB GPU2 used=57MB GPU3 used=57MB 
+startup status=OK; 'startup complete' at 192 s, /health ok at 192 s
+--- idle VRAM after startup: GPU0 used=26379MB GPU1 used=26331MB GPU2 used=26403MB GPU3 used=26403MB 
+--- host MemFree after startup: MemFree:         2350764 kB
+--- image ---
+ImageName=docker.io/vllm/vllm-openai-rocm:v0.34.0 Image=9a5f9af8f20f129a8f0ccbe6c78499a1d0db8ddb17caaa848bb09f04f139d2b1 ImageDigest=sha256:3cb773d23f063afa86291ef75773cdd486154ddea94c213300f4ed7cc42b7af1
+--- container Id / created ---
+2b460c3a32779d024f3b91bd38a5f0dfb3cb4ca5255d69a6b3c176bade7b7555 2026-11-26 02:24:19.650232143 +0000 UTC
+--- argv ---
+["serve","/models/google/gemma-4-26B-A4B-it","--host","127.0.0.1","--port","9234","--served-model-name","gemma4-26b-a4b","--dtype","auto","--tensor-parallel-size","4","--max-num-seqs","32","--max-num-batched-tokens","32768","--gpu-memory-utilization","0.92","--enable-prefix-caching","--enable-chunked-prefill","--trust-remote-code","--enable-auto-tool-choice","--tool-call-parser","gemma4","--cudagraph-capture-sizes","1","2","4","8","16","32"]
+--- env (container) ---
+"HIP_FORCE_DEV_KERNARG=1"
+"HIP_PATH=/usr/local/lib/python3.12/dist-packages/_rocm_sdk_devel"
+"HSA_ENABLE_IPC_MODE_LEGACY=1"
+"HIP_DEVICE_LIB_PATH=/usr/local/lib/python3.12/dist-packages/_rocm_sdk_core/lib/llvm/amdgcn/bitcode"
+"PYTORCH_NVML_BASED_CUDA_CHECK=1"
+"HSA_NO_SCRATCH_RECLAIM=1"
+"TORCH_BLAS_PREFER_HIPBLASLT=1"
+"HIP_CLANG_PATH=/usr/local/lib/python3.12/dist-packages/_rocm_sdk_devel/lib/llvm/bin"
+"HSA_ENABLE_SDMA=0"
+"PYTORCH_ROCM_ARCH=gfx90a;gfx942;gfx950;gfx1100;gfx1101;gfx1200;gfx1201;gfx1150;gfx1151"
+"GPU_MAX_HW_QUEUES=1"
+### startinfo spawn1 (gemma4-26b-a4b) 2026-11-26T02:27:34+00:00
+startup status=OK; 'startup complete' at 192 s, /health ok at 192 s
+version 0.34.0
+-- attention backend:
+      1 forcing TRITON_ATTN backend
+      1 Using TRITON_ATTN backend (selected via --attention-backend)
+-- resolved capture sizes:
+'cudagraph_capture_sizes': [1, 2, 4, 8, 16, 32]
+cudagraph_mode': <CUDAGraphMode.FULL_AND_PIECEWISE: (2
+decode_cudagraph_capture_request_sizes': [1, 2, 4, 8, 16, 32]
+prefill_cudagraph_capture_token_sizes': [1, 2, 4, 8, 16, 32]
+-- capture progress (first frame each):
+      1 Capturing CUDA graphs (FULL):   0%|          | 0/6
+      1 Capturing CUDA graphs (PIECEWISE):   0%|          | 0/6
+-- KV:
+EngineCore INFO 11-26 02:27:24 [kv_cache_utils.py:1168] GPU KV cache size: 373,839 tokens, Maximum concurrency for 262,144 tokens per request: 1.43x
+Worker_TP0 INFO 11-26 02:26:51 [gpu_worker.py:795] Available KV cache memory: 11.13 GiB
+Worker_TP0 INFO 11-26 02:27:24 [extensible_kv_cache.py:536] Extended KV cache to 13264 blocks (8.10 GiB).
+Worker_TP0 INFO 11-26 02:27:24 [extensible_kv_cache.py:693] Memory after warmup: 13.66 GiB free, 0.01 GiB committed to the KV cache, 2.55 GiB kept for transient activations (1.44 GiB allocated at peak, 2.55 GiB of torch reservation growth); 13312 KV cache blocks (8.12 GiB) fit within the requested 2
+Worker_TP1 INFO 11-26 02:27:24 [extensible_kv_cache.py:536] Extended KV cache to 13264 blocks (8.10 GiB).
+Worker_TP1 INFO 11-26 02:27:24 [extensible_kv_cache.py:693] Memory after warmup: 13.64 GiB free, 0.01 GiB committed to the KV cache, 2.55 GiB kept for transient activations (1.44 GiB allocated at peak, 2.55 GiB of torch reservation growth); 13264 KV cache blocks (8.1 GiB) fit within the requested 29
+Worker_TP2 INFO 11-26 02:27:24 [extensible_kv_cache.py:536] Extended KV cache to 13264 blocks (8.10 GiB).
+Worker_TP2 INFO 11-26 02:27:24 [extensible_kv_cache.py:693] Memory after warmup: 13.64 GiB free, 0.01 GiB committed to the KV cache, 2.55 GiB kept for transient activations (1.44 GiB allocated at peak, 2.55 GiB of torch reservation growth); 13264 KV cache blocks (8.1 GiB) fit within the requested 29
+Worker_TP3 INFO 11-26 02:27:24 [extensible_kv_cache.py:536] Extended KV cache to 13264 blocks (8.10 GiB).
+Worker_TP3 INFO 11-26 02:27:24 [extensible_kv_cache.py:693] Memory after warmup: 13.73 GiB free, 0.01 GiB committed to the KV cache, 2.55 GiB kept for transient activations (1.44 GiB allocated at peak, 2.55 GiB of torch reservation growth); 13408 KV cache blocks (8.18 GiB) fit within the requested 2
+-- graph capture / load:
+INFO 11-26 02:25:25 [model_runner.py:441] Model loading took 13.35 GiB memory and 21.131263 seconds
+INFO 11-26 02:25:25 [model_runner.py:441] Model loading took 13.35 GiB memory and 21.225887 seconds
+INFO 11-26 02:25:25 [model_runner.py:441] Model loading took 13.35 GiB memory and 21.235550 seconds
+INFO 11-26 02:25:25 [model_runner.py:441] Model loading took 13.35 GiB memory and 21.260398 seconds
+INFO 11-26 02:26:40 [backends.py:421] [backbone] Compiling a graph for compile range (1, 32768) takes 46.65 s
+INFO 11-26 02:26:40 [backends.py:421] [backbone] Compiling a graph for compile range (1, 32768) takes 46.69 s
+INFO 11-26 02:26:41 [backends.py:421] [backbone] Compiling a graph for compile range (1, 32768) takes 46.97 s
+INFO 11-26 02:26:41 [backends.py:421] [backbone] Compiling a graph for compile range (1, 32768) takes 47.00 s
+INFO 11-26 02:27:23 [model_runner.py:1216] Graph capturing finished in 6 secs, took 0.00 GiB
+INFO 11-26 02:27:23 [model_runner.py:1216] Graph capturing finished in 6 secs, took -0.84 GiB
+INFO 11-26 02:27:23 [model_runner.py:1216] Graph capturing finished in 6 secs, took -0.86 GiB
+INFO 11-26 02:27:23 [model_runner.py:1216] Graph capturing finished in 6 secs, took -1.19 GiB
+-- warnings (deduped, counted):
+     12 /usr/local/lib/python3.12/dist-packages/torch/distributed/c10d_logger.py:83: FutureWarning: `torch.distributed.all_gather_into_tensor` is deprecated. Please use `torch.distributed.all_gather_single` instead.
+      4 WARNING [utils.py:420] lm_head skinny-GEMM guard engaged: weight (65536, 2816) (369098752 bytes) exceeds the weight cap 67108864 (VLLM_SKINNY_GEMM_MAX_WEIGHT_BYTES, or the hardware memory-side cache size when unset) at n=2; skipping wvSplitK for the generic GE
+      1 WARNING [vllm.py:2588] cudagraph_capture_sizes and max_cudagraph_capture_size are deprecated. Set the token counts of prefill CUDA graphs with prefill_cudagraph_capture_token_sizes or max_prefill_cudagraph_capture_tokens, and the request counts of decode CUDA 
+      1 WARNING [rocm.py:1224] Forcing --disable_chunked_mm_input for models with multimodal-bidirectional attention.
+      1 WARNING [model.py:1931] Default vLLM sampling parameters have been overridden by the model's `generation_config.json`: `{'temperature': 1.0, 'top_k': 64, 'top_p': 0.95}`. If this is not intended, please relaunch vLLM instance with `--generation-config vllm`.
+      1 WARNING [fused_moe.py:1253] Using default MoE config. Performance might be sub-optimal! Config file not found at /usr/local/lib/python3.12/dist-packages/vllm/model_executor/layers/fused_moe/configs/E=128,N=176,device_name=AMD_Radeon_R9700.json
+      1 WARNING [compilation.py:1514] Op 'sparse_attn_indexer' not present in model, enabling with '+sparse_attn_indexer' has no effect
+      1 WARNING [compilation.py:1514] Op 'rms_norm_gated' not present in model, enabling with '+rms_norm_gated' has no effect
+      1 WARNING [activation.py:441] [ROCm] PyTorch's native GELU with tanh approximation is unstable with torch.compile. For native implementation, fallback to 'none' approximation. The custom kernel implementation is unaffected.
+-- errors:
+=== llmband (presweep) 2026-11-26T02:27:49+00:00 ===
+llmband: gemma4-26b-a4b -> UNDECIDED band
+  no baseline for this profile; run --calibrate against a server you have reason to believe is in the fast band
+  256 steps / 256 tok in 1.976s (1.0 accepted/step); 32/36 card-samples under load across 4 cards
+llmband exit code (presweep): 2
+=== smoke 2026-11-26T02:27:59+00:00 ===
+[plain] 0.0s finish=stop usage={'prompt_tokens': 22, 'total_tokens': 24, 'completion_tokens': 2, 'completion_tokens_details': None}
+   fields with values: {"role": "assistant", "content": "Paris"}
+   has reasoning_content key: False; reasoning len: 0
+   plain correct: True
+[reasoning] 0.1s finish=stop usage={'prompt_tokens': 49, 'total_tokens': 53, 'completion_tokens': 4, 'completion_tokens_details': None}
+   fields with values: {"role": "assistant", "content": "155"}
+   has reasoning_content key: False; reasoning len: 0
+   reasoning answer 155 in content: True
+[toolcall] 1.6s finish=tool_calls usage={'prompt_tokens': 104, 'total_tokens': 121, 'completion_tokens': 17, 'completion_tokens_details': None}
+   fields with values: {"role": "assistant", "tool_calls": [{"id": "chatcmpl-tool-93ca2b5f17aa77ec", "type": "function", "function": {"name": "get_weather", "arguments": "{\"city\": \"Paris, France\"}"}}]}
+   has reasoning_content key: False; reasoning len: 0
+   tool call well-formed: True
+[image] 1.4s finish=stop usage={'prompt_tokens': 318, 'total_tokens': 351, 'completion_tokens': 33, 'completion_tokens_details': None}
+   fields with values: {"role": "assistant", "content": "CODE: R9700-VX-4183\n\n* Red circle, left\n* Blue square, right\n* Green triangle, bottom"}
+   has reasoning_content key: False; reasoning len: 0
+   image grade: {'code': True, 'red circle': True, 'blue square': True, 'green triangle': True}
+SMOKE_ALL_OK
+=== metrics snapshot (presweep) 2026-11-26T02:28:02+00:00 ===
+vllm:num_preemptions_total{engine="0",model_name="gemma4-26b-a4b"} 0.0
+vllm:prompt_tokens_total{engine="0",model_name="gemma4-26b-a4b"} 591.0
+vllm:generation_tokens_total{engine="0",model_name="gemma4-26b-a4b"} 440.0
+=== sweep 2026-11-26T02:28:02+00:00 -> bench/baselines/gemma4-26b-a4b-v0.34.0-peak-nothink-20261126.json ===
+sweep exit 0
+=== metrics snapshot (postsweep) 2026-11-26T02:34:27+00:00 ===
+vllm:num_preemptions_total{engine="0",model_name="gemma4-26b-a4b"} 0.0
+vllm:prompt_tokens_total{engine="0",model_name="gemma4-26b-a4b"} 61925.0
+vllm:generation_tokens_total{engine="0",model_name="gemma4-26b-a4b"} 122999.0
+=== llmband (postsweep) 2026-11-26T02:34:27+00:00 ===
+llmband: gemma4-26b-a4b -> UNDECIDED band
+  no baseline for this profile; run --calibrate against a server you have reason to believe is in the fast band
+  256 steps / 256 tok in 1.872s (1.0 accepted/step); 32/32 card-samples under load across 4 cards
+llmband exit code (postsweep): 2
+=== depth 2026-11-26T02:34:30+00:00 mml=262144 deep=2048,16384,65536,129984,258000 metrics=http://127.0.0.1:9234/metrics ===
+depth cell c1 depths=2048,16384,65536,129984,258000 conc=1 nonce=1795660471 -> bench/baselines/depth/gemma4-26b-a4b-v0.34.0-depth-c1-prewarm-20261126.json
+depth c1 exit 0
+depth cell c8 depths=16384 conc=8 nonce=1795660472 -> bench/baselines/depth/gemma4-26b-a4b-v0.34.0-depth-c8-prewarm-20261126.json
+depth c8 exit 0
+depth cell c4 depths=65536 conc=4 nonce=1795660473 -> bench/baselines/depth/gemma4-26b-a4b-v0.34.0-depth-c4-prewarm-20261126.json
+depth c4 exit 0
+=== metrics snapshot (final) 2026-11-26T02:37:17+00:00 ===
+vllm:num_preemptions_total{engine="0",model_name="gemma4-26b-a4b"} 0.0
+vllm:prompt_tokens_total{engine="0",model_name="gemma4-26b-a4b"} 1.804539e+06
+vllm:generation_tokens_total{engine="0",model_name="gemma4-26b-a4b"} 125579.0
+server log saved (1130 lines)
+=== stopped 2026-11-26T02:37:46+00:00 VRAM: GPU0 used=57MB GPU1 used=57MB GPU2 used=57MB GPU3 used=57MB 

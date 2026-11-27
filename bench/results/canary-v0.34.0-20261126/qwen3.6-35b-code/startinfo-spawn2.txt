@@ -1,0 +1,66 @@
+### startinfo spawn2 (qwen3.6-35b-code) 2026-11-26T20:23:17+00:00
+startup status=OK; 'startup complete' at 212 s, /health ok at 212 s
+version 0.34.0
+-- attention backend:
+      4 Overriding with TRITON_ATTN out of potential backends: ['TRITON_ATTN', 'ROCM_ATTN']
+-- resolved capture sizes:
+'cudagraph_capture_sizes': [1, 2, 3, 4, 5, 6, 8, 10, 12, 14, 16, 20, 24, 28, 32, 48, 96]
+cudagraph_mode': <CUDAGraphMode.FULL_AND_PIECEWISE: (2
+cudagraph_mode': None
+decode_cudagraph_capture_request_sizes': [1, 2, 4, 8, 16, 32]
+prefill_cudagraph_capture_token_sizes': [1, 2, 4, 8, 16, 32]
+-- capture progress (first frame each):
+      1 Capturing CUDA graphs (FULL):   0%|          | 0/6
+      1 Capturing CUDA graphs (PIECEWISE):   0%|          | 0/6
+      1 Capturing decode CUDA graphs (FULL):   0%|          | 0/15
+      1 Capturing prefill CUDA graphs (FULL):   0%|          | 0/6
+      1 Capturing prefill CUDA graphs (PIECEWISE):   0%|          | 0/6
+-- KV:
+EngineCore INFO 11-26 20:23:03 [kv_cache_utils.py:1168] GPU KV cache size: 1,087,351 tokens, Maximum concurrency for 131,072 tokens per request: 8.30x
+EngineCore WARNING 11-26 20:20:40 [kv_cache_planning.py:583] Add 3 padding layers, may waste at most 10.00% KV cache memory
+Worker_TP0_EP0 INFO 11-26 20:22:20 [gpu_worker.py:795] Available KV cache memory: 15.85 GiB
+Worker_TP0_EP0 INFO 11-26 20:23:03 [extensible_kv_cache.py:536] Extended KV cache to 1991 blocks (12.03 GiB).
+Worker_TP0_EP0 INFO 11-26 20:23:03 [extensible_kv_cache.py:693] Memory after warmup: 17.71 GiB free, 0.02 GiB committed to the KV cache, 2.67 GiB kept for transient activations (1.37 GiB allocated at peak, 2.67 GiB of torch reservation growth); 1994 KV cache blocks (12.05 GiB) fit within the request
+Worker_TP1_EP1 INFO 11-26 20:23:03 [extensible_kv_cache.py:536] Extended KV cache to 1991 blocks (12.03 GiB).
+Worker_TP1_EP1 INFO 11-26 20:23:03 [extensible_kv_cache.py:693] Memory after warmup: 17.7 GiB free, 0.02 GiB committed to the KV cache, 2.67 GiB kept for transient activations (1.37 GiB allocated at peak, 2.67 GiB of torch reservation growth); 1991 KV cache blocks (12.03 GiB) fit within the requeste
+Worker_TP2_EP2 INFO 11-26 20:23:03 [extensible_kv_cache.py:536] Extended KV cache to 1991 blocks (12.03 GiB).
+Worker_TP2_EP2 INFO 11-26 20:23:03 [extensible_kv_cache.py:693] Memory after warmup: 17.69 GiB free, 0.02 GiB committed to the KV cache, 2.67 GiB kept for transient activations (1.37 GiB allocated at peak, 2.67 GiB of torch reservation growth); 1991 KV cache blocks (12.03 GiB) fit within the request
+Worker_TP3_EP3 INFO 11-26 20:23:03 [extensible_kv_cache.py:536] Extended KV cache to 1991 blocks (12.03 GiB).
+Worker_TP3_EP3 INFO 11-26 20:23:03 [extensible_kv_cache.py:693] Memory after warmup: 17.77 GiB free, 0.02 GiB committed to the KV cache, 2.67 GiB kept for transient activations (1.37 GiB allocated at peak, 2.67 GiB of torch reservation growth); 2005 KV cache blocks (12.12 GiB) fit within the request
+-- graph capture / load:
+INFO 11-26 20:20:40 [model_runner.py:441] Model loading took 8.99 GiB memory and 13.459483 seconds
+INFO 11-26 20:20:40 [model_runner.py:441] Model loading took 8.99 GiB memory and 13.459736 seconds
+INFO 11-26 20:20:40 [model_runner.py:441] Model loading took 8.99 GiB memory and 13.490478 seconds
+INFO 11-26 20:20:40 [model_runner.py:441] Model loading took 8.99 GiB memory and 13.545953 seconds
+INFO 11-26 20:21:12 [backends.py:421] [backbone] Compiling a graph for compile range (1, 32768) takes 14.55 s
+INFO 11-26 20:21:13 [backends.py:421] [backbone] Compiling a graph for compile range (1, 32768) takes 15.08 s
+INFO 11-26 20:21:13 [backends.py:421] [backbone] Compiling a graph for compile range (1, 32768) takes 15.21 s
+INFO 11-26 20:21:13 [backends.py:421] [backbone] Compiling a graph for compile range (1, 32768) takes 15.23 s
+INFO 11-26 20:22:14 [backends.py:421] [eagle_head] Compiling a graph for compile range (1, 32768) takes 9.31 s
+INFO 11-26 20:22:14 [backends.py:421] [eagle_head] Compiling a graph for compile range (1, 32768) takes 9.32 s
+INFO 11-26 20:22:14 [backends.py:421] [eagle_head] Compiling a graph for compile range (1, 32768) takes 9.33 s
+INFO 11-26 20:22:14 [backends.py:421] [eagle_head] Compiling a graph for compile range (1, 32768) takes 9.69 s
+INFO 11-26 20:23:03 [model_runner.py:1216] Graph capturing finished in 7 secs, took 0.04 GiB
+INFO 11-26 20:23:03 [model_runner.py:1216] Graph capturing finished in 7 secs, took -0.39 GiB
+INFO 11-26 20:23:03 [model_runner.py:1216] Graph capturing finished in 7 secs, took -0.83 GiB
+INFO 11-26 20:23:03 [model_runner.py:1216] Graph capturing finished in 7 secs, took -1.33 GiB
+-- warnings (deduped, counted):
+     16 /usr/local/lib/python3.12/dist-packages/torch/distributed/c10d_logger.py:83: FutureWarning: `torch.distributed.all_gather_into_tensor` is deprecated. Please use `torch.distributed.all_gather_single` instead.
+      4 WARNING [utils.py:420] lm_head skinny-GEMM guard engaged: weight (62080, 2048) (254279680 bytes) exceeds the weight cap 67108864 (VLLM_SKINNY_GEMM_MAX_WEIGHT_BYTES, or the hardware memory-side cache size when unset) at n=5; skipping wvSplitK for the generic GE
+      4 WARNING [utils.py:420] lm_head skinny-GEMM guard engaged: weight (62080, 2048) (254279680 bytes) exceeds the weight cap 67108864 (VLLM_SKINNY_GEMM_MAX_WEIGHT_BYTES, or the hardware memory-side cache size when unset) at n=4; skipping wvSplitK for the generic GE
+      4 WARNING [utils.py:420] lm_head skinny-GEMM guard engaged: weight (62080, 2048) (254279680 bytes) exceeds the weight cap 67108864 (VLLM_SKINNY_GEMM_MAX_WEIGHT_BYTES, or the hardware memory-side cache size when unset) at n=3; skipping wvSplitK for the generic GE
+      4 WARNING [utils.py:420] lm_head skinny-GEMM guard engaged: weight (62080, 2048) (254279680 bytes) exceeds the weight cap 67108864 (VLLM_SKINNY_GEMM_MAX_WEIGHT_BYTES, or the hardware memory-side cache size when unset) at n=2; skipping wvSplitK for the generic GE
+      4 WARNING [fp8_utils.py:953] Using default W8A8 Block FP8 kernel config. Performance might be sub-optimal! Config file not found at /usr/local/lib/python3.12/dist-packages/vllm/model_executor/layers/quantization/utils/configs/N=3072,K=2048,device_name=AMD_Radeon
+      4 WARNING [fp8_utils.py:953] Using default W8A8 Block FP8 kernel config. Performance might be sub-optimal! Config file not found at /usr/local/lib/python3.12/dist-packages/vllm/model_executor/layers/quantization/utils/configs/N=2560,K=2048,device_name=AMD_Radeon
+      4 WARNING [fp8_utils.py:953] Using default W8A8 Block FP8 kernel config. Performance might be sub-optimal! Config file not found at /usr/local/lib/python3.12/dist-packages/vllm/model_executor/layers/quantization/utils/configs/N=256,K=2048,device_name=AMD_Radeon_
+      4 WARNING [fp8_utils.py:953] Using default W8A8 Block FP8 kernel config. Performance might be sub-optimal! Config file not found at /usr/local/lib/python3.12/dist-packages/vllm/model_executor/layers/quantization/utils/configs/N=2048,K=128,device_name=AMD_Radeon_
+      4 WARNING [fp8_utils.py:953] Using default W8A8 Block FP8 kernel config. Performance might be sub-optimal! Config file not found at /usr/local/lib/python3.12/dist-packages/vllm/model_executor/layers/quantization/utils/configs/N=2048,K=1024,device_name=AMD_Radeon
+      1 WARNING [vllm.py:1581] Auto-disabled DeepGemm for model_type=qwen3_5_moe_text on Blackwell. To disable DeepGemm globally, set VLLM_USE_DEEP_GEMM=0.
+      1 WARNING [serving.py:320] The chat template requires system-first ordering, so inline system messages in /v1/messages requests (e.g. Claude Code's per-turn reminders) are merged into the leading system prompt. Each new one changes the prompt prefix, so the rest
+      1 WARNING [model.py:1931] Default vLLM sampling parameters have been overridden by the model's `generation_config.json`: `{'temperature': 1.0, 'top_k': 20, 'top_p': 0.95}`. If this is not intended, please relaunch vLLM instance with `--generation-config vllm`.
+      1 WARNING [kv_cache_planning.py:583] Add 3 padding layers, may waste at most 10.00% KV cache memory
+      1 WARNING [fused_moe.py:1253] Using default MoE config. Performance might be sub-optimal! Config file not found at /usr/local/lib/python3.12/dist-packages/vllm/model_executor/layers/fused_moe/configs/E=64,N=512,device_name=AMD_Radeon_R9700,dtype=fp8_w8a8,block_s
+      1 WARNING [config.py:94] Enabling num_speculative_tokens > 1 will run multiple times of forward on same MTP layer,which may result in lower acceptance rate
+      1 WARNING [compilation.py:1514] Op 'sparse_attn_indexer' not present in model, enabling with '+sparse_attn_indexer' has no effect
+      1 WARNING [activation.py:816] [ROCm] PyTorch's native GELU with tanh approximation is unstable. Falling back to GELU(approximate='none').
+-- errors:

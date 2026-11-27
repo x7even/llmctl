@@ -1,0 +1,72 @@
+{
+ "passed": 7,
+ "total": 14,
+ "fatal": null,
+ "timed_out": false,
+ "stderr_tail": "",
+ "tests": [
+  {
+   "test": "test_no_forbidden_imports",
+   "ok": true
+  },
+  {
+   "test": "test_leap_and_month_lengths",
+   "ok": true
+  },
+  {
+   "test": "test_ordinal_weekday",
+   "ok": false,
+   "err": "AssertionError: to_ordinal(1600, 2, 1)"
+  },
+  {
+   "test": "test_iso_week_vs_stdlib",
+   "ok": false,
+   "err": "AssertionError: iso_week(1950, 2, 1) = (1949, 52, 7), want (1950, 5, 3)"
+  },
+  {
+   "test": "test_from_iso_week_rules",
+   "ok": true
+  },
+  {
+   "test": "test_add_days",
+   "ok": false,
+   "err": "AssertionError: add_days((5399, 5, 5),345) = (5400, 3, 16), want (5400, 4, 15)"
+  },
+  {
+   "test": "test_add_months_oracle",
+   "ok": true
+  },
+  {
+   "test": "test_parse_accepts",
+   "ok": true
+  },
+  {
+   "test": "test_parse_rejects",
+   "ok": true
+  },
+  {
+   "test": "test_format_date",
+   "ok": false,
+   "err": "AssertionError: format_date((1999, 2, 1), 'ordinal') = '1999-001', want '1999-032'"
+  },
+  {
+   "test": "test_diff_rule",
+   "ok": false,
+   "err": "AssertionError: "
+  },
+  {
+   "test": "test_diff_oracle_and_identity",
+   "ok": false,
+   "err": "AssertionError: "
+  },
+  {
+   "test": "test_validation_and_types",
+   "ok": true
+  },
+  {
+   "test": "test_scale",
+   "ok": false,
+   "err": "AssertionError: "
+  }
+ ]
+}

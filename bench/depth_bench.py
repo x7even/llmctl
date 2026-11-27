@@ -143,7 +143,10 @@ def one_request(url, model, messages, gen, timeout, no_thinking, headers):
             if not choices:
                 continue
             delta = choices[0].get("delta") or {}
-            if delta.get("content") or delta.get("reasoning_content"):
+            # vLLM >= 0.32 streams thinking as `reasoning`; older images used
+            # `reasoning_content`. Accept both so a thinking-on cell is timed.
+            if (delta.get("content") or delta.get("reasoning")
+                    or delta.get("reasoning_content")):
                 now = time.perf_counter()
                 if t_first is None:
                     t_first = now

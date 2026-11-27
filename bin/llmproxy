@@ -124,7 +124,10 @@ def _strip_args_from_line(line: str, arg_buf: dict) -> tuple:
     if not meaningful:
         for choice in data.get("choices", []):
             delta = choice.get("delta", {})
-            if delta.get("content") or delta.get("role"):
+            # vLLM >= 0.32 streams thinking as `reasoning`; older images used
+            # `reasoning_content`. Either one is text the client must still receive.
+            if (delta.get("content") or delta.get("role") or delta.get("reasoning")
+                    or delta.get("reasoning_content")):
                 meaningful = True
                 break
             for tc in delta.get("tool_calls", []):

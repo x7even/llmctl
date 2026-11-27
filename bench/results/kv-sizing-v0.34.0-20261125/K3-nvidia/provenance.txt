@@ -1,0 +1,96 @@
+=== spawn1: 2026-11-25T23:57:52+00:00 arm=K3-nvidia GMU=none KVMEM= PATCH=nvidia ===
+--- launch command (printf %q) ---
+podman run -d --replace --name llmstack-canary-kv-K3-nvidia --device=/dev/kfd --device=/dev/dri --group-add keep-groups --security-opt seccomp=unconfined --security-opt apparmor=unconfined --ipc=private --shm-size=32g --network=host -v /mnt/models/llm:/models:ro -v ~/.local/share/llmstack/canary-034/vllm-cache:/root/.cache/vllm -v ~/.local/share/llmstack/canary-034/triton-cache:/root/.triton/cache -v /tmp/canary034kv/tracer:/kvtrace:ro -v __LLMSTACK_DIR__/bench/results/kv-sizing-v0.34.0-20261125/K3-nvidia/trace:/trace -v ~/.local/share/llmstack/canary-034/patches/extensible_kv_cache.nvidia.py:/usr/local/lib/python3.12/dist-packages/vllm/v1/worker/extensible_kv_cache.py:ro -e HSA_ENABLE_SDMA=0 -e GPU_MAX_HW_QUEUES=1 -e TORCH_BLAS_PREFER_HIPBLASLT=1 -e KVTRACE=1 -e PYTHONPATH=/kvtrace:/usr/local/lib/python3.12/dist-packages/_rocm_sdk_core/share/amd_smi --entrypoint= docker.io/vllm/vllm-openai-rocm:v0.34.0 vllm serve /models/Qwen3.8-27B-FP8 --host 127.0.0.1 --port 9234 --served-model-name qwen3.8-27b-code --dtype auto --tensor-parallel-size 4 --max-model-len 131072 --max-num-seqs 32 --max-num-batched-tokens 16384 --enable-prefix-caching --enable-chunked-prefill --trust-remote-code --reasoning-parser qwen3 --enable-auto-tool-choice --tool-call-parser qwen3_xml --default-chat-template-kwargs \{\"reasoning_effort\":\ \"medium\"\} --speculative-config \{\"method\":\ \"mtp\"\,\ \"num_speculative_tokens\":\ 2\} --compilation-config \{\"prefill_cudagraph_capture_token_sizes\":\[1\,2\,4\,8\,16\,32\]\,\"decode_cudagraph_capture_request_sizes\":\[1\,2\,4\,8\,16\,32\]\} 
+--- VRAM before ---
+GPU: 0
+        USED_VRAM: 57 MB
+        FREE_VRAM: 32567 MB
+GPU: 1
+        USED_VRAM: 57 MB
+        FREE_VRAM: 32567 MB
+GPU: 2
+        USED_VRAM: 57 MB
+        FREE_VRAM: 32567 MB
+GPU: 3
+        USED_VRAM: 57 MB
+        FREE_VRAM: 32567 MB
+startup status=OK; 'startup complete' at 76 s, /health ok at 76 s
+--- image ---
+ImageName=docker.io/vllm/vllm-openai-rocm:v0.34.0 Image=9a5f9af8f20f129a8f0ccbe6c78499a1d0db8ddb17caaa848bb09f04f139d2b1
+--- argv ---
+["serve","/models/Qwen3.8-27B-FP8","--host","127.0.0.1","--port","9234","--served-model-name","qwen3.8-27b-code","--dtype","auto","--tensor-parallel-size","4","--max-model-len","131072","--max-num-seqs","32","--max-num-batched-tokens","16384","--enable-prefix-caching","--enable-chunked-prefill","--trust-remote-code","--reasoning-parser","qwen3","--enable-auto-tool-choice","--tool-call-parser","qwen3_xml","--default-chat-template-kwargs","{\"reasoning_effort\": \"medium\"}","--speculative-config","{\"method\": \"mtp\", \"num_speculative_tokens\": 2}","--compilation-config","{\"prefill_cudagraph_capture_token_sizes\":[1,2,4,8,16,32],\"decode_cudagraph_capture_request_sizes\":[1,2,4,8,16,32]}"]
+--- env ---
+"HSA_NO_SCRATCH_RECLAIM=1"
+"GPU_MAX_HW_QUEUES=1"
+"TORCH_BLAS_PREFER_HIPBLASLT=1"
+"PYTORCH_ROCM_ARCH=gfx90a;gfx942;gfx950;gfx1100;gfx1101;gfx1200;gfx1201;gfx1150;gfx1151"
+"KVTRACE=1"
+"HSA_ENABLE_IPC_MODE_LEGACY=1"
+"HSA_ENABLE_SDMA=0"
+"PYTORCH_NVML_BASED_CUDA_CHECK=1"
+"PYTHONPATH=/kvtrace:/usr/local/lib/python3.12/dist-packages/_rocm_sdk_core/share/amd_smi"
+--- mounts ---
+~/.local/share/llmstack/canary-034/patches/extensible_kv_cache.nvidia.py -> /usr/local/lib/python3.12/dist-packages/vllm/v1/worker/extensible_kv_cache.py /mnt/models/llm -> /models ~/.local/share/llmstack/canary-034/vllm-cache -> /root/.cache/vllm ~/.local/share/llmstack/canary-034/triton-cache -> /root/.triton/cache /tmp/canary034kv/tracer -> /kvtrace __LLMSTACK_DIR__/bench/results/kv-sizing-v0.34.0-20261125/K3-nvidia/trace -> /trace 
+--- log: memory / pool lines ---
+(VllmWorker-1 pid=568) INFO 11-25 23:58:28 [extensible_kv_cache.py:75] kv-sizing canary patch nvidia: KV_CACHE_MARGIN_FLOOR_BYTES=1073741824 KV_CACHE_NON_TORCH_RESERVE_BYTES=536870912
+(VllmWorker-2 pid=566) INFO 11-25 23:58:28 [extensible_kv_cache.py:75] kv-sizing canary patch nvidia: KV_CACHE_MARGIN_FLOOR_BYTES=1073741824 KV_CACHE_NON_TORCH_RESERVE_BYTES=536870912
+(VllmWorker-0 pid=565) INFO 11-25 23:58:28 [extensible_kv_cache.py:75] kv-sizing canary patch nvidia: KV_CACHE_MARGIN_FLOOR_BYTES=1073741824 KV_CACHE_NON_TORCH_RESERVE_BYTES=536870912
+(VllmWorker-3 pid=567) INFO 11-25 23:58:28 [extensible_kv_cache.py:75] kv-sizing canary patch nvidia: KV_CACHE_MARGIN_FLOOR_BYTES=1073741824 KV_CACHE_NON_TORCH_RESERVE_BYTES=536870912
+(Worker_TP2 pid=566) INFO 11-25 23:58:35 [model_runner.py:441] Model loading took 7.86 GiB memory and 4.842223 seconds
+(Worker_TP0 pid=565) INFO 11-25 23:58:35 [model_runner.py:441] Model loading took 7.86 GiB memory and 4.790677 seconds
+(Worker_TP1 pid=568) INFO 11-25 23:58:35 [model_runner.py:441] Model loading took 7.86 GiB memory and 4.855353 seconds
+(Worker_TP3 pid=567) INFO 11-25 23:58:35 [model_runner.py:441] Model loading took 7.86 GiB memory and 4.869298 seconds
+(Worker_TP0 pid=565) INFO 11-25 23:58:47 [gpu_worker.py:795] Available KV cache memory: 22.02 GiB
+(Worker_TP1 pid=568) INFO 11-25 23:58:58 [model_runner.py:1216] Graph capturing finished in 5 secs, took -0.47 GiB
+(Worker_TP1 pid=568) INFO 11-25 23:58:58 [gpu_worker.py:1175] Free memory on device (31.18/31.86 GiB) on startup. Desired GPU memory utilization is (1.0, 31.86 GiB). Actual usage is 10.23 GiB for consumed memory (weights + non-torch), 1.15 GiB for peak activation, and -0.47 GiB for CUDAGraph memory. Replace gpu_memory_utilization config with `--kv-cache-memory=22336239616` (20.8 GiB) to fit into requested memory, or `--kv-cache-memory=21608527872` (20.12 GiB) to fully utilize gpu memory. Current kv cache memory in use is 20.48 GiB.
+(Worker_TP3 pid=567) INFO 11-25 23:58:58 [model_runner.py:1216] Graph capturing finished in 5 secs, took -0.38 GiB
+(Worker_TP0 pid=565) INFO 11-25 23:58:58 [model_runner.py:1216] Graph capturing finished in 5 secs, took -0.54 GiB
+(Worker_TP3 pid=567) INFO 11-25 23:58:58 [gpu_worker.py:1175] Free memory on device (31.21/31.86 GiB) on startup. Desired GPU memory utilization is (1.0, 31.86 GiB). Actual usage is 9.01 GiB for consumed memory (weights + non-torch), 1.15 GiB for peak activation, and -0.38 GiB for CUDAGraph memory. Replace gpu_memory_utilization config with `--kv-cache-memory=23554684928` (21.94 GiB) to fit into requested memory, or `--kv-cache-memory=22852139008` (21.28 GiB) to fully utilize gpu memory. Current kv cache memory in use is 21.7 GiB.
+(Worker_TP0 pid=565) INFO 11-25 23:58:58 [gpu_worker.py:1175] Free memory on device (31.19/31.86 GiB) on startup. Desired GPU memory utilization is (1.0, 31.86 GiB). Actual usage is 8.69 GiB for consumed memory (weights + non-torch), 1.15 GiB for peak activation, and -0.54 GiB for CUDAGraph memory. Replace gpu_memory_utilization config with `--kv-cache-memory=24058001408` (22.41 GiB) to fit into requested memory, or `--kv-cache-memory=23338678272` (21.74 GiB) to fully utilize gpu memory. Current kv cache memory in use is 22.02 GiB.
+(Worker_TP2 pid=566) INFO 11-25 23:58:58 [model_runner.py:1216] Graph capturing finished in 5 secs, took 0.83 GiB
+(Worker_TP2 pid=566) INFO 11-25 23:58:58 [gpu_worker.py:1175] Free memory on device (31.18/31.86 GiB) on startup. Desired GPU memory utilization is (1.0, 31.86 GiB). Actual usage is 10.47 GiB for consumed memory (weights + non-torch), 1.15 GiB for peak activation, and 0.83 GiB for CUDAGraph memory. Replace gpu_memory_utilization config with `--kv-cache-memory=20685780992` (19.27 GiB) to fit into requested memory, or `--kv-cache-memory=19958069248` (18.59 GiB) to fully utilize gpu memory. Current kv cache memory in use is 20.24 GiB.
+(Worker_TP3 pid=567) INFO 11-25 23:58:58 [extensible_kv_cache.py:694] Memory after warmup: 20.88 GiB free, 0.03 GiB committed to the KV cache, 2.25 GiB kept for transient activations (1.23 GiB allocated at peak, 2.25 GiB of torch reservation growth); 1307 KV cache blocks (17.63 GiB) fit within the requested 31.86 GiB. Torch may reserve up to 11.59 GiB.
+(Worker_TP1 pid=568) INFO 11-25 23:58:58 [extensible_kv_cache.py:694] Memory after warmup: 20.84 GiB free, 0.03 GiB committed to the KV cache, 2.25 GiB kept for transient activations (1.23 GiB allocated at peak, 2.25 GiB of torch reservation growth); 1304 KV cache blocks (17.59 GiB) fit within the requested 31.86 GiB. Torch may reserve up to 11.59 GiB.
+(Worker_TP0 pid=565) INFO 11-25 23:58:58 [extensible_kv_cache.py:694] Memory after warmup: 20.86 GiB free, 0.03 GiB committed to the KV cache, 2.25 GiB kept for transient activations (1.23 GiB allocated at peak, 2.25 GiB of torch reservation growth); 1307 KV cache blocks (17.63 GiB) fit within the requested 31.86 GiB. Torch may reserve up to 11.57 GiB.
+(Worker_TP2 pid=566) INFO 11-25 23:58:58 [extensible_kv_cache.py:694] Memory after warmup: 20.84 GiB free, 0.03 GiB committed to the KV cache, 2.25 GiB kept for transient activations (1.23 GiB allocated at peak, 2.25 GiB of torch reservation growth); 1304 KV cache blocks (17.59 GiB) fit within the requested 31.86 GiB. Torch may reserve up to 11.59 GiB.
+(EngineCore pid=343) INFO 11-25 23:58:58 [kv_cache_utils.py:1168] GPU KV cache size: 1,005,399 tokens, Maximum concurrency for 131,072 tokens per request: 7.67x
+(Worker_TP1 pid=568) INFO 11-25 23:58:58 [extensible_kv_cache.py:537] Extended KV cache to 1304 blocks (17.60 GiB).
+(Worker_TP0 pid=565) INFO 11-25 23:58:58 [extensible_kv_cache.py:537] Extended KV cache to 1304 blocks (17.60 GiB).
+(Worker_TP3 pid=567) INFO 11-25 23:58:58 [extensible_kv_cache.py:537] Extended KV cache to 1304 blocks (17.60 GiB).
+(Worker_TP2 pid=566) INFO 11-25 23:58:58 [extensible_kv_cache.py:537] Extended KV cache to 1304 blocks (17.60 GiB).
+--- VRAM idle after startup ---
+GPU: 0
+        USED_VRAM: 28099 MB
+        FREE_VRAM: 4525 MB
+GPU: 1
+        USED_VRAM: 28067 MB
+        FREE_VRAM: 4557 MB
+GPU: 2
+        USED_VRAM: 28115 MB
+        FREE_VRAM: 4509 MB
+GPU: 3
+        USED_VRAM: 28115 MB
+        FREE_VRAM: 4509 MB
+=== llmband (presweep-spawn1) 2026-11-25T23:59:13+00:00 exit=0 ===
+llmband: qwen3.8-27b-code -> FAST band
+  39.73 steps/s vs baseline 36.31, floor 31.95 (-12%) -> fast
+  mem_busy 49% vs baseline 46% (+/-30%) -> consistent
+  109 steps / 256 tok in 2.744s (2.349 accepted/step); 48/48 card-samples under load across 4 cards
+=== llmband (postsweep) 2026-11-26T00:34:40+00:00 exit=0 ===
+llmband: qwen3.8-27b-code -> FAST band
+  39.34 steps/s vs baseline 36.31, floor 31.95 (-12%) -> fast
+  mem_busy 49% vs baseline 46% (+/-30%) -> consistent
+  109 steps / 256 tok in 2.771s (2.349 accepted/step); 48/48 card-samples under load across 4 cards
+=== stopped 2026-11-26T00:34:51+00:00 ===
+GPU: 0
+        USED_VRAM: 57 MB
+        FREE_VRAM: 32567 MB
+GPU: 1
+        USED_VRAM: 57 MB
+        FREE_VRAM: 32567 MB
+GPU: 2
+        USED_VRAM: 57 MB
+        FREE_VRAM: 32567 MB
+GPU: 3
+        USED_VRAM: 57 MB
+        FREE_VRAM: 32567 MB

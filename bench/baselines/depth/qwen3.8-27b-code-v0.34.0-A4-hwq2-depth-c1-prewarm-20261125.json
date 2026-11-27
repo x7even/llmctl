@@ -1,0 +1,622 @@
+{
+  "model": "qwen3.8-27b-code",
+  "url": "http://127.0.0.1:9234/v1/chat/completions",
+  "label": "canary v0.34.0 A4-hwq2 prewarm c1",
+  "gen": 128,
+  "no_thinking": true,
+  "prewarm": true,
+  "shared_prefix": false,
+  "requests_per_cell": null,
+  "seed": 1234,
+  "run_nonce": 1795620132,
+  "words_per_token": 1.0002463661000247,
+  "timestamp": "2026-11-25T15:23:33",
+  "rows": [
+    {
+      "ok": 1,
+      "requested": 1,
+      "slots": 1,
+      "errors": [],
+      "prompt_tokens": 2047,
+      "completion_tokens": 128,
+      "agg_decode_tok_s": 49.36905939740248,
+      "per_stream_tok_s_mean": 49.36905939740248,
+      "per_stream_tok_s_min": 49.36905939740248,
+      "ttft_s_mean": 0.12578827599645592,
+      "ttft_s_p90": 0.12578827599645592,
+      "e2e_s_max": 2.6982496830023592,
+      "dist": {
+        "per_stream_tok_s": {
+          "n": 1,
+          "mean": 49.36905939740248,
+          "stdev": 0.0,
+          "min": 49.36905939740248,
+          "p10": 49.36905939740248,
+          "p50": 49.36905939740248,
+          "p90": 49.36905939740248,
+          "max": 49.36905939740248,
+          "percentiles_meaningful": false
+        },
+        "ttft_s": {
+          "n": 1,
+          "mean": 0.12578827599645592,
+          "stdev": 0.0,
+          "min": 0.12578827599645592,
+          "p10": 0.12578827599645592,
+          "p50": 0.12578827599645592,
+          "p90": 0.12578827599645592,
+          "max": 0.12578827599645592,
+          "percentiles_meaningful": false
+        },
+        "e2e_s": {
+          "n": 1,
+          "mean": 2.6982496830023592,
+          "stdev": 0.0,
+          "min": 2.6982496830023592,
+          "p10": 2.6982496830023592,
+          "p50": 2.6982496830023592,
+          "p90": 2.6982496830023592,
+          "max": 2.6982496830023592,
+          "percentiles_meaningful": false
+        },
+        "decode_window_s": {
+          "n": 1,
+          "mean": 2.5724614070059033,
+          "stdev": 0.0,
+          "min": 2.5724614070059033,
+          "p10": 2.5724614070059033,
+          "p50": 2.5724614070059033,
+          "p90": 2.5724614070059033,
+          "max": 2.5724614070059033,
+          "percentiles_meaningful": false
+        },
+        "accepted_per_step": {
+          "n": 1,
+          "mean": 2.2280701754385963,
+          "stdev": 0.0,
+          "min": 2.2280701754385963,
+          "p10": 2.2280701754385963,
+          "p50": 2.2280701754385963,
+          "p90": 2.2280701754385963,
+          "max": 2.2280701754385963,
+          "percentiles_meaningful": false
+        }
+      },
+      "samples": {
+        "per_stream_tok_s": [
+          49.36905939740248
+        ],
+        "ttft_s": [
+          0.12578827599645592
+        ],
+        "e2e_s": [
+          2.6982496830023592
+        ]
+      },
+      "accepted_per_step": 2.2280701754385963,
+      "prefill_tok_s": 16273.376702115498,
+      "prefill_tok_s_per_stream_mean": 16273.376702115498,
+      "live": {
+        "interval_s": 1.0,
+        "n_samples": 2,
+        "modal_running_requests": 1.0,
+        "max_running_requests": 1.0,
+        "saturation_threshold_requests": 0.9,
+        "max_waiting_requests": 0,
+        "n_samples_in_band": 2,
+        "n_zero_decode_ticks_in_band": 0,
+        "zero_decode_tick_fraction_in_band": 0.0,
+        "decode_tok_s_all": {
+          "n": 2,
+          "mean": 46.995967962783865,
+          "stdev": 0.0006925115366537564,
+          "min": 46.99547828318025,
+          "p10": 46.99547828318025,
+          "p50": 46.99645764238748,
+          "p90": 46.99645764238748,
+          "max": 46.99645764238748,
+          "percentiles_meaningful": false
+        },
+        "decode_tok_s_saturated": {
+          "n": 2,
+          "mean": 46.995967962783865,
+          "stdev": 0.0006925115366537564,
+          "min": 46.99547828318025,
+          "p10": 46.99547828318025,
+          "p50": 46.99645764238748,
+          "p90": 46.99645764238748,
+          "max": 46.99645764238748,
+          "percentiles_meaningful": false
+        },
+        "prefill_tok_s_nonzero": {
+          "n": 1,
+          "mean": 2046.8030648014887,
+          "stdev": 0.0,
+          "min": 2046.8030648014887,
+          "p10": 2046.8030648014887,
+          "p50": 2046.8030648014887,
+          "p90": 2046.8030648014887,
+          "max": 2046.8030648014887,
+          "percentiles_meaningful": false
+        },
+        "samples": [
+          {
+            "dt": 1.0,
+            "gen_tok_s": 47.0,
+            "prompt_tok_s": 2046.8,
+            "running": 1.0,
+            "waiting": 0.0
+          },
+          {
+            "dt": 1.0,
+            "gen_tok_s": 47.0,
+            "prompt_tok_s": 0.0,
+            "running": 1.0,
+            "waiting": 0.0
+          }
+        ],
+        "peak_over_median": 1.0
+      },
+      "depth_requested": 2048,
+      "concurrency": 1
+    },
+    {
+      "ok": 1,
+      "requested": 1,
+      "slots": 1,
+      "errors": [],
+      "prompt_tokens": 16387,
+      "completion_tokens": 128,
+      "agg_decode_tok_s": 49.2443066225281,
+      "per_stream_tok_s_mean": 49.2443066225281,
+      "per_stream_tok_s_min": 49.2443066225281,
+      "ttft_s_mean": 0.20687604800332338,
+      "ttft_s_p90": 0.20687604800332338,
+      "e2e_s_max": 2.785854385001585,
+      "dist": {
+        "per_stream_tok_s": {
+          "n": 1,
+          "mean": 49.2443066225281,
+          "stdev": 0.0,
+          "min": 49.2443066225281,
+          "p10": 49.2443066225281,
+          "p50": 49.2443066225281,
+          "p90": 49.2443066225281,
+          "max": 49.2443066225281,
+          "percentiles_meaningful": false
+        },
+        "ttft_s": {
+          "n": 1,
+          "mean": 0.20687604800332338,
+          "stdev": 0.0,
+          "min": 0.20687604800332338,
+          "p10": 0.20687604800332338,
+          "p50": 0.20687604800332338,
+          "p90": 0.20687604800332338,
+          "max": 0.20687604800332338,
+          "percentiles_meaningful": false
+        },
+        "e2e_s": {
+          "n": 1,
+          "mean": 2.785854385001585,
+          "stdev": 0.0,
+          "min": 2.785854385001585,
+          "p10": 2.785854385001585,
+          "p50": 2.785854385001585,
+          "p90": 2.785854385001585,
+          "max": 2.785854385001585,
+          "percentiles_meaningful": false
+        },
+        "decode_window_s": {
+          "n": 1,
+          "mean": 2.5789783369982615,
+          "stdev": 0.0,
+          "min": 2.5789783369982615,
+          "p10": 2.5789783369982615,
+          "p50": 2.5789783369982615,
+          "p90": 2.5789783369982615,
+          "max": 2.5789783369982615,
+          "percentiles_meaningful": false
+        },
+        "accepted_per_step": {
+          "n": 1,
+          "mean": 2.2280701754385963,
+          "stdev": 0.0,
+          "min": 2.2280701754385963,
+          "p10": 2.2280701754385963,
+          "p50": 2.2280701754385963,
+          "p90": 2.2280701754385963,
+          "max": 2.2280701754385963,
+          "percentiles_meaningful": false
+        }
+      },
+      "samples": {
+        "per_stream_tok_s": [
+          49.2443066225281
+        ],
+        "ttft_s": [
+          0.20687604800332338
+        ],
+        "e2e_s": [
+          2.785854385001585
+        ]
+      },
+      "accepted_per_step": 2.2280701754385963,
+      "prefill_tok_s": 79211.6833154931,
+      "prefill_tok_s_per_stream_mean": 79211.6833154931,
+      "live": {
+        "interval_s": 1.0,
+        "n_samples": 2,
+        "modal_running_requests": 1.0,
+        "max_running_requests": 1.0,
+        "saturation_threshold_requests": 0.9,
+        "max_waiting_requests": 0,
+        "n_samples_in_band": 2,
+        "n_zero_decode_ticks_in_band": 0,
+        "zero_decode_tick_fraction_in_band": 0.0,
+        "decode_tok_s_all": {
+          "n": 2,
+          "mean": 45.496466140473544,
+          "stdev": 9.191507541296996,
+          "min": 38.99708882869515,
+          "p10": 38.99708882869515,
+          "p50": 51.99584345225194,
+          "p90": 51.99584345225194,
+          "max": 51.99584345225194,
+          "percentiles_meaningful": false
+        },
+        "decode_tok_s_saturated": {
+          "n": 2,
+          "mean": 45.496466140473544,
+          "stdev": 9.191507541296996,
+          "min": 38.99708882869515,
+          "p10": 38.99708882869515,
+          "p50": 51.99584345225194,
+          "p90": 51.99584345225194,
+          "max": 51.99584345225194,
+          "percentiles_meaningful": false
+        },
+        "prefill_tok_s_nonzero": {
+          "n": 1,
+          "mean": 16385.776785534035,
+          "stdev": 0.0,
+          "min": 16385.776785534035,
+          "p10": 16385.776785534035,
+          "p50": 16385.776785534035,
+          "p90": 16385.776785534035,
+          "max": 16385.776785534035,
+          "percentiles_meaningful": false
+        },
+        "samples": [
+          {
+            "dt": 1.0,
+            "gen_tok_s": 39.0,
+            "prompt_tok_s": 16385.78,
+            "running": 1.0,
+            "waiting": 0.0
+          },
+          {
+            "dt": 1.0,
+            "gen_tok_s": 52.0,
+            "prompt_tok_s": 0.0,
+            "running": 1.0,
+            "waiting": 0.0
+          }
+        ],
+        "peak_over_median": 1.0
+      },
+      "depth_requested": 16384,
+      "concurrency": 1
+    },
+    {
+      "ok": 1,
+      "requested": 1,
+      "slots": 1,
+      "errors": [],
+      "prompt_tokens": 65551,
+      "completion_tokens": 128,
+      "agg_decode_tok_s": 48.03210795274621,
+      "per_stream_tok_s_mean": 48.03210795274621,
+      "per_stream_tok_s_min": 48.03210795274621,
+      "ttft_s_mean": 0.3777939540013904,
+      "ttft_s_p90": 0.3777939540013904,
+      "e2e_s_max": 3.0218586310074897,
+      "dist": {
+        "per_stream_tok_s": {
+          "n": 1,
+          "mean": 48.03210795274621,
+          "stdev": 0.0,
+          "min": 48.03210795274621,
+          "p10": 48.03210795274621,
+          "p50": 48.03210795274621,
+          "p90": 48.03210795274621,
+          "max": 48.03210795274621,
+          "percentiles_meaningful": false
+        },
+        "ttft_s": {
+          "n": 1,
+          "mean": 0.3777939540013904,
+          "stdev": 0.0,
+          "min": 0.3777939540013904,
+          "p10": 0.3777939540013904,
+          "p50": 0.3777939540013904,
+          "p90": 0.3777939540013904,
+          "max": 0.3777939540013904,
+          "percentiles_meaningful": false
+        },
+        "e2e_s": {
+          "n": 1,
+          "mean": 3.0218586310074897,
+          "stdev": 0.0,
+          "min": 3.0218586310074897,
+          "p10": 3.0218586310074897,
+          "p50": 3.0218586310074897,
+          "p90": 3.0218586310074897,
+          "max": 3.0218586310074897,
+          "percentiles_meaningful": false
+        },
+        "decode_window_s": {
+          "n": 1,
+          "mean": 2.6440646770060994,
+          "stdev": 0.0,
+          "min": 2.6440646770060994,
+          "p10": 2.6440646770060994,
+          "p50": 2.6440646770060994,
+          "p90": 2.6440646770060994,
+          "max": 2.6440646770060994,
+          "percentiles_meaningful": false
+        },
+        "accepted_per_step": {
+          "n": 1,
+          "mean": 2.2280701754385963,
+          "stdev": 0.0,
+          "min": 2.2280701754385963,
+          "p10": 2.2280701754385963,
+          "p50": 2.2280701754385963,
+          "p90": 2.2280701754385963,
+          "max": 2.2280701754385963,
+          "percentiles_meaningful": false
+        }
+      },
+      "samples": {
+        "per_stream_tok_s": [
+          48.03210795274621
+        ],
+        "ttft_s": [
+          0.3777939540013904
+        ],
+        "e2e_s": [
+          3.0218586310074897
+        ]
+      },
+      "accepted_per_step": 2.2280701754385963,
+      "prefill_tok_s": 173509.9233476848,
+      "prefill_tok_s_per_stream_mean": 173509.9233476848,
+      "live": {
+        "interval_s": 1.0,
+        "n_samples": 3,
+        "modal_running_requests": 1.0,
+        "max_running_requests": 1.0,
+        "saturation_threshold_requests": 0.9,
+        "max_waiting_requests": 0,
+        "n_samples_in_band": 3,
+        "n_zero_decode_ticks_in_band": 0,
+        "zero_decode_tick_fraction_in_band": 0.0,
+        "decode_tok_s_all": {
+          "n": 3,
+          "mean": 42.32989210382489,
+          "stdev": 9.864869525574328,
+          "min": 30.997576237665395,
+          "p10": 30.997576237665395,
+          "p50": 46.99624326117375,
+          "p90": 48.99585681263552,
+          "max": 48.99585681263552,
+          "percentiles_meaningful": false
+        },
+        "decode_tok_s_saturated": {
+          "n": 3,
+          "mean": 42.32989210382489,
+          "stdev": 9.864869525574328,
+          "min": 30.997576237665395,
+          "p10": 30.997576237665395,
+          "p50": 46.99624326117375,
+          "p90": 48.99585681263552,
+          "max": 48.99585681263552,
+          "percentiles_meaningful": false
+        },
+        "prefill_tok_s_nonzero": {
+          "n": 1,
+          "mean": 65545.87483726467,
+          "stdev": 0.0,
+          "min": 65545.87483726467,
+          "p10": 65545.87483726467,
+          "p50": 65545.87483726467,
+          "p90": 65545.87483726467,
+          "max": 65545.87483726467,
+          "percentiles_meaningful": false
+        },
+        "samples": [
+          {
+            "dt": 1.0,
+            "gen_tok_s": 31.0,
+            "prompt_tok_s": 65545.87,
+            "running": 1.0,
+            "waiting": 0.0
+          },
+          {
+            "dt": 1.0,
+            "gen_tok_s": 49.0,
+            "prompt_tok_s": 0.0,
+            "running": 1.0,
+            "waiting": 0.0
+          },
+          {
+            "dt": 1.0,
+            "gen_tok_s": 47.0,
+            "prompt_tok_s": 0.0,
+            "running": 1.0,
+            "waiting": 0.0
+          }
+        ],
+        "peak_over_median": 1.0425483700973555
+      },
+      "depth_requested": 65536,
+      "concurrency": 1
+    },
+    {
+      "ok": 1,
+      "requested": 1,
+      "slots": 1,
+      "errors": [],
+      "prompt_tokens": 130015,
+      "completion_tokens": 128,
+      "agg_decode_tok_s": 48.70481020136402,
+      "per_stream_tok_s_mean": 48.70481020136402,
+      "per_stream_tok_s_min": 48.70481020136402,
+      "ttft_s_mean": 0.4022865019942401,
+      "ttft_s_p90": 0.4022865019942401,
+      "e2e_s_max": 3.009831824005232,
+      "dist": {
+        "per_stream_tok_s": {
+          "n": 1,
+          "mean": 48.70481020136402,
+          "stdev": 0.0,
+          "min": 48.70481020136402,
+          "p10": 48.70481020136402,
+          "p50": 48.70481020136402,
+          "p90": 48.70481020136402,
+          "max": 48.70481020136402,
+          "percentiles_meaningful": false
+        },
+        "ttft_s": {
+          "n": 1,
+          "mean": 0.4022865019942401,
+          "stdev": 0.0,
+          "min": 0.4022865019942401,
+          "p10": 0.4022865019942401,
+          "p50": 0.4022865019942401,
+          "p90": 0.4022865019942401,
+          "max": 0.4022865019942401,
+          "percentiles_meaningful": false
+        },
+        "e2e_s": {
+          "n": 1,
+          "mean": 3.009831824005232,
+          "stdev": 0.0,
+          "min": 3.009831824005232,
+          "p10": 3.009831824005232,
+          "p50": 3.009831824005232,
+          "p90": 3.009831824005232,
+          "max": 3.009831824005232,
+          "percentiles_meaningful": false
+        },
+        "decode_window_s": {
+          "n": 1,
+          "mean": 2.607545322010992,
+          "stdev": 0.0,
+          "min": 2.607545322010992,
+          "p10": 2.607545322010992,
+          "p50": 2.607545322010992,
+          "p90": 2.607545322010992,
+          "max": 2.607545322010992,
+          "percentiles_meaningful": false
+        },
+        "accepted_per_step": {
+          "n": 1,
+          "mean": 2.3518518518518516,
+          "stdev": 0.0,
+          "min": 2.3518518518518516,
+          "p10": 2.3518518518518516,
+          "p50": 2.3518518518518516,
+          "p90": 2.3518518518518516,
+          "max": 2.3518518518518516,
+          "percentiles_meaningful": false
+        }
+      },
+      "samples": {
+        "per_stream_tok_s": [
+          48.70481020136402
+        ],
+        "ttft_s": [
+          0.4022865019942401
+        ],
+        "e2e_s": [
+          3.009831824005232
+        ]
+      },
+      "accepted_per_step": 2.3518518518518516,
+      "prefill_tok_s": 323190.0631899937,
+      "prefill_tok_s_per_stream_mean": 323190.0631899937,
+      "live": {
+        "interval_s": 1.0,
+        "n_samples": 3,
+        "modal_running_requests": 1.0,
+        "max_running_requests": 1.0,
+        "saturation_threshold_requests": 0.9,
+        "max_waiting_requests": 0,
+        "n_samples_in_band": 3,
+        "n_zero_decode_ticks_in_band": 0,
+        "zero_decode_tick_fraction_in_band": 0.0,
+        "decode_tok_s_all": {
+          "n": 3,
+          "mean": 42.33026270988808,
+          "stdev": 13.613392807945687,
+          "min": 26.997389460241145,
+          "p10": 26.997389460241145,
+          "p50": 46.996413985595005,
+          "p90": 52.996984683828096,
+          "max": 52.996984683828096,
+          "percentiles_meaningful": false
+        },
+        "decode_tok_s_saturated": {
+          "n": 3,
+          "mean": 42.33026270988808,
+          "stdev": 13.613392807945687,
+          "min": 26.997389460241145,
+          "p10": 26.997389460241145,
+          "p50": 46.996413985595005,
+          "p90": 52.996984683828096,
+          "max": 52.996984683828096,
+          "percentiles_meaningful": false
+        },
+        "prefill_tok_s_nonzero": {
+          "n": 1,
+          "mean": 130002.42928419454,
+          "stdev": 0.0,
+          "min": 130002.42928419454,
+          "p10": 130002.42928419454,
+          "p50": 130002.42928419454,
+          "p90": 130002.42928419454,
+          "max": 130002.42928419454,
+          "percentiles_meaningful": false
+        },
+        "samples": [
+          {
+            "dt": 1.0,
+            "gen_tok_s": 27.0,
+            "prompt_tok_s": 130002.43,
+            "running": 1.0,
+            "waiting": 0.0
+          },
+          {
+            "dt": 1.0,
+            "gen_tok_s": 47.0,
+            "prompt_tok_s": 0.0,
+            "running": 1.0,
+            "waiting": 0.0
+          },
+          {
+            "dt": 1.0,
+            "gen_tok_s": 53.0,
+            "prompt_tok_s": 0.0,
+            "running": 1.0,
+            "waiting": 0.0
+          }
+        ],
+        "peak_over_median": 1.127681458846463
+      },
+      "depth_requested": 129984,
+      "concurrency": 1
+    }
+  ]
+}

@@ -32,7 +32,7 @@ models:
     ttl: 0
     cmd: |
       podman run --rm --entrypoint="" --name llmstack-vllm-other \\
-        docker.io/vllm/vllm-openai-rocm:v0.26.0 \\
+        docker.io/vllm/vllm-openai-rocm:v0.34.0 \\
         vllm serve /models/other --port 8000
   qwen-test:
     ttl: 0
@@ -43,7 +43,7 @@ models:
         --ipc=private --shm-size=32g --network=host \\
         -e HSA_ENABLE_SDMA=0 \\
         -v /mnt/models/llm:/models:ro \\
-        docker.io/vllm/vllm-openai-rocm:v0.26.0 \\
+        docker.io/vllm/vllm-openai-rocm:v0.34.0 \\
         vllm serve /models/qwen \\
           --served-model-name ${MODEL_ID} \\
           --tensor-parallel-size 4 \\
@@ -346,6 +346,23 @@ def test_parse_startup_reads_the_requested_capture_sizes_separately():
     """Requested and captured are different numbers under MTP; report both, conflate neither."""
     assert kv.parse_startup(CONFIG_DUMP)["requested_capture_sizes"] == [1, 2, 4, 8, 16, 32]
     assert kv.parse_startup(CONFIG_DUMP)["full_cudagraphs_captured"] is None
+
+
+# vLLM 0.34 (Model Runner V2) with the explicit --compilation-config on an MTP profile: the
+# legacy key is printed empty first, then None, and the real list sits under the decode key.
+CONFIG_DUMP_034 = ("... 'cudagraph_capture_sizes': [], ... 'cudagraph_capture_sizes': None, "
+                   "'prefill_cudagraph_capture_token_sizes': [1, 2, 4, 8, 16, 32], ... "
+                   "'decode_cudagraph_capture_request_sizes': [1, 2, 4, 8, 16, 32], ...")
+
+
+def test_parse_startup_reads_034_decode_request_sizes():
+    """Shape copied from a real 0.34 qwen3.6-35b-code startup log (2026-11-26 canary)."""
+    assert kv.parse_startup(CONFIG_DUMP_034)["requested_capture_sizes"] == [1, 2, 4, 8, 16, 32]
+
+
+def test_parse_startup_skips_an_empty_legacy_list():
+    log = "'cudagraph_capture_sizes': [] ... 'cudagraph_capture_sizes': [1, 2, 4, 8]"
+    assert kv.parse_startup(log)["requested_capture_sizes"] == [1, 2, 4, 8]
 
 
 def test_parse_startup_reads_the_effective_utilization():

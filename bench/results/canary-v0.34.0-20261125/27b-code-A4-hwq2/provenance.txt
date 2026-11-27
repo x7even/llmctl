@@ -1,0 +1,369 @@
+=== stopped 2026-11-25T14:38:24+00:00 ===
+GPU: 0
+        USED_VRAM: 57 MB
+GPU: 1
+        USED_VRAM: 57 MB
+GPU: 2
+        USED_VRAM: 57 MB
+GPU: 3
+        USED_VRAM: 57 MB
+=== spawn1: 2026-11-25T14:38:25+00:00 arm=A4-hwq2 HWQ=2 EXTRA='' CAPTURE_JSON='' ===
+--- launch command (bash array, printf %q) ---
+podman run -d --replace --name llmstack-canary034-27b-code --device=/dev/kfd --device=/dev/dri --group-add keep-groups --security-opt seccomp=unconfined --security-opt apparmor=unconfined --ipc=private --shm-size=32g --network=host -v /mnt/models/llm:/models:ro -v ~/.local/share/llmstack/canary-034/vllm-cache:/root/.cache/vllm -v ~/.local/share/llmstack/canary-034/triton-cache:/root/.triton/cache -e HSA_ENABLE_SDMA=0 -e GPU_MAX_HW_QUEUES=2 -e TORCH_BLAS_PREFER_HIPBLASLT=1 --entrypoint= docker.io/vllm/vllm-openai-rocm:v0.34.0 vllm serve /models/Qwen3.8-27B-FP8 --host 127.0.0.1 --port 9234 --served-model-name qwen3.8-27b-code --dtype auto --tensor-parallel-size 4 --max-model-len 131072 --max-num-seqs 32 --max-num-batched-tokens 16384 --gpu-memory-utilization 0.95 --enable-prefix-caching --enable-chunked-prefill --trust-remote-code --reasoning-parser qwen3 --enable-auto-tool-choice --tool-call-parser qwen3_xml --default-chat-template-kwargs \{\"reasoning_effort\":\ \"medium\"\} --speculative-config \{\"method\":\ \"mtp\"\,\ \"num_speculative_tokens\":\ 2\} --cudagraph-capture-sizes 1 2 4 8 16 32 
+--- VRAM before ---
+GPU: 0
+        USED_VRAM: 57 MB
+GPU: 1
+        USED_VRAM: 57 MB
+GPU: 2
+        USED_VRAM: 57 MB
+GPU: 3
+        USED_VRAM: 57 MB
+startup status=OK; 'startup complete' at 71 s, /health ok at 71 s
+--- image ---
+ImageName=docker.io/vllm/vllm-openai-rocm:v0.34.0 Image=9a5f9af8f20f129a8f0ccbe6c78499a1d0db8ddb17caaa848bb09f04f139d2b1 ImageDigest=sha256:3cb773d23f063afa86291ef75773cdd486154ddea94c213300f4ed7cc42b7af1
+--- container Id / created ---
+fcddb826690946c36a13aa7ec8195ec8cac3f3396a893b23fcfd5d7a1800bcd9 2026-11-25 14:38:25.442077493 +0000 UTC
+--- argv ---
+["serve","/models/Qwen3.8-27B-FP8","--host","127.0.0.1","--port","9234","--served-model-name","qwen3.8-27b-code","--dtype","auto","--tensor-parallel-size","4","--max-model-len","131072","--max-num-seqs","32","--max-num-batched-tokens","16384","--gpu-memory-utilization","0.95","--enable-prefix-caching","--enable-chunked-prefill","--trust-remote-code","--reasoning-parser","qwen3","--enable-auto-tool-choice","--tool-call-parser","qwen3_xml","--default-chat-template-kwargs","{\"reasoning_effort\": \"medium\"}","--speculative-config","{\"method\": \"mtp\", \"num_speculative_tokens\": 2}","--cudagraph-capture-sizes","1","2","4","8","16","32"]
+--- env (container) ---
+["HIP_DEVICE_LIB_PATH=/usr/local/lib/python3.12/dist-packages/_rocm_sdk_core/lib/llvm/amdgcn/bitcode"
+"HSA_ENABLE_IPC_MODE_LEGACY=1"
+"ROCPROFILER_QUEUE_INTERPOSITION=0"
+"HIP_CLANG_PATH=/usr/local/lib/python3.12/dist-packages/_rocm_sdk_devel/lib/llvm/bin"
+"HIP_FORCE_DEV_KERNARG=1"
+"HSA_ENABLE_SDMA=0"
+"GPU_MAX_HW_QUEUES=2"
+"HSA_NO_SCRATCH_RECLAIM=1"
+"HIP_PATH=/usr/local/lib/python3.12/dist-packages/_rocm_sdk_devel"
+"PYTORCH_NVML_BASED_CUDA_CHECK=1"
+"PYTORCH_ROCM_ARCH=gfx90a;gfx942;gfx950;gfx1100;gfx1101;gfx1200;gfx1201;gfx1150;gfx1151"
+"TORCH_BLAS_PREFER_HIPBLASLT=1"
+--- log: selected lines ---
+(APIServer pid=1) INFO 11-25 14:38:45 [startup.py:38]  ▄▄ ▄█ █     █     █ ▀▄▀ █  version 0.34.0
+(APIServer pid=1) INFO 11-25 14:38:45 [startup.py:96] non-default args: {'model_tag': '/models/Qwen3.8-27B-FP8', 'default_chat_template_kwargs': {'reasoning_effort': 'medium'}, 'enable_auto_tool_choice': True, 'tool_call_parser': 'qwen3_xml', 'host': '127.0.0.1', 'port': 9234, 'model': '/models/Qwen3.8-27B-FP8', 'trust_remote_code': True, 'max_model_len': 131072, 'served_model_name': ['qwen3.8-27b-code'], 'reasoning_parser': 'qwen3', 'tensor_parallel_size': 4, 'gpu_memory_utilization': 0.95, 'enable_prefix_caching': True, 'max_num_batched_tokens': 16384, 'max_num_seqs': 32, 'enable_chunked_prefill': True, 'cudagraph_capture_sizes': [1, 2, 4, 8, 16, 32], 'speculative_config': {'method': 'mtp'
+(APIServer pid=1) INFO 11-25 14:38:46 [model.py:761] Resolved architecture: Qwen3_5MTP
+(APIServer pid=1) INFO 11-25 14:38:46 [model.py:1041] Disabled mm_prefix attention mode because multimodal inputs are configuration-disabled. Attention backends without mm_prefix support may now be selected.
+(APIServer pid=1) WARNING 11-25 14:38:46 [config.py:94] Enabling num_speculative_tokens > 1 will run multiple times of forward on same MTP layer,which may result in lower acceptance rate
+(APIServer pid=1) INFO 11-25 14:38:46 [speculative.py:1478] Overriding draft model max model len from 262144 to 131072
+(APIServer pid=1) WARNING 11-25 14:38:46 [vllm.py:1581] Auto-disabled DeepGemm for model_type=qwen3_5_text on Blackwell. To disable DeepGemm globally, set VLLM_USE_DEEP_GEMM=0.
+(APIServer pid=1) WARNING 11-25 14:38:46 [vllm.py:2588] cudagraph_capture_sizes and max_cudagraph_capture_size are deprecated. Set the token counts of prefill CUDA graphs with prefill_cudagraph_capture_token_sizes or max_prefill_cudagraph_capture_tokens, and the request counts of decode CUDA graphs with decode_cudagraph_capture_request_sizes or max_decode_cudagraph_capture_requests.
+(APIServer pid=1) INFO 11-25 14:38:51 [numa_utils.py:575] Automatic NUMA binding unavailable on this host; starting unbound. Enable debug logging for the skip reason.
+(EngineCore pid=341) INFO 11-25 14:38:55 [core.py:153] Initializing a V1 LLM engine (v0.34.0) with config: model='/models/Qwen3.8-27B-FP8', speculative_config=SpeculativeConfig(method='mtp', model='/models/Qwen3.8-27B-FP8', num_spec_tokens=2), tokenizer='/models/Qwen3.8-27B-FP8', skip_tokenizer_init=False, tokenizer_mode=auto, revision=None, tokenizer_revision=None, trust_remote_code=True, dtype=torch.bfloat16, max_seq_len=131072, download_dir=None, load_format=auto, tensor_parallel_size=4, pipeline_parallel_size=1, data_parallel_size=1, decode_context_parallel_size=1, dcp_comm_backend=ag_rs, disable_custom_all_reduce=True, quantization=fp8, quantization_config=None, enforce_eager=False, aux
+W1125 14:39:01.278377     561 queue_controller.cpp:170] [queue-intercept] device-memory ring-buffer requested but profiling requires system-memory InterceptQueue; falling back to system-memory ring for agent 421530848 (priority and CU-mask from the descriptor are not preserved)
+W1125 14:39:01.278496     563 queue_controller.cpp:170] [queue-intercept] device-memory ring-buffer requested but profiling requires system-memory InterceptQueue; falling back to system-memory ring for agent 1115863728 (priority and CU-mask from the descriptor are not preserved)
+W1125 14:39:01.278639     562 queue_controller.cpp:170] [queue-intercept] device-memory ring-buffer requested but profiling requires system-memory InterceptQueue; falling back to system-memory ring for agent 1316196448 (priority and CU-mask from the descriptor are not preserved)
+W1125 14:39:01.281602     560 queue_controller.cpp:170] [queue-intercept] device-memory ring-buffer requested but profiling requires system-memory InterceptQueue; falling back to system-memory ring for agent 1377522576 (priority and CU-mask from the descriptor are not preserved)
+W1125 14:39:01.448370     561 queue_controller.cpp:170] [queue-intercept] device-memory ring-buffer requested but profiling requires system-memory InterceptQueue; falling back to system-memory ring for agent 421530848 (priority and CU-mask from the descriptor are not preserved)
+W1125 14:39:01.448414     562 queue_controller.cpp:170] [queue-intercept] device-memory ring-buffer requested but profiling requires system-memory InterceptQueue; falling back to system-memory ring for agent 1316196448 (priority and CU-mask from the descriptor are not preserved)
+W1125 14:39:01.448414     563 queue_controller.cpp:170] [queue-intercept] device-memory ring-buffer requested but profiling requires system-memory InterceptQueue; falling back to system-memory ring for agent 1115863728 (priority and CU-mask from the descriptor are not preserved)
+W1125 14:39:01.451559     560 queue_controller.cpp:170] [queue-intercept] device-memory ring-buffer requested but profiling requires system-memory InterceptQueue; falling back to system-memory ring for agent 1377522576 (priority and CU-mask from the descriptor are not preserved)
+(Worker_TP0 pid=562) INFO 11-25 14:39:03 [rocm.py:526] Set FLASH_ATTENTION_TRITON_AMD_ENABLE=TRUE to enable Flash Attention Triton backend on RDNA.
+(Worker_TP0 pid=562) WARNING 11-25 14:39:03 [activation.py:816] [ROCm] PyTorch's native GELU with tanh approximation is unstable. Falling back to GELU(approximate='none').
+(Worker_TP0 pid=562) INFO 11-25 14:39:03 [mm_encoder_attention.py:372] Using AttentionBackendEnum.TORCH_SDPA for MMEncoderAttention.
+(Worker_TP0 pid=562) INFO 11-25 14:39:03 [qwen_gdn_linear_attn.py:891] GDN spec decode kernel: cuda
+(Worker_TP0 pid=562) INFO 11-25 14:39:03 [rocm.py:919] Found incompatible backend(s) [TURBOQUANT, ROCM_OCTAVE, ULTRAQUANT] with decoder. Overriding with TRITON_ATTN out of potential backends: ['TRITON_ATTN', 'ROCM_ATTN'].
+(Worker_TP2 pid=560) INFO 11-25 14:39:03 [rocm.py:919] Found incompatible backend(s) [TURBOQUANT, ROCM_OCTAVE, ULTRAQUANT] with decoder. Overriding with TRITON_ATTN out of potential backends: ['TRITON_ATTN', 'ROCM_ATTN'].
+(Worker_TP3 pid=563) INFO 11-25 14:39:03 [rocm.py:919] Found incompatible backend(s) [TURBOQUANT, ROCM_OCTAVE, ULTRAQUANT] with decoder. Overriding with TRITON_ATTN out of potential backends: ['TRITON_ATTN', 'ROCM_ATTN'].
+(Worker_TP1 pid=561) INFO 11-25 14:39:03 [rocm.py:919] Found incompatible backend(s) [TURBOQUANT, ROCM_OCTAVE, ULTRAQUANT] with decoder. Overriding with TRITON_ATTN out of potential backends: ['TRITON_ATTN', 'ROCM_ATTN'].
+(Worker_TP0 pid=562) WARNING 11-25 14:39:03 [compilation.py:1514] Op 'sparse_attn_indexer' not present in model, enabling with '+sparse_attn_indexer' has no effect
+(Worker_TP0 pid=562) INFO 11-25 14:39:07 [model_runner.py:441] Model loading took 7.86 GiB memory and 4.791557 seconds
+(Worker_TP0 pid=562) INFO 11-25 14:39:07 [torch_utils.py:301] Reducing Torch threads from 16 to 1 for serving. Set OMP_NUM_THREADS in the external environment to override.
+(Worker_TP0 pid=562) INFO 11-25 14:39:07 [interface.py:1120] Setting attention block size to 832 tokens to ensure that attention page size is >= mamba page size.
+(Worker_TP0 pid=562) INFO 11-25 14:39:07 [interface.py:1144] Padding mamba page size by 4.92% to ensure that mamba page size and attention page size are exactly equal.
+(Worker_TP2 pid=560) INFO 11-25 14:39:07 [model_runner.py:441] Model loading took 7.86 GiB memory and 4.821220 seconds
+(Worker_TP2 pid=560) INFO 11-25 14:39:07 [interface.py:1120] Setting attention block size to 832 tokens to ensure that attention page size is >= mamba page size.
+(Worker_TP2 pid=560) INFO 11-25 14:39:07 [interface.py:1144] Padding mamba page size by 4.92% to ensure that mamba page size and attention page size are exactly equal.
+(Worker_TP1 pid=561) INFO 11-25 14:39:07 [model_runner.py:441] Model loading took 7.86 GiB memory and 4.898723 seconds
+(Worker_TP3 pid=563) INFO 11-25 14:39:07 [model_runner.py:441] Model loading took 7.86 GiB memory and 4.941654 seconds
+(Worker_TP1 pid=561) INFO 11-25 14:39:07 [interface.py:1120] Setting attention block size to 832 tokens to ensure that attention page size is >= mamba page size.
+(Worker_TP1 pid=561) INFO 11-25 14:39:07 [interface.py:1144] Padding mamba page size by 4.92% to ensure that mamba page size and attention page size are exactly equal.
+(Worker_TP3 pid=563) INFO 11-25 14:39:07 [interface.py:1120] Setting attention block size to 832 tokens to ensure that attention page size is >= mamba page size.
+(Worker_TP3 pid=563) INFO 11-25 14:39:07 [interface.py:1144] Padding mamba page size by 4.92% to ensure that mamba page size and attention page size are exactly equal.
+(EngineCore pid=341) INFO 11-25 14:39:07 [torch_utils.py:301] Reducing Torch threads from 16 to 1 for serving. Set OMP_NUM_THREADS in the external environment to override.
+(EngineCore pid=341) WARNING 11-25 14:39:07 [kv_cache_planning.py:583] Add 3 padding layers, may waste at most 6.25% KV cache memory
+(Worker_TP3 pid=563) INFO 11-25 14:39:15 [decorators.py:326] [backbone] Directly load AOT compilation from path /root/.cache/vllm/torch_compile_cache/torch_aot_compile/2e9f0df4198841071e44a0458911e16af377341b8ecbe55c623f0591cc0dd70e/rank_3_0/model
+(Worker_TP3 pid=563) INFO 11-25 14:39:15 [monitor.py:62] [backbone] torch.compile took 0.18 s in total
+(Worker_TP0 pid=562) INFO 11-25 14:39:15 [decorators.py:326] [backbone] Directly load AOT compilation from path /root/.cache/vllm/torch_compile_cache/torch_aot_compile/2e9f0df4198841071e44a0458911e16af377341b8ecbe55c623f0591cc0dd70e/rank_0_0/model
+(Worker_TP0 pid=562) INFO 11-25 14:39:15 [monitor.py:62] [backbone] torch.compile took 0.18 s in total
+(Worker_TP1 pid=561) INFO 11-25 14:39:15 [decorators.py:326] [backbone] Directly load AOT compilation from path /root/.cache/vllm/torch_compile_cache/torch_aot_compile/2e9f0df4198841071e44a0458911e16af377341b8ecbe55c623f0591cc0dd70e/rank_1_0/model
+(Worker_TP1 pid=561) INFO 11-25 14:39:15 [monitor.py:62] [backbone] torch.compile took 0.18 s in total
+(Worker_TP2 pid=560) INFO 11-25 14:39:15 [decorators.py:326] [backbone] Directly load AOT compilation from path /root/.cache/vllm/torch_compile_cache/torch_aot_compile/2e9f0df4198841071e44a0458911e16af377341b8ecbe55c623f0591cc0dd70e/rank_2_0/model
+(Worker_TP2 pid=560) INFO 11-25 14:39:15 [monitor.py:62] [backbone] torch.compile took 0.19 s in total
+(Worker_TP3 pid=563) WARNING 11-25 14:39:15 [fp8_utils.py:953] Using default W8A8 Block FP8 kernel config. Performance might be sub-optimal! Config file not found at /usr/local/lib/python3.12/dist-packages/vllm/model_executor/layers/quantization/utils/configs/N=4096,K=5120,device_name=AMD_Radeon_R9700,dtype=fp8_w8a8,block_shape=[128,128].json
+(Worker_TP1 pid=561) WARNING 11-25 14:39:15 [fp8_utils.py:953] Using default W8A8 Block FP8 kernel config. Performance might be sub-optimal! Config file not found at /usr/local/lib/python3.12/dist-packages/vllm/model_executor/layers/quantization/utils/configs/N=4096,K=5120,device_name=AMD_Radeon_R9700,dtype=fp8_w8a8,block_shape=[128,128].json
+(Worker_TP0 pid=562) WARNING 11-25 14:39:15 [fp8_utils.py:953] Using default W8A8 Block FP8 kernel config. Performance might be sub-optimal! Config file not found at /usr/local/lib/python3.12/dist-packages/vllm/model_executor/layers/quantization/utils/configs/N=4096,K=5120,device_name=AMD_Radeon_R9700,dtype=fp8_w8a8,block_shape=[128,128].json
+(Worker_TP2 pid=560) WARNING 11-25 14:39:15 [fp8_utils.py:953] Using default W8A8 Block FP8 kernel config. Performance might be sub-optimal! Config file not found at /usr/local/lib/python3.12/dist-packages/vllm/model_executor/layers/quantization/utils/configs/N=4096,K=5120,device_name=AMD_Radeon_R9700,dtype=fp8_w8a8,block_shape=[128,128].json
+(Worker_TP3 pid=563) WARNING 11-25 14:39:15 [fp8_utils.py:953] Using default W8A8 Block FP8 kernel config. Performance might be sub-optimal! Config file not found at /usr/local/lib/python3.12/dist-packages/vllm/model_executor/layers/quantization/utils/configs/N=5120,K=1536,device_name=AMD_Radeon_R9700,dtype=fp8_w8a8,block_shape=[128,128].json
+(Worker_TP0 pid=562) WARNING 11-25 14:39:15 [fp8_utils.py:953] Using default W8A8 Block FP8 kernel config. Performance might be sub-optimal! Config file not found at /usr/local/lib/python3.12/dist-packages/vllm/model_executor/layers/quantization/utils/configs/N=5120,K=1536,device_name=AMD_Radeon_R9700,dtype=fp8_w8a8,block_shape=[128,128].json
+(Worker_TP1 pid=561) WARNING 11-25 14:39:15 [fp8_utils.py:953] Using default W8A8 Block FP8 kernel config. Performance might be sub-optimal! Config file not found at /usr/local/lib/python3.12/dist-packages/vllm/model_executor/layers/quantization/utils/configs/N=5120,K=1536,device_name=AMD_Radeon_R9700,dtype=fp8_w8a8,block_shape=[128,128].json
+(Worker_TP3 pid=563) WARNING 11-25 14:39:15 [fp8_utils.py:953] Using default W8A8 Block FP8 kernel config. Performance might be sub-optimal! Config file not found at /usr/local/lib/python3.12/dist-packages/vllm/model_executor/layers/quantization/utils/configs/N=8704,K=5120,device_name=AMD_Radeon_R9700,dtype=fp8_w8a8,block_shape=[128,128].json
+(Worker_TP3 pid=563) WARNING 11-25 14:39:15 [fp8_utils.py:953] Using default W8A8 Block FP8 kernel config. Performance might be sub-optimal! Config file not found at /usr/local/lib/python3.12/dist-packages/vllm/model_executor/layers/quantization/utils/configs/N=5120,K=4352,device_name=AMD_Radeon_R9700,dtype=fp8_w8a8,block_shape=[128,128].json
+(Worker_TP2 pid=560) WARNING 11-25 14:39:15 [fp8_utils.py:953] Using default W8A8 Block FP8 kernel config. Performance might be sub-optimal! Config file not found at /usr/local/lib/python3.12/dist-packages/vllm/model_executor/layers/quantization/utils/configs/N=5120,K=1536,device_name=AMD_Radeon_R9700,dtype=fp8_w8a8,block_shape=[128,128].json
+(Worker_TP0 pid=562) WARNING 11-25 14:39:15 [fp8_utils.py:953] Using default W8A8 Block FP8 kernel config. Performance might be sub-optimal! Config file not found at /usr/local/lib/python3.12/dist-packages/vllm/model_executor/layers/quantization/utils/configs/N=8704,K=5120,device_name=AMD_Radeon_R9700,dtype=fp8_w8a8,block_shape=[128,128].json
+(Worker_TP1 pid=561) WARNING 11-25 14:39:15 [fp8_utils.py:953] Using default W8A8 Block FP8 kernel config. Performance might be sub-optimal! Config file not found at /usr/local/lib/python3.12/dist-packages/vllm/model_executor/layers/quantization/utils/configs/N=8704,K=5120,device_name=AMD_Radeon_R9700,dtype=fp8_w8a8,block_shape=[128,128].json
+(Worker_TP0 pid=562) WARNING 11-25 14:39:15 [fp8_utils.py:953] Using default W8A8 Block FP8 kernel config. Performance might be sub-optimal! Config file not found at /usr/local/lib/python3.12/dist-packages/vllm/model_executor/layers/quantization/utils/configs/N=5120,K=4352,device_name=AMD_Radeon_R9700,dtype=fp8_w8a8,block_shape=[128,128].json
+(Worker_TP1 pid=561) WARNING 11-25 14:39:15 [fp8_utils.py:953] Using default W8A8 Block FP8 kernel config. Performance might be sub-optimal! Config file not found at /usr/local/lib/python3.12/dist-packages/vllm/model_executor/layers/quantization/utils/configs/N=5120,K=4352,device_name=AMD_Radeon_R9700,dtype=fp8_w8a8,block_shape=[128,128].json
+(Worker_TP2 pid=560) WARNING 11-25 14:39:15 [fp8_utils.py:953] Using default W8A8 Block FP8 kernel config. Performance might be sub-optimal! Config file not found at /usr/local/lib/python3.12/dist-packages/vllm/model_executor/layers/quantization/utils/configs/N=8704,K=5120,device_name=AMD_Radeon_R9700,dtype=fp8_w8a8,block_shape=[128,128].json
+(Worker_TP2 pid=560) WARNING 11-25 14:39:15 [fp8_utils.py:953] Using default W8A8 Block FP8 kernel config. Performance might be sub-optimal! Config file not found at /usr/local/lib/python3.12/dist-packages/vllm/model_executor/layers/quantization/utils/configs/N=5120,K=4352,device_name=AMD_Radeon_R9700,dtype=fp8_w8a8,block_shape=[128,128].json
+(Worker_TP2 pid=560) WARNING 11-25 14:39:15 [fp8_utils.py:953] Using default W8A8 Block FP8 kernel config. Performance might be sub-optimal! Config file not found at /usr/local/lib/python3.12/dist-packages/vllm/model_executor/layers/quantization/utils/configs/N=3584,K=5120,device_name=AMD_Radeon_R9700,dtype=fp8_w8a8,block_shape=[128,128].json
+(Worker_TP1 pid=561) WARNING 11-25 14:39:15 [fp8_utils.py:953] Using default W8A8 Block FP8 kernel config. Performance might be sub-optimal! Config file not found at /usr/local/lib/python3.12/dist-packages/vllm/model_executor/layers/quantization/utils/configs/N=3584,K=5120,device_name=AMD_Radeon_R9700,dtype=fp8_w8a8,block_shape=[128,128].json
+(Worker_TP3 pid=563) WARNING 11-25 14:39:15 [fp8_utils.py:953] Using default W8A8 Block FP8 kernel config. Performance might be sub-optimal! Config file not found at /usr/local/lib/python3.12/dist-packages/vllm/model_executor/layers/quantization/utils/configs/N=3584,K=5120,device_name=AMD_Radeon_R9700,dtype=fp8_w8a8,block_shape=[128,128].json
+(Worker_TP0 pid=562) WARNING 11-25 14:39:15 [fp8_utils.py:953] Using default W8A8 Block FP8 kernel config. Performance might be sub-optimal! Config file not found at /usr/local/lib/python3.12/dist-packages/vllm/model_executor/layers/quantization/utils/configs/N=3584,K=5120,device_name=AMD_Radeon_R9700,dtype=fp8_w8a8,block_shape=[128,128].json
+[rank3]:W1125 14:39:18.463000 563 torch/_inductor/triton_bundler.py:242] Failed to reload cubin file statically launchable autotuner triton_red_fused__to_copy_add_per_token_group_fp8_quant_rms_norm_1
+[rank3]:W1125 14:39:18.463000 563 torch/_inductor/triton_bundler.py:242] Traceback (most recent call last):
+[rank3]:W1125 14:39:18.463000 563 torch/_inductor/triton_bundler.py:242]   File "/usr/local/lib/python3.12/dist-packages/torch/_inductor/triton_bundler.py", line 240, in load_autotuners
+[rank3]:W1125 14:39:18.463000 563 torch/_inductor/triton_bundler.py:242]     compile_result.reload_cubin_path()
+[rank3]:W1125 14:39:18.463000 563 torch/_inductor/triton_bundler.py:242]   File "/usr/local/lib/python3.12/dist-packages/torch/_inductor/runtime/triton_heuristics.py", line 2607, in reload_cubin_path
+[rank3]:W1125 14:39:18.463000 563 torch/_inductor/triton_bundler.py:242]     raise RuntimeError(
+[rank3]:W1125 14:39:18.463000 563 torch/_inductor/triton_bundler.py:242] RuntimeError: ('Cubin file saved by TritonBundler not found at %s', '/root/.cache/vllm/torch_compile_cache/torch_aot_compile/62a584708e54ebd0f46c2d1b7acc52c25350170319b712397c74c3e39f66fa3f/inductor_cache/triton/3/RZRXCAUXOAAUAX5HUWUQIXI25KKDXHE5J7GQXORIOKQIMJWOP75Q/triton_red_fused__to_copy_add_per_token_group_fp8_quant_rms_norm_1.hsaco')
+[rank3]:W1125 14:39:18.464000 563 torch/_inductor/triton_bundler.py:242] Failed to reload cubin file statically launchable autotuner triton_poi_fused_4
+[rank3]:W1125 14:39:18.464000 563 torch/_inductor/triton_bundler.py:242] Traceback (most recent call last):
+[rank3]:W1125 14:39:18.464000 563 torch/_inductor/triton_bundler.py:242]   File "/usr/local/lib/python3.12/dist-packages/torch/_inductor/triton_bundler.py", line 240, in load_autotuners
+[rank3]:W1125 14:39:18.464000 563 torch/_inductor/triton_bundler.py:242]     compile_result.reload_cubin_path()
+[rank3]:W1125 14:39:18.464000 563 torch/_inductor/triton_bundler.py:242]   File "/usr/local/lib/python3.12/dist-packages/torch/_inductor/runtime/triton_heuristics.py", line 2607, in reload_cubin_path
+[rank3]:W1125 14:39:18.464000 563 torch/_inductor/triton_bundler.py:242]     raise RuntimeError(
+[rank3]:W1125 14:39:18.464000 563 torch/_inductor/triton_bundler.py:242] RuntimeError: ('Cubin file saved by TritonBundler not found at %s', '/root/.cache/vllm/torch_compile_cache/torch_aot_compile/62a584708e54ebd0f46c2d1b7acc52c25350170319b712397c74c3e39f66fa3f/inductor_cache/triton/3/QTBTCGMS4TZDJO3PNEOZUHSWT4MQUMLCPOB2UO6SDLGQUDRKENEQ/triton_poi_fused_4.hsaco')
+[rank3]:W1125 14:39:18.464000 563 torch/_inductor/triton_bundler.py:242] Failed to reload cubin file statically launchable autotuner triton_poi_fused_clone_split_split_with_sizes_view_5
+[rank3]:W1125 14:39:18.464000 563 torch/_inductor/triton_bundler.py:242] Traceback (most recent call last):
+[rank3]:W1125 14:39:18.464000 563 torch/_inductor/triton_bundler.py:242]   File "/usr/local/lib/python3.12/dist-packages/torch/_inductor/triton_bundler.py", line 240, in load_autotuners
+[rank3]:W1125 14:39:18.464000 563 torch/_inductor/triton_bundler.py:242]     compile_result.reload_cubin_path()
+[rank3]:W1125 14:39:18.464000 563 torch/_inductor/triton_bundler.py:242]   File "/usr/local/lib/python3.12/dist-packages/torch/_inductor/runtime/triton_heuristics.py", line 2607, in reload_cubin_path
+[rank3]:W1125 14:39:18.464000 563 torch/_inductor/triton_bundler.py:242]     raise RuntimeError(
+[rank3]:W1125 14:39:18.464000 563 torch/_inductor/triton_bundler.py:242] RuntimeError: ('Cubin file saved by TritonBundler not found at %s', '/root/.cache/vllm/torch_compile_cache/torch_aot_compile/62a584708e54ebd0f46c2d1b7acc52c25350170319b712397c74c3e39f66fa3f/inductor_cache/triton/3/ZGZAYOIUZM2O6OL52SVQJKYHRHA2YYGYD6BAWRZZ2A4SKFCZSVRQ/triton_poi_fused_clone_split_split_with_sizes_view_5.hsaco')
+[rank1]:W1125 14:39:18.468000 561 torch/_inductor/triton_bundler.py:242] Failed to reload cubin file statically launchable autotuner triton_red_fused__to_copy_add_per_token_group_fp8_quant_rms_norm_1
+[rank1]:W1125 14:39:18.468000 561 torch/_inductor/triton_bundler.py:242] Traceback (most recent call last):
+[rank1]:W1125 14:39:18.468000 561 torch/_inductor/triton_bundler.py:242]   File "/usr/local/lib/python3.12/dist-packages/torch/_inductor/triton_bundler.py", line 240, in load_autotuners
+[rank1]:W1125 14:39:18.468000 561 torch/_inductor/triton_bundler.py:242]     compile_result.reload_cubin_path()
+[rank1]:W1125 14:39:18.468000 561 torch/_inductor/triton_bundler.py:242]   File "/usr/local/lib/python3.12/dist-packages/torch/_inductor/runtime/triton_heuristics.py", line 2607, in reload_cubin_path
+[rank1]:W1125 14:39:18.468000 561 torch/_inductor/triton_bundler.py:242]     raise RuntimeError(
+[rank1]:W1125 14:39:18.468000 561 torch/_inductor/triton_bundler.py:242] RuntimeError: ('Cubin file saved by TritonBundler not found at %s', '/root/.cache/vllm/torch_compile_cache/torch_aot_compile/62a584708e54ebd0f46c2d1b7acc52c25350170319b712397c74c3e39f66fa3f/inductor_cache/triton/1/RZRXCAUXOAAUAX5HUWUQIXI25KKDXHE5J7GQXORIOKQIMJWOP75Q/triton_red_fused__to_copy_add_per_token_group_fp8_quant_rms_norm_1.hsaco')
+[rank1]:W1125 14:39:18.469000 561 torch/_inductor/triton_bundler.py:242] Failed to reload cubin file statically launchable autotuner triton_poi_fused_4
+[rank1]:W1125 14:39:18.469000 561 torch/_inductor/triton_bundler.py:242] Traceback (most recent call last):
+[rank1]:W1125 14:39:18.469000 561 torch/_inductor/triton_bundler.py:242]   File "/usr/local/lib/python3.12/dist-packages/torch/_inductor/triton_bundler.py", line 240, in load_autotuners
+[rank1]:W1125 14:39:18.469000 561 torch/_inductor/triton_bundler.py:242]     compile_result.reload_cubin_path()
+[rank1]:W1125 14:39:18.469000 561 torch/_inductor/triton_bundler.py:242]   File "/usr/local/lib/python3.12/dist-packages/torch/_inductor/runtime/triton_heuristics.py", line 2607, in reload_cubin_path
+[rank1]:W1125 14:39:18.469000 561 torch/_inductor/triton_bundler.py:242]     raise RuntimeError(
+[rank1]:W1125 14:39:18.469000 561 torch/_inductor/triton_bundler.py:242] RuntimeError: ('Cubin file saved by TritonBundler not found at %s', '/root/.cache/vllm/torch_compile_cache/torch_aot_compile/62a584708e54ebd0f46c2d1b7acc52c25350170319b712397c74c3e39f66fa3f/inductor_cache/triton/1/QTBTCGMS4TZDJO3PNEOZUHSWT4MQUMLCPOB2UO6SDLGQUDRKENEQ/triton_poi_fused_4.hsaco')
+[rank1]:W1125 14:39:18.469000 561 torch/_inductor/triton_bundler.py:242] Failed to reload cubin file statically launchable autotuner triton_poi_fused_clone_split_split_with_sizes_view_5
+[rank1]:W1125 14:39:18.469000 561 torch/_inductor/triton_bundler.py:242] Traceback (most recent call last):
+[rank1]:W1125 14:39:18.469000 561 torch/_inductor/triton_bundler.py:242]   File "/usr/local/lib/python3.12/dist-packages/torch/_inductor/triton_bundler.py", line 240, in load_autotuners
+[rank1]:W1125 14:39:18.469000 561 torch/_inductor/triton_bundler.py:242]     compile_result.reload_cubin_path()
+[rank1]:W1125 14:39:18.469000 561 torch/_inductor/triton_bundler.py:242]   File "/usr/local/lib/python3.12/dist-packages/torch/_inductor/runtime/triton_heuristics.py", line 2607, in reload_cubin_path
+[rank1]:W1125 14:39:18.469000 561 torch/_inductor/triton_bundler.py:242]     raise RuntimeError(
+[rank1]:W1125 14:39:18.469000 561 torch/_inductor/triton_bundler.py:242] RuntimeError: ('Cubin file saved by TritonBundler not found at %s', '/root/.cache/vllm/torch_compile_cache/torch_aot_compile/62a584708e54ebd0f46c2d1b7acc52c25350170319b712397c74c3e39f66fa3f/inductor_cache/triton/1/6RAKJJK7ZZRFVETCMKILG54X3FFVWMVCELVUP4SMIJVLAKPXF3SA/triton_poi_fused_clone_split_split_with_sizes_view_5.hsaco')
+[rank2]:W1125 14:39:18.469000 560 torch/_inductor/triton_bundler.py:242] Failed to reload cubin file statically launchable autotuner triton_red_fused__to_copy_add_per_token_group_fp8_quant_rms_norm_1
+[rank2]:W1125 14:39:18.469000 560 torch/_inductor/triton_bundler.py:242] Traceback (most recent call last):
+[rank2]:W1125 14:39:18.469000 560 torch/_inductor/triton_bundler.py:242]   File "/usr/local/lib/python3.12/dist-packages/torch/_inductor/triton_bundler.py", line 240, in load_autotuners
+[rank2]:W1125 14:39:18.469000 560 torch/_inductor/triton_bundler.py:242]     compile_result.reload_cubin_path()
+[rank2]:W1125 14:39:18.469000 560 torch/_inductor/triton_bundler.py:242]   File "/usr/local/lib/python3.12/dist-packages/torch/_inductor/runtime/triton_heuristics.py", line 2607, in reload_cubin_path
+[rank2]:W1125 14:39:18.469000 560 torch/_inductor/triton_bundler.py:242]     raise RuntimeError(
+[rank2]:W1125 14:39:18.469000 560 torch/_inductor/triton_bundler.py:242] RuntimeError: ('Cubin file saved by TritonBundler not found at %s', '/root/.cache/vllm/torch_compile_cache/torch_aot_compile/62a584708e54ebd0f46c2d1b7acc52c25350170319b712397c74c3e39f66fa3f/inductor_cache/triton/2/RZRXCAUXOAAUAX5HUWUQIXI25KKDXHE5J7GQXORIOKQIMJWOP75Q/triton_red_fused__to_copy_add_per_token_group_fp8_quant_rms_norm_1.hsaco')
+[rank2]:W1125 14:39:18.470000 560 torch/_inductor/triton_bundler.py:242] Failed to reload cubin file statically launchable autotuner triton_poi_fused_4
+[rank2]:W1125 14:39:18.470000 560 torch/_inductor/triton_bundler.py:242] Traceback (most recent call last):
+[rank2]:W1125 14:39:18.470000 560 torch/_inductor/triton_bundler.py:242]   File "/usr/local/lib/python3.12/dist-packages/torch/_inductor/triton_bundler.py", line 240, in load_autotuners
+[rank2]:W1125 14:39:18.470000 560 torch/_inductor/triton_bundler.py:242]     compile_result.reload_cubin_path()
+[rank2]:W1125 14:39:18.470000 560 torch/_inductor/triton_bundler.py:242]   File "/usr/local/lib/python3.12/dist-packages/torch/_inductor/runtime/triton_heuristics.py", line 2607, in reload_cubin_path
+[rank2]:W1125 14:39:18.470000 560 torch/_inductor/triton_bundler.py:242]     raise RuntimeError(
+[rank2]:W1125 14:39:18.470000 560 torch/_inductor/triton_bundler.py:242] RuntimeError: ('Cubin file saved by TritonBundler not found at %s', '/root/.cache/vllm/torch_compile_cache/torch_aot_compile/62a584708e54ebd0f46c2d1b7acc52c25350170319b712397c74c3e39f66fa3f/inductor_cache/triton/2/QTBTCGMS4TZDJO3PNEOZUHSWT4MQUMLCPOB2UO6SDLGQUDRKENEQ/triton_poi_fused_4.hsaco')
+[rank2]:W1125 14:39:18.470000 560 torch/_inductor/triton_bundler.py:242] Failed to reload cubin file statically launchable autotuner triton_poi_fused_clone_split_split_with_sizes_view_5
+[rank2]:W1125 14:39:18.470000 560 torch/_inductor/triton_bundler.py:242] Traceback (most recent call last):
+[rank2]:W1125 14:39:18.470000 560 torch/_inductor/triton_bundler.py:242]   File "/usr/local/lib/python3.12/dist-packages/torch/_inductor/triton_bundler.py", line 240, in load_autotuners
+[rank2]:W1125 14:39:18.470000 560 torch/_inductor/triton_bundler.py:242]     compile_result.reload_cubin_path()
+[rank2]:W1125 14:39:18.470000 560 torch/_inductor/triton_bundler.py:242]   File "/usr/local/lib/python3.12/dist-packages/torch/_inductor/runtime/triton_heuristics.py", line 2607, in reload_cubin_path
+[rank2]:W1125 14:39:18.470000 560 torch/_inductor/triton_bundler.py:242]     raise RuntimeError(
+[rank2]:W1125 14:39:18.470000 560 torch/_inductor/triton_bundler.py:242] RuntimeError: ('Cubin file saved by TritonBundler not found at %s', '/root/.cache/vllm/torch_compile_cache/torch_aot_compile/62a584708e54ebd0f46c2d1b7acc52c25350170319b712397c74c3e39f66fa3f/inductor_cache/triton/2/ZGZAYOIUZM2O6OL52SVQJKYHRHA2YYGYD6BAWRZZ2A4SKFCZSVRQ/triton_poi_fused_clone_split_split_with_sizes_view_5.hsaco')
+[rank0]:W1125 14:39:18.471000 562 torch/_inductor/triton_bundler.py:242] Failed to reload cubin file statically launchable autotuner triton_red_fused__to_copy_add_per_token_group_fp8_quant_rms_norm_1
+[rank0]:W1125 14:39:18.471000 562 torch/_inductor/triton_bundler.py:242] Traceback (most recent call last):
+[rank0]:W1125 14:39:18.471000 562 torch/_inductor/triton_bundler.py:242]   File "/usr/local/lib/python3.12/dist-packages/torch/_inductor/triton_bundler.py", line 240, in load_autotuners
+[rank0]:W1125 14:39:18.471000 562 torch/_inductor/triton_bundler.py:242]     compile_result.reload_cubin_path()
+[rank0]:W1125 14:39:18.471000 562 torch/_inductor/triton_bundler.py:242]   File "/usr/local/lib/python3.12/dist-packages/torch/_inductor/runtime/triton_heuristics.py", line 2607, in reload_cubin_path
+[rank0]:W1125 14:39:18.471000 562 torch/_inductor/triton_bundler.py:242]     raise RuntimeError(
+[rank0]:W1125 14:39:18.471000 562 torch/_inductor/triton_bundler.py:242] RuntimeError: ('Cubin file saved by TritonBundler not found at %s', '/root/.cache/vllm/torch_compile_cache/torch_aot_compile/62a584708e54ebd0f46c2d1b7acc52c25350170319b712397c74c3e39f66fa3f/inductor_cache/triton/0/RZRXCAUXOAAUAX5HUWUQIXI25KKDXHE5J7GQXORIOKQIMJWOP75Q/triton_red_fused__to_copy_add_per_token_group_fp8_quant_rms_norm_1.hsaco')
+[rank0]:W1125 14:39:18.472000 562 torch/_inductor/triton_bundler.py:242] Failed to reload cubin file statically launchable autotuner triton_poi_fused__to_copy_add_cat_index_mul_rms_norm_slice_split_split_with_sizes_sub_unsqueeze_view_4
+[rank0]:W1125 14:39:18.472000 562 torch/_inductor/triton_bundler.py:242] Traceback (most recent call last):
+[rank0]:W1125 14:39:18.472000 562 torch/_inductor/triton_bundler.py:242]   File "/usr/local/lib/python3.12/dist-packages/torch/_inductor/triton_bundler.py", line 240, in load_autotuners
+[rank0]:W1125 14:39:18.472000 562 torch/_inductor/triton_bundler.py:242]     compile_result.reload_cubin_path()
+[rank0]:W1125 14:39:18.472000 562 torch/_inductor/triton_bundler.py:242]   File "/usr/local/lib/python3.12/dist-packages/torch/_inductor/runtime/triton_heuristics.py", line 2607, in reload_cubin_path
+[rank0]:W1125 14:39:18.472000 562 torch/_inductor/triton_bundler.py:242]     raise RuntimeError(
+[rank0]:W1125 14:39:18.472000 562 torch/_inductor/triton_bundler.py:242] RuntimeError: ('Cubin file saved by TritonBundler not found at %s', '/root/.cache/vllm/torch_compile_cache/torch_aot_compile/62a584708e54ebd0f46c2d1b7acc52c25350170319b712397c74c3e39f66fa3f/inductor_cache/triton/0/C7C46X5WAVHDMHC3LK56BYM7LTOGUPXFYFD4ZMC5AGOQUGRQLRVQ/triton_poi_fused__to_copy_add_cat_index_mul_rms_norm_slice_split_split_with_sizes_sub_unsqueeze_view_4.hsaco')
+[rank0]:W1125 14:39:18.473000 562 torch/_inductor/triton_bundler.py:242] Failed to reload cubin file statically launchable autotuner triton_poi_fused__to_copy_add_cat_rms_norm_slice_split_with_sizes_view_5
+[rank0]:W1125 14:39:18.473000 562 torch/_inductor/triton_bundler.py:242] Traceback (most recent call last):
+[rank0]:W1125 14:39:18.473000 562 torch/_inductor/triton_bundler.py:242]   File "/usr/local/lib/python3.12/dist-packages/torch/_inductor/triton_bundler.py", line 240, in load_autotuners
+[rank0]:W1125 14:39:18.473000 562 torch/_inductor/triton_bundler.py:242]     compile_result.reload_cubin_path()
+[rank0]:W1125 14:39:18.473000 562 torch/_inductor/triton_bundler.py:242]   File "/usr/local/lib/python3.12/dist-packages/torch/_inductor/runtime/triton_heuristics.py", line 2607, in reload_cubin_path
+[rank0]:W1125 14:39:18.473000 562 torch/_inductor/triton_bundler.py:242]     raise RuntimeError(
+[rank0]:W1125 14:39:18.473000 562 torch/_inductor/triton_bundler.py:242] RuntimeError: ('Cubin file saved by TritonBundler not found at %s', '/root/.cache/vllm/torch_compile_cache/torch_aot_compile/62a584708e54ebd0f46c2d1b7acc52c25350170319b712397c74c3e39f66fa3f/inductor_cache/triton/0/GBOIZRGKA54GGYO6RBRNHLVI5U7Z64X6TAG3AAQ5KV5PCNJOEP2Q/triton_poi_fused__to_copy_add_cat_rms_norm_slice_split_with_sizes_view_5.hsaco')
+[rank0]:W1125 14:39:18.473000 562 torch/_inductor/triton_bundler.py:242] Failed to reload cubin file statically launchable autotuner triton_poi_fused__to_copy_add_cat_clone_index_mul_rms_norm_slice_split_split_with_sizes_sub_unsqueeze_view_6
+[rank0]:W1125 14:39:18.473000 562 torch/_inductor/triton_bundler.py:242] Traceback (most recent call last):
+[rank0]:W1125 14:39:18.473000 562 torch/_inductor/triton_bundler.py:242]   File "/usr/local/lib/python3.12/dist-packages/torch/_inductor/triton_bundler.py", line 240, in load_autotuners
+[rank0]:W1125 14:39:18.473000 562 torch/_inductor/triton_bundler.py:242]     compile_result.reload_cubin_path()
+[rank0]:W1125 14:39:18.473000 562 torch/_inductor/triton_bundler.py:242]   File "/usr/local/lib/python3.12/dist-packages/torch/_inductor/runtime/triton_heuristics.py", line 2607, in reload_cubin_path
+[rank0]:W1125 14:39:18.473000 562 torch/_inductor/triton_bundler.py:242]     raise RuntimeError(
+[rank0]:W1125 14:39:18.473000 562 torch/_inductor/triton_bundler.py:242] RuntimeError: ('Cubin file saved by TritonBundler not found at %s', '/root/.cache/vllm/torch_compile_cache/torch_aot_compile/62a584708e54ebd0f46c2d1b7acc52c25350170319b712397c74c3e39f66fa3f/inductor_cache/triton/0/7ZWBARBON77CQRMN5HSSYDCPWVOLAPR4DWJOB7B3THXTVXDVWGRA/triton_poi_fused__to_copy_add_cat_clone_index_mul_rms_norm_slice_split_split_with_sizes_sub_unsqueeze_view_6.hsaco')
+[rank0]:W1125 14:39:18.473000 562 torch/_inductor/triton_bundler.py:242] Failed to reload cubin file statically launchable autotuner triton_poi_fused__to_copy_add_cat_clone_rms_norm_slice_split_split_with_sizes_view_7
+[rank0]:W1125 14:39:18.473000 562 torch/_inductor/triton_bundler.py:242] Traceback (most recent call last):
+[rank0]:W1125 14:39:18.473000 562 torch/_inductor/triton_bundler.py:242]   File "/usr/local/lib/python3.12/dist-packages/torch/_inductor/triton_bundler.py", line 240, in load_autotuners
+[rank0]:W1125 14:39:18.473000 562 torch/_inductor/triton_bundler.py:242]     compile_result.reload_cubin_path()
+[rank0]:W1125 14:39:18.473000 562 torch/_inductor/triton_bundler.py:242]   File "/usr/local/lib/python3.12/dist-packages/torch/_inductor/runtime/triton_heuristics.py", line 2607, in reload_cubin_path
+[rank0]:W1125 14:39:18.473000 562 torch/_inductor/triton_bundler.py:242]     raise RuntimeError(
+[rank0]:W1125 14:39:18.473000 562 torch/_inductor/triton_bundler.py:242] RuntimeError: ('Cubin file saved by TritonBundler not found at %s', '/root/.cache/vllm/torch_compile_cache/torch_aot_compile/62a584708e54ebd0f46c2d1b7acc52c25350170319b712397c74c3e39f66fa3f/inductor_cache/triton/0/4NHRRXG5F65A5OBG5MTVQJ4RBDKFW6DQBXBN72F6FEBACUPSUFAQ/triton_poi_fused__to_copy_add_cat_clone_rms_norm_slice_split_split_with_sizes_view_7.hsaco')
+[rank0]:W1125 14:39:18.473000 562 torch/_inductor/triton_bundler.py:242] Failed to reload cubin file statically launchable autotuner triton_poi_fused_clone_split_split_with_sizes_view_8
+[rank0]:W1125 14:39:18.473000 562 torch/_inductor/triton_bundler.py:242] Traceback (most recent call last):
+[rank0]:W1125 14:39:18.473000 562 torch/_inductor/triton_bundler.py:242]   File "/usr/local/lib/python3.12/dist-packages/torch/_inductor/triton_bundler.py", line 240, in load_autotuners
+[rank0]:W1125 14:39:18.473000 562 torch/_inductor/triton_bundler.py:242]     compile_result.reload_cubin_path()
+[rank0]:W1125 14:39:18.473000 562 torch/_inductor/triton_bundler.py:242]   File "/usr/local/lib/python3.12/dist-packages/torch/_inductor/runtime/triton_heuristics.py", line 2607, in reload_cubin_path
+[rank0]:W1125 14:39:18.473000 562 torch/_inductor/triton_bundler.py:242]     raise RuntimeError(
+[rank0]:W1125 14:39:18.473000 562 torch/_inductor/triton_bundler.py:242] RuntimeError: ('Cubin file saved by TritonBundler not found at %s', '/root/.cache/vllm/torch_compile_cache/torch_aot_compile/62a584708e54ebd0f46c2d1b7acc52c25350170319b712397c74c3e39f66fa3f/inductor_cache/triton/0/IFWZV26JXN7ZR4XB6OSXYD2M575ZMBXCX3XF4B2R2QUCJWDARCBA/triton_poi_fused_clone_split_split_with_sizes_view_8.hsaco')
+[rank3]:W1125 14:39:18.476000 563 torch/_inductor/triton_bundler.py:242] Failed to reload cubin file statically launchable autotuner triton_poi_fused_mul_per_token_group_fp8_quant_sigmoid_view_0
+[rank3]:W1125 14:39:18.476000 563 torch/_inductor/triton_bundler.py:242] Traceback (most recent call last):
+[rank3]:W1125 14:39:18.476000 563 torch/_inductor/triton_bundler.py:242]   File "/usr/local/lib/python3.12/dist-packages/torch/_inductor/triton_bundler.py", line 240, in load_autotuners
+[rank3]:W1125 14:39:18.476000 563 torch/_inductor/triton_bundler.py:242]     compile_result.reload_cubin_path()
+[rank3]:W1125 14:39:18.476000 563 torch/_inductor/triton_bundler.py:242]   File "/usr/local/lib/python3.12/dist-packages/torch/_inductor/runtime/triton_heuristics.py", line 2607, in reload_cubin_path
+[rank3]:W1125 14:39:18.476000 563 torch/_inductor/triton_bundler.py:242]     raise RuntimeError(
+[rank3]:W1125 14:39:18.476000 563 torch/_inductor/triton_bundler.py:242] RuntimeError: ('Cubin file saved by TritonBundler not found at %s', '/root/.cache/vllm/torch_compile_cache/torch_aot_compile/62a584708e54ebd0f46c2d1b7acc52c25350170319b712397c74c3e39f66fa3f/inductor_cache/triton/3/TOF4YBLFJGCUC35C3HWBWU53AMLLZNNMS2TRTY22Q3IULUSGHTRA/triton_poi_fused_mul_per_token_group_fp8_quant_sigmoid_view_0.hsaco')
+[rank3]:W1125 14:39:18.477000 563 torch/_inductor/triton_bundler.py:242] Failed to reload cubin file statically launchable autotuner triton_red_fused__to_copy_add_fused_add_rms_norm_per_token_group_fp8_quant_1
+[rank3]:W1125 14:39:18.477000 563 torch/_inductor/triton_bundler.py:242] Traceback (most recent call last):
+[rank3]:W1125 14:39:18.477000 563 torch/_inductor/triton_bundler.py:242]   File "/usr/local/lib/python3.12/dist-packages/torch/_inductor/triton_bundler.py", line 240, in load_autotuners
+[rank3]:W1125 14:39:18.477000 563 torch/_inductor/triton_bundler.py:242]     compile_result.reload_cubin_path()
+[rank3]:W1125 14:39:18.477000 563 torch/_inductor/triton_bundler.py:242]   File "/usr/local/lib/python3.12/dist-packages/torch/_inductor/runtime/triton_heuristics.py", line 2607, in reload_cubin_path
+[rank3]:W1125 14:39:18.477000 563 torch/_inductor/triton_bundler.py:242]     raise RuntimeError(
+[rank3]:W1125 14:39:18.477000 563 torch/_inductor/triton_bundler.py:242] RuntimeError: ('Cubin file saved by TritonBundler not found at %s', '/root/.cache/vllm/torch_compile_cache/torch_aot_compile/62a584708e54ebd0f46c2d1b7acc52c25350170319b712397c74c3e39f66fa3f/inductor_cache/triton/3/5DXGSDQ4PPFQYBMBDYIBNBJ3E23MUWAZWSN6NYIPROTGHXRUP2WQ/triton_red_fused__to_copy_add_fused_add_rms_norm_per_token_group_fp8_quant_1.hsaco')
+[rank3]:W1125 14:39:18.477000 563 torch/_inductor/triton_bundler.py:242] Failed to reload cubin file statically launchable autotuner triton_poi_fused_mul_per_token_group_fp8_quant_silu_slice_2
+[rank3]:W1125 14:39:18.477000 563 torch/_inductor/triton_bundler.py:242] Traceback (most recent call last):
+[rank3]:W1125 14:39:18.477000 563 torch/_inductor/triton_bundler.py:242]   File "/usr/local/lib/python3.12/dist-packages/torch/_inductor/triton_bundler.py", line 240, in load_autotuners
+[rank3]:W1125 14:39:18.477000 563 torch/_inductor/triton_bundler.py:242]     compile_result.reload_cubin_path()
+[rank3]:W1125 14:39:18.477000 563 torch/_inductor/triton_bundler.py:242]   File "/usr/local/lib/python3.12/dist-packages/torch/_inductor/runtime/triton_heuristics.py", line 2607, in reload_cubin_path
+[rank3]:W1125 14:39:18.477000 563 torch/_inductor/triton_bundler.py:242]     raise RuntimeError(
+[rank3]:W1125 14:39:18.477000 563 torch/_inductor/triton_bundler.py:242] RuntimeError: ('Cubin file saved by TritonBundler not found at %s', '/root/.cache/vllm/torch_compile_cache/torch_aot_compile/62a584708e54ebd0f46c2d1b7acc52c25350170319b712397c74c3e39f66fa3f/inductor_cache/triton/3/6Y5TY6WCXJWSFIKCNFERALX75ZDJNUQ3NQNPXHJFKB7F4PZ76EKA/triton_poi_fused_mul_per_token_group_fp8_quant_silu_slice_2.hsaco')
+[rank3]:W1125 14:39:18.477000 563 torch/_inductor/triton_bundler.py:242] Failed to reload cubin file statically launchable autotuner triton_red_fused__to_copy_add_fused_add_rms_norm_3
+[rank3]:W1125 14:39:18.477000 563 torch/_inductor/triton_bundler.py:242] Traceback (most recent call last):
+[rank3]:W1125 14:39:18.477000 563 torch/_inductor/triton_bundler.py:242]   File "/usr/local/lib/python3.12/dist-packages/torch/_inductor/triton_bundler.py", line 240, in load_autotuners
+[rank3]:W1125 14:39:18.477000 563 torch/_inductor/triton_bundler.py:242]     compile_result.reload_cubin_path()
+[rank3]:W1125 14:39:18.477000 563 torch/_inductor/triton_bundler.py:242]   File "/usr/local/lib/python3.12/dist-packages/torch/_inductor/runtime/triton_heuristics.py", line 2607, in reload_cubin_path
+[rank3]:W1125 14:39:18.477000 563 torch/_inductor/triton_bundler.py:242]     raise RuntimeError(
+[rank3]:W1125 14:39:18.477000 563 torch/_inductor/triton_bundler.py:242] RuntimeError: ('Cubin file saved by TritonBundler not found at %s', '/root/.cache/vllm/torch_compile_cache/torch_aot_compile/62a584708e54ebd0f46c2d1b7acc52c25350170319b712397c74c3e39f66fa3f/inductor_cache/triton/3/WMLU3N5JNL3ZTPKONZL6YZ6LNAV7J72JPQBEAKUTAG2D56OWF2PQ/triton_red_fused__to_copy_add_fused_add_rms_norm_3.hsaco')
+[rank1]:W1125 14:39:18.480000 561 torch/_inductor/triton_bundler.py:242] Failed to reload cubin file statically launchable autotuner triton_poi_fused_mul_per_token_group_fp8_quant_sigmoid_view_0
+[rank1]:W1125 14:39:18.480000 561 torch/_inductor/triton_bundler.py:242] Traceback (most recent call last):
+[rank1]:W1125 14:39:18.480000 561 torch/_inductor/triton_bundler.py:242]   File "/usr/local/lib/python3.12/dist-packages/torch/_inductor/triton_bundler.py", line 240, in load_autotuners
+[rank1]:W1125 14:39:18.480000 561 torch/_inductor/triton_bundler.py:242]     compile_result.reload_cubin_path()
+[rank1]:W1125 14:39:18.480000 561 torch/_inductor/triton_bundler.py:242]   File "/usr/local/lib/python3.12/dist-packages/torch/_inductor/runtime/triton_heuristics.py", line 2607, in reload_cubin_path
+[rank1]:W1125 14:39:18.480000 561 torch/_inductor/triton_bundler.py:242]     raise RuntimeError(
+[rank1]:W1125 14:39:18.480000 561 torch/_inductor/triton_bundler.py:242] RuntimeError: ('Cubin file saved by TritonBundler not found at %s', '/root/.cache/vllm/torch_compile_cache/torch_aot_compile/62a584708e54ebd0f46c2d1b7acc52c25350170319b712397c74c3e39f66fa3f/inductor_cache/triton/1/TOF4YBLFJGCUC35C3HWBWU53AMLLZNNMS2TRTY22Q3IULUSGHTRA/triton_poi_fused_mul_per_token_group_fp8_quant_sigmoid_view_0.hsaco')
+[rank1]:W1125 14:39:18.481000 561 torch/_inductor/triton_bundler.py:242] Failed to reload cubin file statically launchable autotuner triton_red_fused__to_copy_add_fused_add_rms_norm_per_token_group_fp8_quant_1
+[rank1]:W1125 14:39:18.481000 561 torch/_inductor/triton_bundler.py:242] Traceback (most recent call last):
+[rank1]:W1125 14:39:18.481000 561 torch/_inductor/triton_bundler.py:242]   File "/usr/local/lib/python3.12/dist-packages/torch/_inductor/triton_bundler.py", line 240, in load_autotuners
+[rank1]:W1125 14:39:18.481000 561 torch/_inductor/triton_bundler.py:242]     compile_result.reload_cubin_path()
+[rank1]:W1125 14:39:18.481000 561 torch/_inductor/triton_bundler.py:242]   File "/usr/local/lib/python3.12/dist-packages/torch/_inductor/runtime/triton_heuristics.py", line 2607, in reload_cubin_path
+[rank1]:W1125 14:39:18.481000 561 torch/_inductor/triton_bundler.py:242]     raise RuntimeError(
+[rank1]:W1125 14:39:18.481000 561 torch/_inductor/triton_bundler.py:242] RuntimeError: ('Cubin file saved by TritonBundler not found at %s', '/root/.cache/vllm/torch_compile_cache/torch_aot_compile/62a584708e54ebd0f46c2d1b7acc52c25350170319b712397c74c3e39f66fa3f/inductor_cache/triton/1/5DXGSDQ4PPFQYBMBDYIBNBJ3E23MUWAZWSN6NYIPROTGHXRUP2WQ/triton_red_fused__to_copy_add_fused_add_rms_norm_per_token_group_fp8_quant_1.hsaco')
+[rank1]:W1125 14:39:18.481000 561 torch/_inductor/triton_bundler.py:242] Failed to reload cubin file statically launchable autotuner triton_poi_fused_mul_per_token_group_fp8_quant_silu_slice_2
+[rank1]:W1125 14:39:18.481000 561 torch/_inductor/triton_bundler.py:242] Traceback (most recent call last):
+[rank1]:W1125 14:39:18.481000 561 torch/_inductor/triton_bundler.py:242]   File "/usr/local/lib/python3.12/dist-packages/torch/_inductor/triton_bundler.py", line 240, in load_autotuners
+[rank1]:W1125 14:39:18.481000 561 torch/_inductor/triton_bundler.py:242]     compile_result.reload_cubin_path()
+[rank1]:W1125 14:39:18.481000 561 torch/_inductor/triton_bundler.py:242]   File "/usr/local/lib/python3.12/dist-packages/torch/_inductor/runtime/triton_heuristics.py", line 2607, in reload_cubin_path
+[rank1]:W1125 14:39:18.481000 561 torch/_inductor/triton_bundler.py:242]     raise RuntimeError(
+[rank1]:W1125 14:39:18.481000 561 torch/_inductor/triton_bundler.py:242] RuntimeError: ('Cubin file saved by TritonBundler not found at %s', '/root/.cache/vllm/torch_compile_cache/torch_aot_compile/62a584708e54ebd0f46c2d1b7acc52c25350170319b712397c74c3e39f66fa3f/inductor_cache/triton/1/6Y5TY6WCXJWSFIKCNFERALX75ZDJNUQ3NQNPXHJFKB7F4PZ76EKA/triton_poi_fused_mul_per_token_group_fp8_quant_silu_slice_2.hsaco')
+[rank1]:W1125 14:39:18.481000 561 torch/_inductor/triton_bundler.py:242] Failed to reload cubin file statically launchable autotuner triton_red_fused__to_copy_add_fused_add_rms_norm_3
+[rank1]:W1125 14:39:18.481000 561 torch/_inductor/triton_bundler.py:242] Traceback (most recent call last):
+[rank1]:W1125 14:39:18.481000 561 torch/_inductor/triton_bundler.py:242]   File "/usr/local/lib/python3.12/dist-packages/torch/_inductor/triton_bundler.py", line 240, in load_autotuners
+[rank1]:W1125 14:39:18.481000 561 torch/_inductor/triton_bundler.py:242]     compile_result.reload_cubin_path()
+[rank1]:W1125 14:39:18.481000 561 torch/_inductor/triton_bundler.py:242]   File "/usr/local/lib/python3.12/dist-packages/torch/_inductor/runtime/triton_heuristics.py", line 2607, in reload_cubin_path
+[rank1]:W1125 14:39:18.481000 561 torch/_inductor/triton_bundler.py:242]     raise RuntimeError(
+[rank1]:W1125 14:39:18.481000 561 torch/_inductor/triton_bundler.py:242] RuntimeError: ('Cubin file saved by TritonBundler not found at %s', '/root/.cache/vllm/torch_compile_cache/torch_aot_compile/62a584708e54ebd0f46c2d1b7acc52c25350170319b712397c74c3e39f66fa3f/inductor_cache/triton/1/WMLU3N5JNL3ZTPKONZL6YZ6LNAV7J72JPQBEAKUTAG2D56OWF2PQ/triton_red_fused__to_copy_add_fused_add_rms_norm_3.hsaco')
+[rank2]:W1125 14:39:18.481000 560 torch/_inductor/triton_bundler.py:242] Failed to reload cubin file statically launchable autotuner triton_poi_fused_mul_per_token_group_fp8_quant_sigmoid_view_0
+[rank2]:W1125 14:39:18.481000 560 torch/_inductor/triton_bundler.py:242] Traceback (most recent call last):
+[rank2]:W1125 14:39:18.481000 560 torch/_inductor/triton_bundler.py:242]   File "/usr/local/lib/python3.12/dist-packages/torch/_inductor/triton_bundler.py", line 240, in load_autotuners
+[rank2]:W1125 14:39:18.481000 560 torch/_inductor/triton_bundler.py:242]     compile_result.reload_cubin_path()
+[rank2]:W1125 14:39:18.481000 560 torch/_inductor/triton_bundler.py:242]   File "/usr/local/lib/python3.12/dist-packages/torch/_inductor/runtime/triton_heuristics.py", line 2607, in reload_cubin_path
+[rank2]:W1125 14:39:18.481000 560 torch/_inductor/triton_bundler.py:242]     raise RuntimeError(
+[rank2]:W1125 14:39:18.481000 560 torch/_inductor/triton_bundler.py:242] RuntimeError: ('Cubin file saved by TritonBundler not found at %s', '/root/.cache/vllm/torch_compile_cache/torch_aot_compile/62a584708e54ebd0f46c2d1b7acc52c25350170319b712397c74c3e39f66fa3f/inductor_cache/triton/2/TOF4YBLFJGCUC35C3HWBWU53AMLLZNNMS2TRTY22Q3IULUSGHTRA/triton_poi_fused_mul_per_token_group_fp8_quant_sigmoid_view_0.hsaco')
+[rank2]:W1125 14:39:18.481000 560 torch/_inductor/triton_bundler.py:242] Failed to reload cubin file statically launchable autotuner triton_red_fused__to_copy_add_fused_add_rms_norm_per_token_group_fp8_quant_1
+[rank2]:W1125 14:39:18.481000 560 torch/_inductor/triton_bundler.py:242] Traceback (most recent call last):
+[rank2]:W1125 14:39:18.481000 560 torch/_inductor/triton_bundler.py:242]   File "/usr/local/lib/python3.12/dist-packages/torch/_inductor/triton_bundler.py", line 240, in load_autotuners
+[rank2]:W1125 14:39:18.481000 560 torch/_inductor/triton_bundler.py:242]     compile_result.reload_cubin_path()
+[rank2]:W1125 14:39:18.481000 560 torch/_inductor/triton_bundler.py:242]   File "/usr/local/lib/python3.12/dist-packages/torch/_inductor/runtime/triton_heuristics.py", line 2607, in reload_cubin_path
+[rank2]:W1125 14:39:18.481000 560 torch/_inductor/triton_bundler.py:242]     raise RuntimeError(
+[rank2]:W1125 14:39:18.481000 560 torch/_inductor/triton_bundler.py:242] RuntimeError: ('Cubin file saved by TritonBundler not found at %s', '/root/.cache/vllm/torch_compile_cache/torch_aot_compile/62a584708e54ebd0f46c2d1b7acc52c25350170319b712397c74c3e39f66fa3f/inductor_cache/triton/2/5DXGSDQ4PPFQYBMBDYIBNBJ3E23MUWAZWSN6NYIPROTGHXRUP2WQ/triton_red_fused__to_copy_add_fused_add_rms_norm_per_token_group_fp8_quant_1.hsaco')
+[rank2]:W1125 14:39:18.481000 560 torch/_inductor/triton_bundler.py:242] Failed to reload cubin file statically launchable autotuner triton_poi_fused_mul_per_token_group_fp8_quant_silu_slice_2
+[rank2]:W1125 14:39:18.481000 560 torch/_inductor/triton_bundler.py:242] Traceback (most recent call last):
+[rank2]:W1125 14:39:18.481000 560 torch/_inductor/triton_bundler.py:242]   File "/usr/local/lib/python3.12/dist-packages/torch/_inductor/triton_bundler.py", line 240, in load_autotuners
+[rank2]:W1125 14:39:18.481000 560 torch/_inductor/triton_bundler.py:242]     compile_result.reload_cubin_path()
+[rank2]:W1125 14:39:18.481000 560 torch/_inductor/triton_bundler.py:242]   File "/usr/local/lib/python3.12/dist-packages/torch/_inductor/runtime/triton_heuristics.py", line 2607, in reload_cubin_path
+=== llmband (presweep) 2026-11-25T14:39:36+00:00 ===
+llmband: qwen3.8-27b-code -> SLOW band
+  22.31 steps/s vs baseline 36.31, floor 31.95 (-12%) -> slow
+  mem_busy 28% vs baseline 46% (+/-30%) -> inconsistent
+  109 steps / 256 tok in 4.886s (2.349 accepted/step); 80/80 card-samples under load across 4 cards
+  a restart draws a new band; see docs/rdna4-decode-bands.md
+llmband exit code (presweep): 1
+=== metrics snapshot (presweep) 2026-11-25T14:39:43+00:00 ===
+vllm:spec_decode_num_drafts_total{engine="0",model_name="qwen3.8-27b-code"} 163.0
+vllm:spec_decode_num_draft_tokens_total{engine="0",model_name="qwen3.8-27b-code"} 326.0
+vllm:spec_decode_num_accepted_tokens_total{engine="0",model_name="qwen3.8-27b-code"} 221.0
+vllm:spec_decode_num_accepted_tokens_per_pos_total{engine="0",model_name="qwen3.8-27b-code",position="0"} 127.0
+vllm:spec_decode_num_accepted_tokens_per_pos_total{engine="0",model_name="qwen3.8-27b-code",position="1"} 94.0
+vllm:prompt_tokens_total{engine="0",model_name="qwen3.8-27b-code"} 96.0
+vllm:generation_tokens_total{engine="0",model_name="qwen3.8-27b-code"} 384.0
+=== sweep 2026-11-25T14:39:43+00:00 -> bench/baselines/qwen3.8-27b-code-v0.34.0-A4-hwq2-peak-nothink-20261125.json ===
+sweep exit 0
+=== metrics snapshot (postsweep) 2026-11-25T15:00:49+00:00 ===
+vllm:spec_decode_num_drafts_total{engine="0",model_name="qwen3.8-27b-code"} 75984.0
+vllm:spec_decode_num_draft_tokens_total{engine="0",model_name="qwen3.8-27b-code"} 151968.0
+vllm:spec_decode_num_accepted_tokens_total{engine="0",model_name="qwen3.8-27b-code"} 76744.0
+vllm:spec_decode_num_accepted_tokens_per_pos_total{engine="0",model_name="qwen3.8-27b-code",position="0"} 49965.0
+vllm:spec_decode_num_accepted_tokens_per_pos_total{engine="0",model_name="qwen3.8-27b-code",position="1"} 26779.0
+vllm:prompt_tokens_total{engine="0",model_name="qwen3.8-27b-code"} 59876.0
+vllm:generation_tokens_total{engine="0",model_name="qwen3.8-27b-code"} 152890.0
+=== llmband (postsweep) 2026-11-25T15:00:49+00:00 ===
+llmband: qwen3.8-27b-code -> SLOW band
+  22.29 steps/s vs baseline 36.31, floor 31.95 (-12%) -> slow
+  mem_busy 28% vs baseline 46% (+/-30%) -> inconsistent
+  109 steps / 256 tok in 4.89s (2.349 accepted/step); 80/80 card-samples under load across 4 cards
+  a restart draws a new band; see docs/rdna4-decode-bands.md
+llmband exit code (postsweep): 1
+=== metrics snapshot (presweep-rep2) 2026-11-25T15:00:57+00:00 ===
+vllm:spec_decode_num_drafts_total{engine="0",model_name="qwen3.8-27b-code"} 76147.0
+vllm:spec_decode_num_draft_tokens_total{engine="0",model_name="qwen3.8-27b-code"} 152294.0
+vllm:spec_decode_num_accepted_tokens_total{engine="0",model_name="qwen3.8-27b-code"} 76965.0
+vllm:spec_decode_num_accepted_tokens_per_pos_total{engine="0",model_name="qwen3.8-27b-code",position="0"} 50092.0
+vllm:spec_decode_num_accepted_tokens_per_pos_total{engine="0",model_name="qwen3.8-27b-code",position="1"} 26873.0
+vllm:prompt_tokens_total{engine="0",model_name="qwen3.8-27b-code"} 59972.0
+vllm:generation_tokens_total{engine="0",model_name="qwen3.8-27b-code"} 153274.0
+=== sweep 2026-11-25T15:00:57+00:00 -> bench/baselines/qwen3.8-27b-code-v0.34.0-A4-hwq2-peak-nothink-20261125-rep2.json ===
+sweep exit 0
+=== metrics snapshot (postsweep-rep2) 2026-11-25T15:22:04+00:00 ===
+vllm:spec_decode_num_drafts_total{engine="0",model_name="qwen3.8-27b-code"} 151546.0
+vllm:spec_decode_num_draft_tokens_total{engine="0",model_name="qwen3.8-27b-code"} 303092.0
+vllm:spec_decode_num_accepted_tokens_total{engine="0",model_name="qwen3.8-27b-code"} 152981.0
+vllm:spec_decode_num_accepted_tokens_per_pos_total{engine="0",model_name="qwen3.8-27b-code",position="0"} 99570.0
+vllm:spec_decode_num_accepted_tokens_per_pos_total{engine="0",model_name="qwen3.8-27b-code",position="1"} 53411.0
+vllm:prompt_tokens_total{engine="0",model_name="qwen3.8-27b-code"} 119752.0
+vllm:generation_tokens_total{engine="0",model_name="qwen3.8-27b-code"} 304840.0
+=== llmband (postsweep-rep2) 2026-11-25T15:22:04+00:00 ===
+llmband: qwen3.8-27b-code -> SLOW band
+  22.32 steps/s vs baseline 36.31, floor 31.95 (-12%) -> slow
+  mem_busy 28% vs baseline 46% (+/-30%) -> inconsistent
+  109 steps / 256 tok in 4.883s (2.349 accepted/step); 80/80 card-samples under load across 4 cards
+  a restart draws a new band; see docs/rdna4-decode-bands.md
+llmband exit code (postsweep-rep2): 1
+=== depth (c1) 2026-11-25T15:22:11+00:00 metrics=http://127.0.0.1:9234/metrics ===
+depth cell c1 depths=2048,16384,65536,129984 conc=1 nonce=1795620132 -> bench/baselines/depth/qwen3.8-27b-code-v0.34.0-A4-hwq2-depth-c1-prewarm-20261125.json
+depth c1 exit 0
+=== metrics snapshot (final) 2026-11-25T15:23:33+00:00 ===
+vllm:spec_decode_num_drafts_total{engine="0",model_name="qwen3.8-27b-code"} 151934.0
+vllm:spec_decode_num_draft_tokens_total{engine="0",model_name="qwen3.8-27b-code"} 303868.0
+vllm:spec_decode_num_accepted_tokens_total{engine="0",model_name="qwen3.8-27b-code"} 153487.0
+vllm:spec_decode_num_accepted_tokens_per_pos_total{engine="0",model_name="qwen3.8-27b-code",position="0"} 99870.0
+vllm:spec_decode_num_accepted_tokens_per_pos_total{engine="0",model_name="qwen3.8-27b-code",position="1"} 53617.0
+vllm:prompt_tokens_total{engine="0",model_name="qwen3.8-27b-code"} 551907.0
+vllm:generation_tokens_total{engine="0",model_name="qwen3.8-27b-code"} 305741.0
+=== stopped 2026-11-25T15:23:44+00:00 ===
+GPU: 0
+        USED_VRAM: 57 MB
+GPU: 1
+        USED_VRAM: 57 MB
+GPU: 2
+        USED_VRAM: 57 MB
+GPU: 3
+        USED_VRAM: 57 MB

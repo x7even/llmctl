@@ -1,0 +1,77 @@
+diff -ru a/vllm/envs.py b/vllm/envs.py
+--- a/vllm/envs.py	2026-11-26 00:00:02.933277331 +0000
++++ b/vllm/envs.py	2026-11-26 00:00:02.942736221 +0000
+@@ -342,6 +342,8 @@
+     VLLM_ELASTIC_EP_SCALE_UP_LAUNCH: bool = False
+     VLLM_ELASTIC_EP_DRAIN_REQUESTS: bool = False
+     VLLM_MEMORY_PROFILER_ESTIMATE_CUDAGRAPHS: bool = True
++    VLLM_KV_CACHE_MARGIN_FLOOR_MB: int | None = None
++    VLLM_KV_CACHE_NON_TORCH_RESERVE_MB: int | None = None
+     VLLM_XPU_FORCE_N_CONTIG_WEIGHT: bool = False
+     VLLM_XPU_USE_SAMPLER_KERNEL: bool = True
+     VLLM_XPU_INC_WNA16_BACKEND: Literal["auto", "ark", "w4a16", "w4a8"] = "auto"
+@@ -2355,6 +2357,18 @@
+     "VLLM_MEMORY_PROFILER_ESTIMATE_CUDAGRAPHS": lambda: bool(
+         int(os.getenv("VLLM_MEMORY_PROFILER_ESTIMATE_CUDAGRAPHS", "1"))
+     ),
++    # Override the extensible KV cache's sizing margin floor, in MiB. The
++    # default (3 GiB on ROCm, 1 GiB elsewhere) is headroom kept free beyond the
++    # measured transient peak; lowering it grows the KV cache by the same amount.
++    "VLLM_KV_CACHE_MARGIN_FLOOR_MB": lambda: maybe_convert_int(
++        os.getenv("VLLM_KV_CACHE_MARGIN_FLOOR_MB", None)
++    ),
++    # Override the part of that margin kept for allocations outside torch's
++    # caching allocator, in MiB (default 1 GiB on ROCm, 512 MiB elsewhere). It
++    # caps how far torch may grow; it does not change the KV cache size.
++    "VLLM_KV_CACHE_NON_TORCH_RESERVE_MB": lambda: maybe_convert_int(
++        os.getenv("VLLM_KV_CACHE_NON_TORCH_RESERVE_MB", None)
++    ),
+     # Force N-contiguous weight layout for all XPU unquantized linears.
+     "VLLM_XPU_FORCE_N_CONTIG_WEIGHT": lambda: bool(
+         int(os.getenv("VLLM_XPU_FORCE_N_CONTIG_WEIGHT", "0"))
+diff -ru a/vllm/v1/worker/extensible_kv_cache.py b/vllm/v1/worker/extensible_kv_cache.py
+--- a/vllm/v1/worker/extensible_kv_cache.py	2026-11-26 00:00:02.933789189 +0000
++++ b/vllm/v1/worker/extensible_kv_cache.py	2026-11-26 00:00:02.943323124 +0000
+@@ -13,6 +13,7 @@
+ 
+ import torch
+ 
++import vllm.envs as envs
+ from vllm.config.kv_transfer import KVCacheAccess
+ from vllm.distributed.kv_transfer import (
+     ensure_kv_transfer_initialized,
+@@ -60,15 +61,31 @@
+ # first prefill of an 8B model needed over 25% beyond its allocated peak before
+ # the allocator could serve it, and adversarial workloads reached up to 45%.
+ # ROCr also maps kernel scratch outside the allocator when a kernel first needs
+-# it, so ROCm keeps a larger floor.
+-KV_CACHE_MARGIN_FLOOR_BYTES = (3 if current_platform.is_rocm() else 1) << 30
++# it, so ROCm keeps a larger floor. VLLM_KV_CACHE_MARGIN_FLOOR_MB overrides it
++# for deployments that have measured their own non-torch and fragmentation
++# growth (the floor binds whenever 0.75x the measured transient is below it).
++KV_CACHE_MARGIN_FLOOR_BYTES = (
++    envs.VLLM_KV_CACHE_MARGIN_FLOOR_MB << 20
++    if envs.VLLM_KV_CACHE_MARGIN_FLOOR_MB is not None
++    else (3 if current_platform.is_rocm() else 1) << 30
++)
+ KV_CACHE_MARGIN_FRACTION = 0.75
+ # Part of the margin kept for allocations outside torch's caching allocator
+ # (kernel scratch, NCCL/RCCL buffers, lazily loaded code objects); the
+ # allocator is capped to leave it free. The rest absorbs torch's fragmentation,
+ # which scales with the transient where these do not: serving grew them by at
+ # most 0.17 GiB on MI355 and not at all on GB200.
+-KV_CACHE_NON_TORCH_RESERVE_BYTES = (2 if current_platform.is_rocm() else 1) << 29
++KV_CACHE_NON_TORCH_RESERVE_BYTES = (
++    envs.VLLM_KV_CACHE_NON_TORCH_RESERVE_MB << 20
++    if envs.VLLM_KV_CACHE_NON_TORCH_RESERVE_MB is not None
++    else (2 if current_platform.is_rocm() else 1) << 29
++)
++if KV_CACHE_NON_TORCH_RESERVE_BYTES > KV_CACHE_MARGIN_FLOOR_BYTES:
++    raise ValueError(
++        "VLLM_KV_CACHE_NON_TORCH_RESERVE_MB must not exceed the KV cache margin "
++        f"floor ({KV_CACHE_MARGIN_FLOOR_BYTES >> 20} MiB): the reserve is part "
++        "of that margin."
++    )
+ # Share of the headroom warmup leaves uncommitted, on top of the profiled
+ # activation peak, for transients the profiling run does not exercise.
+ KV_CACHE_WARMUP_RESERVE_FRACTION = 0.1

@@ -17,12 +17,29 @@ No screen; GPU-only headless rig. PCIe 5.0 ×16 per slot.
 
 | Image | vLLM | ROCm | Use when |
 |---|---|---|---|
-| `docker.io/vllm/vllm-openai-rocm:v0.26.0` | 0.26.0+rocm723 | 7.2.3 | All vLLM profiles (FP8, AWQ, safetensors) |
+| `docker.io/vllm/vllm-openai-rocm:v0.34.0` | 0.34.0 | 10.0 (userspace) | All vLLM profiles, Flash-Next included (pinned 2026-11, `docs/upgrade-plan-2026-11.md`) |
+| `docker.io/vllm/vllm-openai-rocm:v0.26.0` | 0.26.0+rocm723 | 7.2.3 | Previous pin; **emergency rollback only** since 2026-11-27 (0.34.0 is the minimum for all new work). Same image as `localhost/llmstack-vllm-rollback:v0.26.0` |
 | `localhost/llmstack-llama:latest` | llama.cpp | Vulkan | GGUF models |
 
 All vLLM profiles use `--entrypoint="" ... vllm serve` because the AMD official
 image has `ENTRYPOINT ["vllm", "serve"]` — omitting the explicit `vllm serve`
 prefix results in `vllm serve serve /models/...` which fails.
+
+**v0.34.0 notes** (from `docs/upgrade-plan-2026-11.md`):
+- MTP profiles state their capture sizes with `--compilation-config` (prefill token sizes and
+  decode request sizes). No-MTP profiles keep `--cudagraph-capture-sizes`.
+- TRITON_ATTN is auto-selected and works with MTP. At 130K, `qwen3.6-35b-code` went from 7.3 to
+  140.4 tok/s.
+- Stock KV pools are 13-36% smaller than on 0.26: 0.34's default (extensible) KV sizing keeps a
+  3 GiB ROCm margin per card. Tuned 2026-11-27 (Phase 3c): `qwen3.8-27b-code`,
+  `qwen3.8-flash-next-vllm` and `qwen3.6-35b-code` mount a patched `extensible_kv_cache.py`
+  (upstream PR #69994 + 1 GiB floor), measured at 891,289 → 1,005,399, ~394K → ~553K and
+  1,088,989 → 1,217,331 tokens. Other profiles keep stock sizing. Moderate confidence: 6 clean
+  floor-1 spawns, one per arm on the 35B.
+- **Policy (2026-11-27): v0.34.0 is the minimum** for new profiles, canaries and benchmarks;
+  older images are emergency rollback only.
+- Responses carry `reasoning` in place of `reasoning_content`.
+- The per-profile history below is mostly 0.26-era.
 
 ### vLLM cold start time
 
@@ -221,9 +238,10 @@ time and 4 streams drop to ~8.5 tok/s each; TP4 + expert-parallel keeps all four
 **Setup:**
 - Checkpoint: `albucino/Qwen3.8-Flash-Next-W4A16-FP8PLE` (121 GB): AutoRound INT4 (W4A16)
   transformer, FP8 per-layer-embedding (PLE) table. Not a full-FP8 model.
-- Image: **nightly** `vllm-openai-rocm:nightly-8cbd5d03006c33185f402249ff2b448efd594986`
-  (vLLM 0.31.1rc1.dev173). `v0.31.0` rejects the compressed-tensors PLE table.
-  Move to a tagged release when one carries the same support.
+- Image: `vllm-openai-rocm:v0.34.0` since 2026-11 (KV margin patch mounted; pool ~553K tokens).
+  History: until then it ran **nightly** `nightly-8cbd5d03006c33185f402249ff2b448efd594986`
+  (vLLM 0.31.1rc1.dev173), because `v0.31.0` rejects the compressed-tensors PLE table. The
+  figures below are from that nightly unless marked v0.34.
 - TP4 + `--enable-expert-parallel`, `VLLM_ROCM_USE_AITER=0` (Triton MoE path; no AITER
   path for `Qwen4Exp`). No EP crash with INT4 MoE, unlike the AWQ case in `config/CLAUDE.md`.
 - The FP8 PLE table (47.7 GiB) is CPU-offloaded into pinned host RAM (~96 GB of host RAM is
@@ -880,7 +898,7 @@ pressure at long contexts with 4 concurrent streams; speedup recovers at conc=16
 
 **Aliases:** `gemma4-vllm`, `gemma4-concurrent`
 
-**Backend:** vLLM 0.26.0 (`docker.io/vllm/vllm-openai-rocm:v0.26.0`), BF16 safetensors.
+**Backend:** vLLM 0.34.0 (`docker.io/vllm/vllm-openai-rocm:v0.34.0`) since 2026-11, BF16 safetensors, stock KV sizing (no margin patch). The notes below were written on 0.26.0 and are history.
 **Model path:** `/mnt/models/llm/google/gemma-4-26B-A4B-it`
 **VRAM:** 122.7 GB across 4 GPUs — nearly fills all 128 GB. Profile is exclusive; cannot
 co-load with any other model. The large VRAM footprint is the model weights (49 GB BF16)
@@ -962,7 +980,7 @@ dynamics at that concurrency level.
 
 **Aliases:** `gemma4-fp8`, `gemma4-fast-vllm`
 
-**Backend:** vLLM 0.26.0 (`docker.io/vllm/vllm-openai-rocm:v0.26.0`), FP8-Dynamic weights.
+**Backend:** vLLM 0.34.0 (`docker.io/vllm/vllm-openai-rocm:v0.34.0`), FP8-Dynamic weights. Not canaried on 0.34; `GPU_MAX_HW_QUEUES=1` added 2026-11-27, unmeasured here.
 **Model path:** `/mnt/models/llm/RedHatAI/gemma-4-26B-A4B-it-FP8-Dynamic`
 **VRAM:** ~26 GB FP8 weights + BF16 KV cache across 4 GPUs.
 

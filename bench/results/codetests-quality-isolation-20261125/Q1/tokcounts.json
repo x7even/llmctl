@@ -1,0 +1,98 @@
+{
+ "date_math/think-s0": {
+  "reasoning_tokens": 26756,
+  "content_tokens": 3490
+ },
+ "date_math/think-s1": {
+  "reasoning_tokens": 30659,
+  "content_tokens": 3626
+ },
+ "date_math/think-s10": {
+  "reasoning_tokens": 26406,
+  "content_tokens": 3724
+ },
+ "date_math/think-s11": {
+  "reasoning_tokens": 26717,
+  "content_tokens": 3593
+ },
+ "date_math/think-s2": {
+  "reasoning_tokens": 21929,
+  "content_tokens": 0
+ },
+ "date_math/think-s3": {
+  "reasoning_tokens": 23780,
+  "content_tokens": 4069
+ },
+ "date_math/think-s4": {
+  "reasoning_tokens": 17724,
+  "content_tokens": 4008
+ },
+ "date_math/think-s5": {
+  "reasoning_tokens": 22884,
+  "content_tokens": 3743
+ },
+ "date_math/think-s6": {
+  "reasoning_tokens": 17191,
+  "content_tokens": 4108
+ },
+ "date_math/think-s7": {
+  "reasoning_tokens": 26794,
+  "content_tokens": 3800
+ },
+ "date_math/think-s8": {
+  "reasoning_tokens": 22654,
+  "content_tokens": 4071
+ },
+ "date_math/think-s9": {
+  "reasoning_tokens": 34193,
+  "content_tokens": 3945
+ },
+ "json_strict/think-s0": {
+  "reasoning_tokens": 18140,
+  "content_tokens": 3040
+ },
+ "json_strict/think-s1": {
+  "reasoning_tokens": 31483,
+  "content_tokens": 3230
+ },
+ "json_strict/think-s10": {
+  "reasoning_tokens": 29852,
+  "content_tokens": 2922
+ },
+ "json_strict/think-s11": {
+  "reasoning_tokens": 26453,
+  "content_tokens": 2471
+ },
+ "json_strict/think-s2": {
+  "reasoning_tokens": 25482,
+  "content_tokens": 3279
+ },
+ "json_strict/think-s3": {
+  "reasoning_tokens": 23145,
+  "content_tokens": 2595
+ },
+ "json_strict/think-s4": {
+  "reasoning_tokens": 20673,
+  "content_tokens": 0
+ },
+ "json_strict/think-s5": {
+  "reasoning_tokens": 17417,
+  "content_tokens": 0
+ },
+ "json_strict/think-s6": {
+  "reasoning_tokens": 24893,
+  "content_tokens": 2373
+ },
+ "json_strict/think-s7": {
+  "reasoning_tokens": 26436,
+  "content_tokens": 3153
+ },
+ "json_strict/think-s8": {
+  "reasoning_tokens": 27144,
+  "content_tokens": 2210
+ },
+ "json_strict/think-s9": {
+  "reasoning_tokens": 24584,
+  "content_tokens": 2770
+ }
+}

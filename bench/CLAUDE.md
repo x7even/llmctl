@@ -113,6 +113,12 @@ python3 bench/codetests/run_codetests.py run --url http://127.0.0.1:8080/v1/chat
 Rules learned the hard way (details in `docs/hard-code-tasks.md`):
 - Use a generation cap of 64K-96K for the hard tasks; at 32K Flash-Next truncates and the zeros measure the cap.
 - 4 samples per cell is small: read differences under ~15 points as noise.
+- **4 samples per task cannot gate the suite.** In the 0.34 canary, the 0.26 arm first scored
+  85.7 / 78.6 at n=4. A 12-sample re-check gave 64.9% / 44.6% on 0.26 against 78.6% / 53.0% on
+  0.34. So the n=4 draw had been a favourable one, and there was no regression. Single samples
+  on one task ranged from 0 to 14/14. Gate image changes on at least 12 samples per task,
+  with both arms at the same n. Data: `bench/results/codetests-quality-isolation-20261125/`,
+  write-up in `docs/upgrade-plan-2026-11.md`.
 - A `finish_reason=stop` with empty content is a premature end-of-turn from the model, not a test failure; count
   it separately (the 27B does this at a rate that rises with temperature). The runner now does: the summary's
   "early stops (empty/cut)" column counts replies that were empty or ended inside an unterminated code fence,
@@ -388,7 +394,7 @@ python3 bench/concurrent_bench.py \
   --prompt all \
   --no-thinking \
   --requests 16 \
-  --save bench/baselines/qwen3.8-27b-code-v0.26.0-nothink.json
+  --save bench/baselines/qwen3.8-27b-code-v0.34.0-nothink-$(date +%Y%m%d).json
 ```
 
 ### Quick sanity check
@@ -463,7 +469,7 @@ level gives stable statistics. 32 is better for publication-quality comparisons.
 ### Note what's different in the filename
 
 ```
-qwen3.8-27b-code-v0.26.0-nothink.json     ← good
+qwen3.8-27b-code-v0.34.0-nothink.json     ← good
 qwen3.8-27b-code.json                      ← ambiguous
 ```
 
@@ -471,8 +477,9 @@ The image pin is not optional. `band_audit.py` only compares files within one pr
 one pin — comparing across pins would report a version regression as a slow-band draw — so a
 baseline whose name omits the pin can never be audited. Six files committed on 2026-10-19 had
 to be renamed for exactly this reason, and the rename is what revealed that the 2026-10-05
-`qwen3.6-27b-code` baseline was a slow-band record. Flash-Next's pin is its nightly SHA
-(`-nightly-8cbd5d0-`).
+`qwen3.6-27b-code` baseline was a slow-band record. Flash-Next's files before 2026-11 carry its
+old nightly SHA (`-nightly-8cbd5d0-`); since then every profile is on `-v0.34.0-`, the minimum
+for new baselines (policy 2026-11-27).
 
 ---
 
@@ -504,7 +511,7 @@ to be renamed for exactly this reason, and the rename is what revealed that the 
 **MTP effect:** Multi-Token Prediction boosts tok/s mainly at conc ≥ 4. At conc=1,
 MTP overhead can slightly reduce serial tok/s if the draft hit rate is low.
 
-**Expected baselines for `qwen3.8-27b-code` (medium-256, vLLM 0.26.0, no-thinking, MTP, 32 req/level):**
+**Expected baselines for `qwen3.8-27b-code` — history: vLLM 0.26.0 (medium-256, no-thinking, MTP, 32 req/level).** On v0.34.0 the profile reads 75.4 serial / 455.9 conc=8 / 991.2 conc=32 at `--requests 128` (root `CLAUDE.md`), and the live-switch check read 77.1 / 450.7 / 1009.9.
 
 | conc | tok/s |
 |------|-------|
@@ -531,7 +538,8 @@ bench/baselines/<profile-id>-<version>[-<variant>].json
 
 Examples:
 ```
-qwen3.8-27b-code-v0.26.0-nothink.json      ← main baseline
+qwen3.8-27b-code-v0.34.0-nothink.json      ← main baseline (current pin)
+qwen3.8-27b-code-v0.26.0-nothink.json      ← previous pin, history
 qwen3.6-35b-code-v0.22.1-nothink.json      ← previous-generation reference
 qwen3.6-35b-awq-v0.20.0-nothink.json       ← archived profile, kept for history
 ```
@@ -539,7 +547,7 @@ qwen3.6-35b-awq-v0.20.0-nothink.json       ← archived profile, kept for histor
 Commit new baselines alongside the config or code change that motivated them.
 Commit message should include the headline numbers, e.g.:
 ```
-bench: add qwen3.8-27b-code vLLM 0.26.0 baseline (conc=8: 361 tok/s)
+bench: add qwen3.8-27b-code vLLM 0.34.0 baseline (conc=8: 456 tok/s)
 ```
 
 ---

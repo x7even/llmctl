@@ -1,0 +1,5 @@
+llmband: qwen3.8-27b-code -> SLOW band
+  22.29 steps/s vs baseline 36.31, floor 31.95 (-12%) -> slow
+  mem_busy 28% vs baseline 46% (+/-30%) -> inconsistent
+  109 steps / 256 tok in 4.89s (2.349 accepted/step); 80/80 card-samples under load across 4 cards
+  a restart draws a new band; see docs/rdna4-decode-bands.md

@@ -189,7 +189,7 @@ class MandatoryFlags(unittest.TestCase):
 
     def test_uses_the_pinned_image(self):
         self.assertIn(
-            "docker.io/vllm/vllm-openai-rocm:v0.26.0",
+            "docker.io/vllm/vllm-openai-rocm:v0.34.0",
             self.cmd,
             "the template must name the pinned image, not a local or stale one",
         )

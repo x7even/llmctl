@@ -1,0 +1,5 @@
+--rm -> (dropped), -d added
+--name llmstack-vllm-${MODEL_ID} -> llmstack-canary034-qwen3.6-35b-code
+vllm-cache mount -> canary-034
+triton-cache mount -> canary-034
+image docker.io/vllm/vllm-openai-rocm:v0.34.0 -> docker.io/vllm/vllm-openai-rocm:v0.34.0

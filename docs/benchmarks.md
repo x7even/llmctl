@@ -6,7 +6,8 @@ anything, depth against concurrency per profile, prefill behaviour, and the
 reproduction commands.
 
 All figures here and in the README's table were measured on the same hardware
-(4× R9700, 128 GB total), on the pinned `v0.26.0` image
+(4× R9700, 128 GB total), on the then-pinned `v0.26.0` image (history: the stack moved to
+`v0.34.0` in 2026-11, which is now the minimum; 0.34 figures are in `docs/upgrade-plan-2026-11.md`)
 (`qwen3.8-flash-next-vllm` on its nightly pin), with `--no-thinking`. Six of the
 seven `medium-256` rows come from a single campaign;
 `qwen3.8-flash-next-vllm`'s is a later spawn on the same day and harness, after

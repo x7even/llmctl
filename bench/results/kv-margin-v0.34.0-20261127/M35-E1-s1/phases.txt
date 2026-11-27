@@ -1,0 +1,13 @@
+1795770636.239 spawn spawn1 start
+1795770712.044 spawn spawn1 OK 75s
+1795770715.015 llmband presweep-spawn1 rc=2
+1795770721.058 idle-trace
+1795770731.143 poolfill start
+1795770904.841 poolfill end rc=0
+1795770904.938 checks start
+1795770908.643 checks toolcall+reasoning done
+1795770964.463 checks longgen end rc=0
+1795770964.532 soak start
+1795771569.672 soak end rc=0
+1795771572.428 llmband postsweep rc=2
+1795771572.470 done

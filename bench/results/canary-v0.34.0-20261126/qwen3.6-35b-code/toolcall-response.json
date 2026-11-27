@@ -1,0 +1,51 @@
+{
+ "id": "chatcmpl-a4b94fa62c11bc39",
+ "object": "chat.completion",
+ "created": 1795724622,
+ "model": "qwen3.6-35b-code",
+ "choices": [
+  {
+   "index": 0,
+   "message": {
+    "role": "assistant",
+    "content": null,
+    "refusal": null,
+    "audio": null,
+    "function_call": null,
+    "tool_calls": [
+     {
+      "id": "chatcmpl-tool-b59561904aa10dd4",
+      "type": "function",
+      "function": {
+       "name": "get_weather",
+       "arguments": "{\"city\": \"Paris\"}"
+      }
+     }
+    ],
+    "reasoning": "Thinking Process:\n1.  **Identify User Intent**: The user wants to know the current weather in Paris, France.\n2.  **Check Available Tools**: I have `get_weather(city, unit)`.\n3.  **Map Parameters**:\n   - `city`: \"Paris\" (or \"Paris, France\")\n   - `unit`: Optional, not specified by user, so I'll omit it or use default. The prompt says \"Use the available tool.\"\n4.  **Construct Tool Call**: `get_weather(city=\"Paris\")`\n5.  **Execute Tool Call**: Proceed to call the tool.\u2705\n"
+   },
+   "logprobs": null,
+   "finish_reason": "tool_calls",
+   "stop_reason": null,
+   "token_ids": null,
+   "routed_experts": null,
+   "weight_versions": null
+  }
+ ],
+ "service_tier": null,
+ "system_fingerprint": "vllm-0.34.0-tp4-ep-62be6491",
+ "usage": {
+  "prompt_tokens": 311,
+  "total_tokens": 473,
+  "completion_tokens": 162,
+  "completion_tokens_details": {
+   "reasoning_tokens": 134
+  }
+ },
+ "prompt_logprobs": null,
+ "prompt_token_ids": null,
+ "prompt_text": null,
+ "kv_transfer_params": null,
+ "ec_transfer_params": null,
+ "metrics": null
+}

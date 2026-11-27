@@ -1,0 +1,8 @@
+1795657749.693 spawn spawn1 start
+1795657815.397 spawn spawn1 OK 66s
+1795657820.247 llmband presweep-spawn1 rc=0
+1795657826.256 idle-trace
+1795657836.304 poolfill start
+1795658395.208 poolfill end rc=0
+1795658399.831 llmband postsweep rc=0
+1795658399.836 done

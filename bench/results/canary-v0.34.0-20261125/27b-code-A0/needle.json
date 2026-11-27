@@ -1,0 +1,145 @@
+{
+  "model": "qwen3.8-27b-code",
+  "url": "http://127.0.0.1:9234/v1/chat/completions",
+  "label": "canary v0.34.0 A0",
+  "words_per_token": 1.0002463661000247,
+  "retrieved": 15,
+  "total": 15,
+  "rows": [
+    {
+      "depth": 16384,
+      "depth_actual": 16390,
+      "position": 0.05,
+      "vault": "Perihelion",
+      "code": "QBV-2327-KLW",
+      "response": "QBV-2327-KLW",
+      "hit": true
+    },
+    {
+      "depth": 16384,
+      "depth_actual": 16387,
+      "position": 0.25,
+      "vault": "Borealis",
+      "code": "UJK-9864-EFK",
+      "response": "UJK-9864-EFK",
+      "hit": true
+    },
+    {
+      "depth": 16384,
+      "depth_actual": 16386,
+      "position": 0.5,
+      "vault": "Obsidian",
+      "code": "DZD-1234-WNN",
+      "response": "DZD-1234-WNN",
+      "hit": true
+    },
+    {
+      "depth": 16384,
+      "depth_actual": 16387,
+      "position": 0.75,
+      "vault": "Aldebaran",
+      "code": "PXK-3574-BNK",
+      "response": "PXK-3574-BNK",
+      "hit": true
+    },
+    {
+      "depth": 16384,
+      "depth_actual": 16385,
+      "position": 0.95,
+      "vault": "Yarrow",
+      "code": "EUB-6444-MKC",
+      "response": "EUB-6444-MKC",
+      "hit": true
+    },
+    {
+      "depth": 65536,
+      "depth_actual": 65550,
+      "position": 0.05,
+      "vault": "Zephyr",
+      "code": "PUR-4475-TFG",
+      "response": "PUR-4475-TFG",
+      "hit": true
+    },
+    {
+      "depth": 65536,
+      "depth_actual": 65551,
+      "position": 0.25,
+      "vault": "Kestrel",
+      "code": "ZBG-6208-YQC",
+      "response": "ZBG-6208-YQC",
+      "hit": true
+    },
+    {
+      "depth": 65536,
+      "depth_actual": 65548,
+      "position": 0.5,
+      "vault": "Juniper",
+      "code": "CLB-1984-FRY",
+      "response": "CLB-1984-FRY",
+      "hit": true
+    },
+    {
+      "depth": 65536,
+      "depth_actual": 65550,
+      "position": 0.75,
+      "vault": "Tanager",
+      "code": "UVS-5168-GXW",
+      "response": "UVS-5168-GXW",
+      "hit": true
+    },
+    {
+      "depth": 65536,
+      "depth_actual": 65551,
+      "position": 0.95,
+      "vault": "Meridian",
+      "code": "GZQ-3696-KWZ",
+      "response": "GZQ-3696-KWZ",
+      "hit": true
+    },
+    {
+      "depth": 130752,
+      "depth_actual": 130780,
+      "position": 0.05,
+      "vault": "Quarry",
+      "code": "HST-2359-PZP",
+      "response": "HST-2359-PZP",
+      "hit": true
+    },
+    {
+      "depth": 130752,
+      "depth_actual": 130782,
+      "position": 0.25,
+      "vault": "Dovetail",
+      "code": "APN-6579-SZG",
+      "response": "APN-6579-SZG",
+      "hit": true
+    },
+    {
+      "depth": 130752,
+      "depth_actual": 130783,
+      "position": 0.5,
+      "vault": "Riptide",
+      "code": "MVF-7422-EKV",
+      "response": "MVF-7422-EKV",
+      "hit": true
+    },
+    {
+      "depth": 130752,
+      "depth_actual": 130784,
+      "position": 0.75,
+      "vault": "Icarus",
+      "code": "AGZ-1741-AYU",
+      "response": "AGZ-1741-AYU",
+      "hit": true
+    },
+    {
+      "depth": 130752,
+      "depth_actual": 130782,
+      "position": 0.95,
+      "vault": "Riptide",
+      "code": "ACS-7321-KMK",
+      "response": "ACS-7321-KMK",
+      "hit": true
+    }
+  ]
+}

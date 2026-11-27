@@ -1,0 +1,51 @@
+{
+ "id": "chatcmpl-885f87c45f2f1811",
+ "object": "chat.completion",
+ "created": 1795728927,
+ "model": "qwen3.8-flash-next-vllm",
+ "choices": [
+  {
+   "index": 0,
+   "message": {
+    "role": "assistant",
+    "content": null,
+    "refusal": null,
+    "audio": null,
+    "function_call": null,
+    "tool_calls": [
+     {
+      "id": "chatcmpl-tool-bbee09221a4c39f4",
+      "type": "function",
+      "function": {
+       "name": "get_weather",
+       "arguments": "{\"city\": \"Paris, France\"}"
+      }
+     }
+    ],
+    "reasoning": "The user wants to know the current weather in Paris, France. I have a get_weather tool available that I can use for this. Let me call it with the city as \"Paris\". I'll use the default unit (celsius) since no unit was specified, but I could also specify celsius explicitly.\n"
+   },
+   "logprobs": null,
+   "finish_reason": "tool_calls",
+   "stop_reason": null,
+   "token_ids": null,
+   "routed_experts": null,
+   "weight_versions": null
+  }
+ ],
+ "service_tier": null,
+ "system_fingerprint": "vllm-0.34.0-tp4-ep-1d9f2182",
+ "usage": {
+  "prompt_tokens": 311,
+  "total_tokens": 405,
+  "completion_tokens": 94,
+  "completion_tokens_details": {
+   "reasoning_tokens": 64
+  }
+ },
+ "prompt_logprobs": null,
+ "prompt_token_ids": null,
+ "prompt_text": null,
+ "kv_transfer_params": null,
+ "ec_transfer_params": null,
+ "metrics": null
+}

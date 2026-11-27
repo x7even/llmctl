@@ -1,0 +1,22 @@
+K2-19.17 (--kv-cache-memory-bytes 20583859405 = 19.17 GiB per card, extensible off, no torch cap)
+Device-level allocator OOM during step (c) poolfill, 7.4 min after poolfill start (00:46:17 -> 00:53:44).
+The engine survived: the caching allocator freed cached blocks and retried (num_alloc_retries 0 -> 1 on TP0-2,
+num_ooms stays 0, no torch.OutOfMemoryError, 0 request errors, /health 200). Classified as FAIL anyway because
+device memory reached free 0: any non-torch allocation (RCCL, ROCr scratch, code objects) at that moment had nothing.
+
+Verbatim (server.log lines 2181 2182 2183 ):
+[rank1]:[W1126 00:53:44.928539868 HIPCachingAllocator.cpp:3934] memory allocation failed with OOM on device 1 while trying to allocate 335544320 bytes (free: 0, total: 34208743424).
+[rank0]:[W1126 00:53:44.928539868 HIPCachingAllocator.cpp:3934] memory allocation failed with OOM on device 0 while trying to allocate 335544320 bytes (free: 0, total: 34208743424).
+[rank2]:[W1126 00:53:44.930399812 HIPCachingAllocator.cpp:3934] memory allocation failed with OOM on device 2 while trying to allocate 335544320 bytes (free: 0, total: 34208743424).
+
+State at the event (host sysfs, 2 s samples; torch stats from the in-process tracer):
+  KV usage 0.856 -> 0.870, running 8, waiting 33
+  all 4 cards: torch allocated 27.72 GiB (19.17 KV + weights + live activations), torch reserved 30.49 GiB (+2.42 over idle 28.07)
+  device free just before: 0.336 / 0.321 / 0.321 / 0.367 GiB (03 / 83 / c3 / 23)
+  TP3 (0000:23:00.0) then grew reserved to 30.96 GiB without a retry -> device free 0.046 GiB (min of the whole run)
+  TP0-2 after the retry: reserved 29.27 GiB (released ~1.2 GiB of cache), reserved_peak 30.65 GiB
+  idle (before any workload): used 29.10 GiB, free 2.76 GiB, reserved 28.07, non-torch 1.03
+
+Note: run_arm.sh's server-errors.txt filter (OutOfMemory|out of memory|hipError|EngineDead|Traceback) does not
+match these "[W...] HIPCachingAllocator ... failed with OOM" lines; they were found by grep -c HIPCachingAllocator,
+which reads 0 on every other arm (K0, K1, K3-floor2, K3-floor1, K3-nvidia).

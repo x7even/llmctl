@@ -1,0 +1,76 @@
+{
+ "passed": 3,
+ "total": 14,
+ "fatal": null,
+ "timed_out": false,
+ "stderr_tail": "",
+ "tests": [
+  {
+   "test": "test_no_forbidden_imports",
+   "ok": true
+  },
+  {
+   "test": "test_leap_and_month_lengths",
+   "ok": true
+  },
+  {
+   "test": "test_ordinal_weekday",
+   "ok": false,
+   "err": "AssertionError: to_ordinal(1600, 1, 1)"
+  },
+  {
+   "test": "test_iso_week_vs_stdlib",
+   "ok": false,
+   "err": "AssertionError: iso_week(1950, 1, 1) = (1950, 1, 3), want (1949, 52, 7)"
+  },
+  {
+   "test": "test_from_iso_week_rules",
+   "ok": false,
+   "err": "AssertionError: iso_weeks_in_year(1) = 53"
+  },
+  {
+   "test": "test_add_days",
+   "ok": false,
+   "err": "AssertionError: add_days((5399, 5, 5),345) = (5400, 5, 16), want (5400, 4, 15)"
+  },
+  {
+   "test": "test_add_months_oracle",
+   "ok": true
+  },
+  {
+   "test": "test_parse_accepts",
+   "ok": false,
+   "err": "AssertionError: parse('1996-W01-1') = (1996, 1, 29), want (1996, 1, 1)"
+  },
+  {
+   "test": "test_parse_rejects",
+   "ok": false,
+   "err": "AssertionError: parse('2024-01-01\\n') returned (2024, 1, 1), expected ValueError"
+  },
+  {
+   "test": "test_format_date",
+   "ok": false,
+   "err": "AssertionError: format_date((1999, 1, 1), 'week') = '1999-W01-1', want '1998-W53-5'"
+  },
+  {
+   "test": "test_diff_rule",
+   "ok": false,
+   "err": "AssertionError: "
+  },
+  {
+   "test": "test_diff_oracle_and_identity",
+   "ok": false,
+   "err": "AssertionError: "
+  },
+  {
+   "test": "test_validation_and_types",
+   "ok": false,
+   "err": "OverflowError: result ordinal 3652090 out of range 1..3652059"
+  },
+  {
+   "test": "test_scale",
+   "ok": false,
+   "err": "AssertionError: "
+  }
+ ]
+}

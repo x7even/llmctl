@@ -1,0 +1,4 @@
+llmband: qwen3.8-27b-code -> FAST band
+  35.14 steps/s vs baseline 36.31, floor 31.95 (-12%) -> fast
+  mem_busy 44% vs baseline 46% (+/-30%) -> consistent
+  112 steps / 256 tok in 3.187s (2.286 accepted/step); 52/52 card-samples under load across 4 cards

@@ -1,0 +1,6 @@
+prefix wrapper not run by argv (done separately): __LLMSTACK_DIR__/scripts/llm-prestart --need-free-gib 80 --keep /mnt/models/llm/albucino/Qwen3.8-Flash-Next-W4A16-FP8PLE --
+--rm -> (dropped), -d added
+--name llmstack-vllm-${MODEL_ID} -> llmstack-canary034-qwen3.8-flash-next-vllm
+vllm-cache mount -> canary-034
+triton-cache mount -> canary-034
+image docker.io/vllm/vllm-openai-rocm:v0.34.0 -> docker.io/vllm/vllm-openai-rocm:v0.34.0

@@ -1,0 +1,271 @@
+=== stopped 2026-11-25T13:28:33+00:00 ===
+GPU: 0
+        USED_VRAM: 57 MB
+GPU: 1
+        USED_VRAM: 57 MB
+GPU: 2
+        USED_VRAM: 57 MB
+GPU: 3
+        USED_VRAM: 57 MB
+=== spawn1: 2026-11-25T13:28:33+00:00 arm=A2 HWQ=1 EXTRA='--attention-backend ROCM_ATTN' CAPTURE_JSON='' ===
+--- launch command (bash array, printf %q) ---
+podman run -d --replace --name llmstack-canary034-27b-code --device=/dev/kfd --device=/dev/dri --group-add keep-groups --security-opt seccomp=unconfined --security-opt apparmor=unconfined --ipc=private --shm-size=32g --network=host -v /mnt/models/llm:/models:ro -v ~/.local/share/llmstack/canary-034/vllm-cache:/root/.cache/vllm -v ~/.local/share/llmstack/canary-034/triton-cache:/root/.triton/cache -e HSA_ENABLE_SDMA=0 -e GPU_MAX_HW_QUEUES=1 -e TORCH_BLAS_PREFER_HIPBLASLT=1 --entrypoint= docker.io/vllm/vllm-openai-rocm:v0.34.0 vllm serve /models/Qwen3.8-27B-FP8 --host 127.0.0.1 --port 9234 --served-model-name qwen3.8-27b-code --dtype auto --tensor-parallel-size 4 --max-model-len 131072 --max-num-seqs 32 --max-num-batched-tokens 16384 --gpu-memory-utilization 0.95 --enable-prefix-caching --enable-chunked-prefill --trust-remote-code --reasoning-parser qwen3 --enable-auto-tool-choice --tool-call-parser qwen3_xml --default-chat-template-kwargs \{\"reasoning_effort\":\ \"medium\"\} --speculative-config \{\"method\":\ \"mtp\"\,\ \"num_speculative_tokens\":\ 2\} --cudagraph-capture-sizes 1 2 4 8 16 32 --attention-backend ROCM_ATTN 
+--- VRAM before ---
+GPU: 0
+        USED_VRAM: 57 MB
+GPU: 1
+        USED_VRAM: 57 MB
+GPU: 2
+        USED_VRAM: 57 MB
+GPU: 3
+        USED_VRAM: 57 MB
+startup status=OK; 'startup complete' at 202 s, /health ok at 202 s
+--- image ---
+ImageName=docker.io/vllm/vllm-openai-rocm:v0.34.0 Image=9a5f9af8f20f129a8f0ccbe6c78499a1d0db8ddb17caaa848bb09f04f139d2b1 ImageDigest=sha256:3cb773d23f063afa86291ef75773cdd486154ddea94c213300f4ed7cc42b7af1
+--- container Id / created ---
+d2c0ca4bbd8cf453272e736354ed13d6fb939f3121d2d7b6e38e2348fcd05613 2026-11-25 13:28:33.940049753 +0000 UTC
+--- argv ---
+["serve","/models/Qwen3.8-27B-FP8","--host","127.0.0.1","--port","9234","--served-model-name","qwen3.8-27b-code","--dtype","auto","--tensor-parallel-size","4","--max-model-len","131072","--max-num-seqs","32","--max-num-batched-tokens","16384","--gpu-memory-utilization","0.95","--enable-prefix-caching","--enable-chunked-prefill","--trust-remote-code","--reasoning-parser","qwen3","--enable-auto-tool-choice","--tool-call-parser","qwen3_xml","--default-chat-template-kwargs","{\"reasoning_effort\": \"medium\"}","--speculative-config","{\"method\": \"mtp\", \"num_speculative_tokens\": 2}","--cudagraph-capture-sizes","1","2","4","8","16","32","--attention-backend","ROCM_ATTN"]
+--- env (container) ---
+"HSA_NO_SCRATCH_RECLAIM=1"
+"HIP_PATH=/usr/local/lib/python3.12/dist-packages/_rocm_sdk_devel"
+"TORCH_BLAS_PREFER_HIPBLASLT=1"
+"GPU_MAX_HW_QUEUES=1"
+"PYTORCH_NVML_BASED_CUDA_CHECK=1"
+"ROCPROFILER_QUEUE_INTERPOSITION=0"
+"HIP_FORCE_DEV_KERNARG=1"
+"HIP_CLANG_PATH=/usr/local/lib/python3.12/dist-packages/_rocm_sdk_devel/lib/llvm/bin"
+"PYTORCH_ROCM_ARCH=gfx90a;gfx942;gfx950;gfx1100;gfx1101;gfx1200;gfx1201;gfx1150;gfx1151"
+"HSA_ENABLE_IPC_MODE_LEGACY=1"
+"HIP_DEVICE_LIB_PATH=/usr/local/lib/python3.12/dist-packages/_rocm_sdk_core/lib/llvm/amdgcn/bitcode"
+"HSA_ENABLE_SDMA=0"
+--- log: selected lines ---
+(APIServer pid=1) INFO 11-25 13:28:53 [startup.py:38]  ▄▄ ▄█ █     █     █ ▀▄▀ █  version 0.34.0
+(APIServer pid=1) INFO 11-25 13:28:53 [startup.py:96] non-default args: {'model_tag': '/models/Qwen3.8-27B-FP8', 'default_chat_template_kwargs': {'reasoning_effort': 'medium'}, 'enable_auto_tool_choice': True, 'tool_call_parser': 'qwen3_xml', 'host': '127.0.0.1', 'port': 9234, 'model': '/models/Qwen3.8-27B-FP8', 'trust_remote_code': True, 'max_model_len': 131072, 'served_model_name': ['qwen3.8-27b-code'], 'attention_backend': 'ROCM_ATTN', 'reasoning_parser': 'qwen3', 'tensor_parallel_size': 4, 'gpu_memory_utilization': 0.95, 'enable_prefix_caching': True, 'max_num_batched_tokens': 16384, 'max_num_seqs': 32, 'enable_chunked_prefill': True, 'cudagraph_capture_sizes': [1, 2, 4, 8, 16, 32], 'spe
+(APIServer pid=1) INFO 11-25 13:28:54 [model.py:761] Resolved architecture: Qwen3_5MTP
+(APIServer pid=1) INFO 11-25 13:28:54 [model.py:1041] Disabled mm_prefix attention mode because multimodal inputs are configuration-disabled. Attention backends without mm_prefix support may now be selected.
+(APIServer pid=1) WARNING 11-25 13:28:54 [config.py:94] Enabling num_speculative_tokens > 1 will run multiple times of forward on same MTP layer,which may result in lower acceptance rate
+(APIServer pid=1) INFO 11-25 13:28:54 [speculative.py:1478] Overriding draft model max model len from 262144 to 131072
+(APIServer pid=1) WARNING 11-25 13:28:54 [vllm.py:1581] Auto-disabled DeepGemm for model_type=qwen3_5_text on Blackwell. To disable DeepGemm globally, set VLLM_USE_DEEP_GEMM=0.
+(APIServer pid=1) WARNING 11-25 13:28:54 [vllm.py:2588] cudagraph_capture_sizes and max_cudagraph_capture_size are deprecated. Set the token counts of prefill CUDA graphs with prefill_cudagraph_capture_token_sizes or max_prefill_cudagraph_capture_tokens, and the request counts of decode CUDA graphs with decode_cudagraph_capture_request_sizes or max_decode_cudagraph_capture_requests.
+(APIServer pid=1) INFO 11-25 13:28:58 [numa_utils.py:575] Automatic NUMA binding unavailable on this host; starting unbound. Enable debug logging for the skip reason.
+(EngineCore pid=341) INFO 11-25 13:29:03 [core.py:153] Initializing a V1 LLM engine (v0.34.0) with config: model='/models/Qwen3.8-27B-FP8', speculative_config=SpeculativeConfig(method='mtp', model='/models/Qwen3.8-27B-FP8', num_spec_tokens=2), tokenizer='/models/Qwen3.8-27B-FP8', skip_tokenizer_init=False, tokenizer_mode=auto, revision=None, tokenizer_revision=None, trust_remote_code=True, dtype=torch.bfloat16, max_seq_len=131072, download_dir=None, load_format=auto, tensor_parallel_size=4, pipeline_parallel_size=1, data_parallel_size=1, decode_context_parallel_size=1, dcp_comm_backend=ag_rs, disable_custom_all_reduce=True, quantization=fp8, quantization_config=None, enforce_eager=False, aux
+W1125 13:29:09.816248     562 queue_controller.cpp:170] [queue-intercept] device-memory ring-buffer requested but profiling requires system-memory InterceptQueue; falling back to system-memory ring for agent 1309275136 (priority and CU-mask from the descriptor are not preserved)
+W1125 13:29:09.817646     561 queue_controller.cpp:170] [queue-intercept] device-memory ring-buffer requested but profiling requires system-memory InterceptQueue; falling back to system-memory ring for agent 1168444752 (priority and CU-mask from the descriptor are not preserved)
+W1125 13:29:09.817691     563 queue_controller.cpp:170] [queue-intercept] device-memory ring-buffer requested but profiling requires system-memory InterceptQueue; falling back to system-memory ring for agent 961072416 (priority and CU-mask from the descriptor are not preserved)
+W1125 13:29:09.819084     560 queue_controller.cpp:170] [queue-intercept] device-memory ring-buffer requested but profiling requires system-memory InterceptQueue; falling back to system-memory ring for agent 1064675120 (priority and CU-mask from the descriptor are not preserved)
+(Worker_TP0 pid=560) INFO 11-25 13:29:12 [rocm.py:526] Set FLASH_ATTENTION_TRITON_AMD_ENABLE=TRUE to enable Flash Attention Triton backend on RDNA.
+(Worker_TP0 pid=560) WARNING 11-25 13:29:12 [activation.py:816] [ROCm] PyTorch's native GELU with tanh approximation is unstable. Falling back to GELU(approximate='none').
+(Worker_TP0 pid=560) INFO 11-25 13:29:12 [mm_encoder_attention.py:372] Using AttentionBackendEnum.TORCH_SDPA for MMEncoderAttention.
+(Worker_TP0 pid=560) INFO 11-25 13:29:12 [qwen_gdn_linear_attn.py:891] GDN spec decode kernel: cuda
+(Worker_TP0 pid=560) INFO 11-25 13:29:12 [rocm.py:828] Using ROCM_ATTN backend (selected via --attention-backend).
+(Worker_TP0 pid=560) WARNING 11-25 13:29:12 [compilation.py:1514] Op 'sparse_attn_indexer' not present in model, enabling with '+sparse_attn_indexer' has no effect
+(Worker_TP1 pid=563) INFO 11-25 13:29:16 [model_runner.py:441] Model loading took 7.86 GiB memory and 4.854718 seconds
+(Worker_TP1 pid=563) INFO 11-25 13:29:16 [interface.py:1120] Setting attention block size to 800 tokens to ensure that attention page size is >= mamba page size.
+(Worker_TP1 pid=563) INFO 11-25 13:29:16 [interface.py:1144] Padding mamba page size by 0.88% to ensure that mamba page size and attention page size are exactly equal.
+(Worker_TP0 pid=560) INFO 11-25 13:29:16 [model_runner.py:441] Model loading took 7.86 GiB memory and 4.910198 seconds
+(Worker_TP0 pid=560) INFO 11-25 13:29:16 [torch_utils.py:301] Reducing Torch threads from 16 to 1 for serving. Set OMP_NUM_THREADS in the external environment to override.
+(Worker_TP0 pid=560) INFO 11-25 13:29:16 [interface.py:1120] Setting attention block size to 800 tokens to ensure that attention page size is >= mamba page size.
+(Worker_TP0 pid=560) INFO 11-25 13:29:16 [interface.py:1144] Padding mamba page size by 0.88% to ensure that mamba page size and attention page size are exactly equal.
+(Worker_TP3 pid=562) INFO 11-25 13:29:16 [model_runner.py:441] Model loading took 7.86 GiB memory and 4.924620 seconds
+(Worker_TP2 pid=561) INFO 11-25 13:29:16 [model_runner.py:441] Model loading took 7.86 GiB memory and 4.927443 seconds
+(Worker_TP2 pid=561) INFO 11-25 13:29:16 [interface.py:1120] Setting attention block size to 800 tokens to ensure that attention page size is >= mamba page size.
+(Worker_TP3 pid=562) INFO 11-25 13:29:16 [interface.py:1120] Setting attention block size to 800 tokens to ensure that attention page size is >= mamba page size.
+(Worker_TP2 pid=561) INFO 11-25 13:29:16 [interface.py:1144] Padding mamba page size by 0.88% to ensure that mamba page size and attention page size are exactly equal.
+(Worker_TP3 pid=562) INFO 11-25 13:29:16 [interface.py:1144] Padding mamba page size by 0.88% to ensure that mamba page size and attention page size are exactly equal.
+(EngineCore pid=341) INFO 11-25 13:29:16 [torch_utils.py:301] Reducing Torch threads from 16 to 1 for serving. Set OMP_NUM_THREADS in the external environment to override.
+(EngineCore pid=341) WARNING 11-25 13:29:16 [kv_cache_planning.py:583] Add 3 padding layers, may waste at most 6.25% KV cache memory
+(Worker_TP1 pid=563) INFO 11-25 13:29:23 [monitor.py:40] [backbone] Starting torch.compile
+(Worker_TP0 pid=560) INFO 11-25 13:29:23 [monitor.py:40] [backbone] Starting torch.compile
+(Worker_TP3 pid=562) INFO 11-25 13:29:23 [monitor.py:40] [backbone] Starting torch.compile
+(Worker_TP2 pid=561) INFO 11-25 13:29:23 [monitor.py:40] [backbone] Starting torch.compile
+(Worker_TP1 pid=563) INFO 11-25 13:29:34 [backends.py:1110] [backbone] Using cache directory: /root/.cache/vllm/torch_compile_cache/ed4a75c6b8/rank_1_0/backbone for vLLM's torch.compile
+(Worker_TP2 pid=561) INFO 11-25 13:29:34 [backends.py:1110] [backbone] Using cache directory: /root/.cache/vllm/torch_compile_cache/ed4a75c6b8/rank_2_0/backbone for vLLM's torch.compile
+(Worker_TP3 pid=562) INFO 11-25 13:29:34 [backends.py:1110] [backbone] Using cache directory: /root/.cache/vllm/torch_compile_cache/ed4a75c6b8/rank_3_0/backbone for vLLM's torch.compile
+(Worker_TP0 pid=560) INFO 11-25 13:29:34 [backends.py:1110] [backbone] Using cache directory: /root/.cache/vllm/torch_compile_cache/ed4a75c6b8/rank_0_0/backbone for vLLM's torch.compile
+(Worker_TP3 pid=562) INFO 11-25 13:29:50 [backends.py:421] [backbone] Compiling a graph for compile range (1, 16384) takes 15.28 s
+(Worker_TP0 pid=560) INFO 11-25 13:29:50 [backends.py:421] [backbone] Compiling a graph for compile range (1, 16384) takes 15.30 s
+(Worker_TP2 pid=561) INFO 11-25 13:29:50 [backends.py:421] [backbone] Compiling a graph for compile range (1, 16384) takes 15.46 s
+(Worker_TP1 pid=563) INFO 11-25 13:29:50 [backends.py:421] [backbone] Compiling a graph for compile range (1, 16384) takes 15.62 s
+(Worker_TP3 pid=562) INFO 11-25 13:29:56 [decorators.py:752] [backbone] saved AOT compiled function to /root/.cache/vllm/torch_compile_cache/torch_aot_compile/562fbe9ca5931c65e33a081b4834ada0105d04caefd62c65184b82c33a25adc9/rank_3_0/model
+(Worker_TP3 pid=562) INFO 11-25 13:29:56 [monitor.py:62] [backbone] torch.compile took 33.09 s in total
+(Worker_TP3 pid=562) WARNING 11-25 13:29:56 [fp8_utils.py:953] Using default W8A8 Block FP8 kernel config. Performance might be sub-optimal! Config file not found at /usr/local/lib/python3.12/dist-packages/vllm/model_executor/layers/quantization/utils/configs/N=4096,K=5120,device_name=AMD_Radeon_R9700,dtype=fp8_w8a8,block_shape=[128,128].json
+(Worker_TP0 pid=560) INFO 11-25 13:29:56 [decorators.py:752] [backbone] saved AOT compiled function to /root/.cache/vllm/torch_compile_cache/torch_aot_compile/562fbe9ca5931c65e33a081b4834ada0105d04caefd62c65184b82c33a25adc9/rank_0_0/model
+(Worker_TP0 pid=560) INFO 11-25 13:29:56 [monitor.py:62] [backbone] torch.compile took 33.14 s in total
+(Worker_TP0 pid=560) WARNING 11-25 13:29:56 [fp8_utils.py:953] Using default W8A8 Block FP8 kernel config. Performance might be sub-optimal! Config file not found at /usr/local/lib/python3.12/dist-packages/vllm/model_executor/layers/quantization/utils/configs/N=4096,K=5120,device_name=AMD_Radeon_R9700,dtype=fp8_w8a8,block_shape=[128,128].json
+(Worker_TP1 pid=563) INFO 11-25 13:29:56 [decorators.py:752] [backbone] saved AOT compiled function to /root/.cache/vllm/torch_compile_cache/torch_aot_compile/562fbe9ca5931c65e33a081b4834ada0105d04caefd62c65184b82c33a25adc9/rank_1_0/model
+(Worker_TP1 pid=563) INFO 11-25 13:29:56 [monitor.py:62] [backbone] torch.compile took 33.19 s in total
+(Worker_TP1 pid=563) WARNING 11-25 13:29:56 [fp8_utils.py:953] Using default W8A8 Block FP8 kernel config. Performance might be sub-optimal! Config file not found at /usr/local/lib/python3.12/dist-packages/vllm/model_executor/layers/quantization/utils/configs/N=4096,K=5120,device_name=AMD_Radeon_R9700,dtype=fp8_w8a8,block_shape=[128,128].json
+(Worker_TP2 pid=561) INFO 11-25 13:29:56 [decorators.py:752] [backbone] saved AOT compiled function to /root/.cache/vllm/torch_compile_cache/torch_aot_compile/562fbe9ca5931c65e33a081b4834ada0105d04caefd62c65184b82c33a25adc9/rank_2_0/model
+(Worker_TP2 pid=561) INFO 11-25 13:29:56 [monitor.py:62] [backbone] torch.compile took 33.23 s in total
+(Worker_TP2 pid=561) WARNING 11-25 13:29:56 [fp8_utils.py:953] Using default W8A8 Block FP8 kernel config. Performance might be sub-optimal! Config file not found at /usr/local/lib/python3.12/dist-packages/vllm/model_executor/layers/quantization/utils/configs/N=4096,K=5120,device_name=AMD_Radeon_R9700,dtype=fp8_w8a8,block_shape=[128,128].json
+(EngineCore pid=341) INFO 11-25 13:30:17 [shm_broadcast.py:878] No available shared memory broadcast block found in 60 seconds. This typically happens when some processes are hanging or doing some time-consuming work (e.g. compilation, weight/kv cache quantization).
+(Worker_TP0 pid=560) WARNING 11-25 13:30:39 [fp8_utils.py:953] Using default W8A8 Block FP8 kernel config. Performance might be sub-optimal! Config file not found at /usr/local/lib/python3.12/dist-packages/vllm/model_executor/layers/quantization/utils/configs/N=5120,K=1536,device_name=AMD_Radeon_R9700,dtype=fp8_w8a8,block_shape=[128,128].json
+(Worker_TP0 pid=560) WARNING 11-25 13:30:39 [fp8_utils.py:953] Using default W8A8 Block FP8 kernel config. Performance might be sub-optimal! Config file not found at /usr/local/lib/python3.12/dist-packages/vllm/model_executor/layers/quantization/utils/configs/N=8704,K=5120,device_name=AMD_Radeon_R9700,dtype=fp8_w8a8,block_shape=[128,128].json
+(Worker_TP0 pid=560) WARNING 11-25 13:30:39 [fp8_utils.py:953] Using default W8A8 Block FP8 kernel config. Performance might be sub-optimal! Config file not found at /usr/local/lib/python3.12/dist-packages/vllm/model_executor/layers/quantization/utils/configs/N=5120,K=4352,device_name=AMD_Radeon_R9700,dtype=fp8_w8a8,block_shape=[128,128].json
+(Worker_TP1 pid=563) WARNING 11-25 13:30:39 [fp8_utils.py:953] Using default W8A8 Block FP8 kernel config. Performance might be sub-optimal! Config file not found at /usr/local/lib/python3.12/dist-packages/vllm/model_executor/layers/quantization/utils/configs/N=5120,K=1536,device_name=AMD_Radeon_R9700,dtype=fp8_w8a8,block_shape=[128,128].json
+(Worker_TP1 pid=563) WARNING 11-25 13:30:39 [fp8_utils.py:953] Using default W8A8 Block FP8 kernel config. Performance might be sub-optimal! Config file not found at /usr/local/lib/python3.12/dist-packages/vllm/model_executor/layers/quantization/utils/configs/N=8704,K=5120,device_name=AMD_Radeon_R9700,dtype=fp8_w8a8,block_shape=[128,128].json
+(Worker_TP1 pid=563) WARNING 11-25 13:30:39 [fp8_utils.py:953] Using default W8A8 Block FP8 kernel config. Performance might be sub-optimal! Config file not found at /usr/local/lib/python3.12/dist-packages/vllm/model_executor/layers/quantization/utils/configs/N=5120,K=4352,device_name=AMD_Radeon_R9700,dtype=fp8_w8a8,block_shape=[128,128].json
+(Worker_TP3 pid=562) WARNING 11-25 13:30:39 [fp8_utils.py:953] Using default W8A8 Block FP8 kernel config. Performance might be sub-optimal! Config file not found at /usr/local/lib/python3.12/dist-packages/vllm/model_executor/layers/quantization/utils/configs/N=5120,K=1536,device_name=AMD_Radeon_R9700,dtype=fp8_w8a8,block_shape=[128,128].json
+(Worker_TP3 pid=562) WARNING 11-25 13:30:39 [fp8_utils.py:953] Using default W8A8 Block FP8 kernel config. Performance might be sub-optimal! Config file not found at /usr/local/lib/python3.12/dist-packages/vllm/model_executor/layers/quantization/utils/configs/N=8704,K=5120,device_name=AMD_Radeon_R9700,dtype=fp8_w8a8,block_shape=[128,128].json
+(Worker_TP3 pid=562) WARNING 11-25 13:30:39 [fp8_utils.py:953] Using default W8A8 Block FP8 kernel config. Performance might be sub-optimal! Config file not found at /usr/local/lib/python3.12/dist-packages/vllm/model_executor/layers/quantization/utils/configs/N=5120,K=4352,device_name=AMD_Radeon_R9700,dtype=fp8_w8a8,block_shape=[128,128].json
+(Worker_TP2 pid=561) WARNING 11-25 13:30:39 [fp8_utils.py:953] Using default W8A8 Block FP8 kernel config. Performance might be sub-optimal! Config file not found at /usr/local/lib/python3.12/dist-packages/vllm/model_executor/layers/quantization/utils/configs/N=5120,K=1536,device_name=AMD_Radeon_R9700,dtype=fp8_w8a8,block_shape=[128,128].json
+(Worker_TP2 pid=561) WARNING 11-25 13:30:39 [fp8_utils.py:953] Using default W8A8 Block FP8 kernel config. Performance might be sub-optimal! Config file not found at /usr/local/lib/python3.12/dist-packages/vllm/model_executor/layers/quantization/utils/configs/N=8704,K=5120,device_name=AMD_Radeon_R9700,dtype=fp8_w8a8,block_shape=[128,128].json
+(Worker_TP2 pid=561) WARNING 11-25 13:30:39 [fp8_utils.py:953] Using default W8A8 Block FP8 kernel config. Performance might be sub-optimal! Config file not found at /usr/local/lib/python3.12/dist-packages/vllm/model_executor/layers/quantization/utils/configs/N=5120,K=4352,device_name=AMD_Radeon_R9700,dtype=fp8_w8a8,block_shape=[128,128].json
+(Worker_TP2 pid=561) WARNING 11-25 13:30:40 [fp8_utils.py:953] Using default W8A8 Block FP8 kernel config. Performance might be sub-optimal! Config file not found at /usr/local/lib/python3.12/dist-packages/vllm/model_executor/layers/quantization/utils/configs/N=3584,K=5120,device_name=AMD_Radeon_R9700,dtype=fp8_w8a8,block_shape=[128,128].json
+(Worker_TP0 pid=560) WARNING 11-25 13:30:40 [fp8_utils.py:953] Using default W8A8 Block FP8 kernel config. Performance might be sub-optimal! Config file not found at /usr/local/lib/python3.12/dist-packages/vllm/model_executor/layers/quantization/utils/configs/N=3584,K=5120,device_name=AMD_Radeon_R9700,dtype=fp8_w8a8,block_shape=[128,128].json
+(Worker_TP3 pid=562) WARNING 11-25 13:30:40 [fp8_utils.py:953] Using default W8A8 Block FP8 kernel config. Performance might be sub-optimal! Config file not found at /usr/local/lib/python3.12/dist-packages/vllm/model_executor/layers/quantization/utils/configs/N=3584,K=5120,device_name=AMD_Radeon_R9700,dtype=fp8_w8a8,block_shape=[128,128].json
+(Worker_TP1 pid=563) WARNING 11-25 13:30:40 [fp8_utils.py:953] Using default W8A8 Block FP8 kernel config. Performance might be sub-optimal! Config file not found at /usr/local/lib/python3.12/dist-packages/vllm/model_executor/layers/quantization/utils/configs/N=3584,K=5120,device_name=AMD_Radeon_R9700,dtype=fp8_w8a8,block_shape=[128,128].json
+(Worker_TP0 pid=560) INFO 11-25 13:30:43 [monitor.py:40] [eagle_head] Starting torch.compile
+(Worker_TP2 pid=561) INFO 11-25 13:30:43 [monitor.py:40] [eagle_head] Starting torch.compile
+(Worker_TP1 pid=563) INFO 11-25 13:30:43 [monitor.py:40] [eagle_head] Starting torch.compile
+(Worker_TP3 pid=562) INFO 11-25 13:30:43 [monitor.py:40] [eagle_head] Starting torch.compile
+(Worker_TP0 pid=560) INFO 11-25 13:30:44 [backends.py:1110] [eagle_head] Using cache directory: /root/.cache/vllm/torch_compile_cache/ed4a75c6b8/rank_0_0/eagle_head for vLLM's torch.compile
+(Worker_TP1 pid=563) INFO 11-25 13:30:44 [backends.py:1110] [eagle_head] Using cache directory: /root/.cache/vllm/torch_compile_cache/ed4a75c6b8/rank_1_0/eagle_head for vLLM's torch.compile
+(Worker_TP2 pid=561) INFO 11-25 13:30:44 [backends.py:1110] [eagle_head] Using cache directory: /root/.cache/vllm/torch_compile_cache/ed4a75c6b8/rank_2_0/eagle_head for vLLM's torch.compile
+(Worker_TP3 pid=562) INFO 11-25 13:30:44 [backends.py:1110] [eagle_head] Using cache directory: /root/.cache/vllm/torch_compile_cache/ed4a75c6b8/rank_3_0/eagle_head for vLLM's torch.compile
+(Worker_TP2 pid=561) INFO 11-25 13:30:53 [backends.py:421] [eagle_head] Compiling a graph for compile range (1, 16384) takes 8.96 s
+(Worker_TP1 pid=563) INFO 11-25 13:30:53 [backends.py:421] [eagle_head] Compiling a graph for compile range (1, 16384) takes 8.97 s
+(Worker_TP0 pid=560) INFO 11-25 13:30:53 [backends.py:421] [eagle_head] Compiling a graph for compile range (1, 16384) takes 9.09 s
+(Worker_TP3 pid=562) INFO 11-25 13:30:53 [backends.py:421] [eagle_head] Compiling a graph for compile range (1, 16384) takes 9.05 s
+(Worker_TP1 pid=563) INFO 11-25 13:30:53 [decorators.py:752] [eagle_head] saved AOT compiled function to /root/.cache/vllm/torch_compile_cache/torch_aot_compile/8b7bc536dd55da456e5e7a85e72e0179b2edf5fc05e44f111ee0c1ce12d7023e/rank_1_0/model
+(Worker_TP1 pid=563) INFO 11-25 13:30:53 [monitor.py:62] [eagle_head] torch.compile took 9.89 s in total
+/usr/local/lib/python3.12/dist-packages/torch/distributed/c10d_logger.py:83: FutureWarning: `torch.distributed.all_gather_into_tensor` is deprecated. Please use `torch.distributed.all_gather_single` instead.
+(Worker_TP2 pid=561) INFO 11-25 13:30:53 [decorators.py:752] [eagle_head] saved AOT compiled function to /root/.cache/vllm/torch_compile_cache/torch_aot_compile/8b7bc536dd55da456e5e7a85e72e0179b2edf5fc05e44f111ee0c1ce12d7023e/rank_2_0/model
+(Worker_TP2 pid=561) INFO 11-25 13:30:53 [monitor.py:62] [eagle_head] torch.compile took 9.89 s in total
+/usr/local/lib/python3.12/dist-packages/torch/distributed/c10d_logger.py:83: FutureWarning: `torch.distributed.all_gather_into_tensor` is deprecated. Please use `torch.distributed.all_gather_single` instead.
+(Worker_TP0 pid=560) INFO 11-25 13:30:53 [decorators.py:752] [eagle_head] saved AOT compiled function to /root/.cache/vllm/torch_compile_cache/torch_aot_compile/8b7bc536dd55da456e5e7a85e72e0179b2edf5fc05e44f111ee0c1ce12d7023e/rank_0_0/model
+(Worker_TP0 pid=560) INFO 11-25 13:30:53 [monitor.py:62] [eagle_head] torch.compile took 10.03 s in total
+/usr/local/lib/python3.12/dist-packages/torch/distributed/c10d_logger.py:83: FutureWarning: `torch.distributed.all_gather_into_tensor` is deprecated. Please use `torch.distributed.all_gather_single` instead.
+(Worker_TP3 pid=562) INFO 11-25 13:30:53 [decorators.py:752] [eagle_head] saved AOT compiled function to /root/.cache/vllm/torch_compile_cache/torch_aot_compile/8b7bc536dd55da456e5e7a85e72e0179b2edf5fc05e44f111ee0c1ce12d7023e/rank_3_0/model
+(Worker_TP3 pid=562) INFO 11-25 13:30:53 [monitor.py:62] [eagle_head] torch.compile took 10.01 s in total
+/usr/local/lib/python3.12/dist-packages/torch/distributed/c10d_logger.py:83: FutureWarning: `torch.distributed.all_gather_into_tensor` is deprecated. Please use `torch.distributed.all_gather_single` instead.
+/usr/local/lib/python3.12/dist-packages/torch/distributed/c10d_logger.py:83: FutureWarning: `torch.distributed.all_gather_into_tensor` is deprecated. Please use `torch.distributed.all_gather_single` instead.
+/usr/local/lib/python3.12/dist-packages/torch/distributed/c10d_logger.py:83: FutureWarning: `torch.distributed.all_gather_into_tensor` is deprecated. Please use `torch.distributed.all_gather_single` instead.
+/usr/local/lib/python3.12/dist-packages/torch/distributed/c10d_logger.py:83: FutureWarning: `torch.distributed.all_gather_into_tensor` is deprecated. Please use `torch.distributed.all_gather_single` instead.
+/usr/local/lib/python3.12/dist-packages/torch/distributed/c10d_logger.py:83: FutureWarning: `torch.distributed.all_gather_into_tensor` is deprecated. Please use `torch.distributed.all_gather_single` instead.
+(Worker_TP0 pid=560) INFO 11-25 13:30:58 [gpu_worker.py:795] Available KV cache memory: 20.11 GiB
+(Worker_TP0 pid=560) INFO 11-25 13:30:58 [speculator.py:461] Attention backend(s) ROCM_ATTN cannot update draft decode metadata in place; falling back to rebuilding attention metadata eagerly.
+(Worker_TP0 pid=560) WARNING 11-25 13:31:30 [chunked_prefill_paged_decode.py:452] Cannot use ROCm custom paged attention kernel, falling back to Triton implementation.
+(Worker_TP2 pid=561) WARNING 11-25 13:31:33 [utils.py:420] lm_head skinny-GEMM guard engaged: weight (62080, 5120) (635699200 bytes) exceeds the weight cap 67108864 (VLLM_SKINNY_GEMM_MAX_WEIGHT_BYTES, or the hardware memory-side cache size when unset) at n=4; skipping wvSplitK for the generic GEMM fall-through
+(Worker_TP3 pid=562) WARNING 11-25 13:31:33 [utils.py:420] lm_head skinny-GEMM guard engaged: weight (62080, 5120) (635699200 bytes) exceeds the weight cap 67108864 (VLLM_SKINNY_GEMM_MAX_WEIGHT_BYTES, or the hardware memory-side cache size when unset) at n=4; skipping wvSplitK for the generic GEMM fall-through
+(Worker_TP1 pid=563) WARNING 11-25 13:31:33 [utils.py:420] lm_head skinny-GEMM guard engaged: weight (62080, 5120) (635699200 bytes) exceeds the weight cap 67108864 (VLLM_SKINNY_GEMM_MAX_WEIGHT_BYTES, or the hardware memory-side cache size when unset) at n=4; skipping wvSplitK for the generic GEMM fall-through
+(Worker_TP0 pid=560) WARNING 11-25 13:31:33 [utils.py:420] lm_head skinny-GEMM guard engaged: weight (62080, 5120) (635699200 bytes) exceeds the weight cap 67108864 (VLLM_SKINNY_GEMM_MAX_WEIGHT_BYTES, or the hardware memory-side cache size when unset) at n=4; skipping wvSplitK for the generic GEMM fall-through
+(Worker_TP2 pid=561) WARNING 11-25 13:31:33 [utils.py:420] lm_head skinny-GEMM guard engaged: weight (62080, 5120) (635699200 bytes) exceeds the weight cap 67108864 (VLLM_SKINNY_GEMM_MAX_WEIGHT_BYTES, or the hardware memory-side cache size when unset) at n=2; skipping wvSplitK for the generic GEMM fall-through
+(Worker_TP0 pid=560) WARNING 11-25 13:31:33 [utils.py:420] lm_head skinny-GEMM guard engaged: weight (62080, 5120) (635699200 bytes) exceeds the weight cap 67108864 (VLLM_SKINNY_GEMM_MAX_WEIGHT_BYTES, or the hardware memory-side cache size when unset) at n=2; skipping wvSplitK for the generic GEMM fall-through
+(Worker_TP3 pid=562) WARNING 11-25 13:31:33 [utils.py:420] lm_head skinny-GEMM guard engaged: weight (62080, 5120) (635699200 bytes) exceeds the weight cap 67108864 (VLLM_SKINNY_GEMM_MAX_WEIGHT_BYTES, or the hardware memory-side cache size when unset) at n=2; skipping wvSplitK for the generic GEMM fall-through
+(Worker_TP1 pid=563) WARNING 11-25 13:31:33 [utils.py:420] lm_head skinny-GEMM guard engaged: weight (62080, 5120) (635699200 bytes) exceeds the weight cap 67108864 (VLLM_SKINNY_GEMM_MAX_WEIGHT_BYTES, or the hardware memory-side cache size when unset) at n=2; skipping wvSplitK for the generic GEMM fall-through
+(Worker_TP2 pid=561) WARNING 11-25 13:31:33 [utils.py:420] lm_head skinny-GEMM guard engaged: weight (62080, 5120) (635699200 bytes) exceeds the weight cap 67108864 (VLLM_SKINNY_GEMM_MAX_WEIGHT_BYTES, or the hardware memory-side cache size when unset) at n=3; skipping wvSplitK for the generic GEMM fall-through
+(Worker_TP3 pid=562) WARNING 11-25 13:31:33 [utils.py:420] lm_head skinny-GEMM guard engaged: weight (62080, 5120) (635699200 bytes) exceeds the weight cap 67108864 (VLLM_SKINNY_GEMM_MAX_WEIGHT_BYTES, or the hardware memory-side cache size when unset) at n=3; skipping wvSplitK for the generic GEMM fall-through
+(Worker_TP0 pid=560) WARNING 11-25 13:31:33 [utils.py:420] lm_head skinny-GEMM guard engaged: weight (62080, 5120) (635699200 bytes) exceeds the weight cap 67108864 (VLLM_SKINNY_GEMM_MAX_WEIGHT_BYTES, or the hardware memory-side cache size when unset) at n=3; skipping wvSplitK for the generic GEMM fall-through
+(Worker_TP1 pid=563) WARNING 11-25 13:31:33 [utils.py:420] lm_head skinny-GEMM guard engaged: weight (62080, 5120) (635699200 bytes) exceeds the weight cap 67108864 (VLLM_SKINNY_GEMM_MAX_WEIGHT_BYTES, or the hardware memory-side cache size when unset) at n=3; skipping wvSplitK for the generic GEMM fall-through
+/usr/local/lib/python3.12/dist-packages/torch/distributed/c10d_logger.py:83: FutureWarning: `torch.distributed.all_gather_into_tensor` is deprecated. Please use `torch.distributed.all_gather_single` instead.
+/usr/local/lib/python3.12/dist-packages/torch/distributed/c10d_logger.py:83: FutureWarning: `torch.distributed.all_gather_into_tensor` is deprecated. Please use `torch.distributed.all_gather_single` instead.
+/usr/local/lib/python3.12/dist-packages/torch/distributed/c10d_logger.py:83: FutureWarning: `torch.distributed.all_gather_into_tensor` is deprecated. Please use `torch.distributed.all_gather_single` instead.
+/usr/local/lib/python3.12/dist-packages/torch/distributed/c10d_logger.py:83: FutureWarning: `torch.distributed.all_gather_into_tensor` is deprecated. Please use `torch.distributed.all_gather_single` instead.
+(Worker_TP3 pid=562) INFO 11-25 13:31:45 [speculator.py:119] Capturing autoregressive speculator...
+(Worker_TP1 pid=563) INFO 11-25 13:31:45 [speculator.py:119] Capturing autoregressive speculator...
+(Worker_TP0 pid=560) INFO 11-25 13:31:45 [speculator.py:119] Capturing autoregressive speculator...
+(Worker_TP2 pid=561) INFO 11-25 13:31:45 [speculator.py:119] Capturing autoregressive speculator...
+(Worker_TP1 pid=563) WARNING 11-25 13:31:45 [utils.py:420] lm_head skinny-GEMM guard engaged: weight (62080, 5120) (635699200 bytes) exceeds the weight cap 67108864 (VLLM_SKINNY_GEMM_MAX_WEIGHT_BYTES, or the hardware memory-side cache size when unset) at n=5; skipping wvSplitK for the generic GEMM fall-through
+(Worker_TP2 pid=561) WARNING 11-25 13:31:45 [utils.py:420] lm_head skinny-GEMM guard engaged: weight (62080, 5120) (635699200 bytes) exceeds the weight cap 67108864 (VLLM_SKINNY_GEMM_MAX_WEIGHT_BYTES, or the hardware memory-side cache size when unset) at n=5; skipping wvSplitK for the generic GEMM fall-through
+(Worker_TP0 pid=560) WARNING 11-25 13:31:45 [utils.py:420] lm_head skinny-GEMM guard engaged: weight (62080, 5120) (635699200 bytes) exceeds the weight cap 67108864 (VLLM_SKINNY_GEMM_MAX_WEIGHT_BYTES, or the hardware memory-side cache size when unset) at n=5; skipping wvSplitK for the generic GEMM fall-through
+(Worker_TP3 pid=562) WARNING 11-25 13:31:45 [utils.py:420] lm_head skinny-GEMM guard engaged: weight (62080, 5120) (635699200 bytes) exceeds the weight cap 67108864 (VLLM_SKINNY_GEMM_MAX_WEIGHT_BYTES, or the hardware memory-side cache size when unset) at n=5; skipping wvSplitK for the generic GEMM fall-through
+(Worker_TP0 pid=560) INFO 11-25 13:31:46 [model_runner.py:1216] Graph capturing finished in 5 secs, took 0.75 GiB
+(Worker_TP0 pid=560) INFO 11-25 13:31:46 [gpu_worker.py:1175] Free memory on device (31.19/31.86 GiB) on startup. Desired GPU memory utilization is (0.95, 30.27 GiB). Actual usage is 8.94 GiB for consumed memory (weights + non-torch), 1.21 GiB for peak activation, and 0.75 GiB for CUDAGraph memory. Replace gpu_memory_utilization config with `--kv-cache-memory=20632597709` (19.22 GiB) to fit into requested memory, or `--kv-cache-memory=21623711744` (20.14 GiB) to fully utilize gpu memory. Current kv cache memory in use is 20.11 GiB.
+(Worker_TP3 pid=562) INFO 11-25 13:31:46 [model_runner.py:1216] Graph capturing finished in 5 secs, took 1.23 GiB
+(Worker_TP3 pid=562) INFO 11-25 13:31:46 [gpu_worker.py:1175] Free memory on device (31.21/31.86 GiB) on startup. Desired GPU memory utilization is (0.95, 30.27 GiB). Actual usage is 8.92 GiB for consumed memory (weights + non-torch), 1.21 GiB for peak activation, and 1.23 GiB for CUDAGraph memory. Replace gpu_memory_utilization config with `--kv-cache-memory=20143961293` (18.76 GiB) to fit into requested memory, or `--kv-cache-memory=21151852544` (19.7 GiB) to fully utilize gpu memory. Current kv cache memory in use is 20.14 GiB.
+(Worker_TP2 pid=561) INFO 11-25 13:31:46 [model_runner.py:1216] Graph capturing finished in 5 secs, took 0.28 GiB
+(Worker_TP2 pid=561) INFO 11-25 13:31:46 [gpu_worker.py:1175] Free memory on device (31.18/31.86 GiB) on startup. Desired GPU memory utilization is (0.95, 30.27 GiB). Actual usage is 8.95 GiB for consumed memory (weights + non-torch), 1.21 GiB for peak activation, and 0.28 GiB for CUDAGraph memory. Replace gpu_memory_utilization config with `--kv-cache-memory=21133817037` (19.68 GiB) to fit into requested memory, or `--kv-cache-memory=22116542464` (20.6 GiB) to fully utilize gpu memory. Current kv cache memory in use is 20.11 GiB.
+(Worker_TP1 pid=563) INFO 11-25 13:31:46 [model_runner.py:1216] Graph capturing finished in 5 secs, took 1.23 GiB
+(Worker_TP1 pid=563) INFO 11-25 13:31:46 [gpu_worker.py:1175] Free memory on device (31.18/31.86 GiB) on startup. Desired GPU memory utilization is (0.95, 30.27 GiB). Actual usage is 8.95 GiB for consumed memory (weights + non-torch), 1.21 GiB for peak activation, and 1.23 GiB for CUDAGraph memory. Replace gpu_memory_utilization config with `--kv-cache-memory=20112504013` (18.73 GiB) to fit into requested memory, or `--kv-cache-memory=21095229440` (19.65 GiB) to fully utilize gpu memory. Current kv cache memory in use is 20.11 GiB.
+(Worker_TP0 pid=560) INFO 11-25 13:31:47 [extensible_kv_cache.py:693] Memory after warmup: 20.67 GiB free, 0.03 GiB committed to the KV cache, 2.25 GiB kept for transient activations (1.23 GiB allocated at peak, 2.25 GiB of torch reservation growth); 1190 KV cache blocks (15.43 GiB) fit within the requested 30.27 GiB. Torch may reserve up to 13.01 GiB.
+(Worker_TP3 pid=562) INFO 11-25 13:31:47 [extensible_kv_cache.py:693] Memory after warmup: 20.72 GiB free, 0.03 GiB committed to the KV cache, 2.25 GiB kept for transient activations (1.23 GiB allocated at peak, 2.25 GiB of torch reservation growth); 1192 KV cache blocks (15.46 GiB) fit within the requested 30.27 GiB. Torch may reserve up to 13.03 GiB.
+(Worker_TP2 pid=561) INFO 11-25 13:31:47 [extensible_kv_cache.py:693] Memory after warmup: 20.65 GiB free, 0.03 GiB committed to the KV cache, 2.25 GiB kept for transient activations (1.23 GiB allocated at peak, 2.25 GiB of torch reservation growth); 1187 KV cache blocks (15.4 GiB) fit within the requested 30.27 GiB. Torch may reserve up to 13.03 GiB.
+(Worker_TP1 pid=563) INFO 11-25 13:31:47 [extensible_kv_cache.py:693] Memory after warmup: 20.67 GiB free, 0.03 GiB committed to the KV cache, 2.25 GiB kept for transient activations (1.23 GiB allocated at peak, 2.25 GiB of torch reservation growth); 1190 KV cache blocks (15.43 GiB) fit within the requested 30.27 GiB. Torch may reserve up to 13.01 GiB.
+(EngineCore pid=341) INFO 11-25 13:31:47 [kv_cache_utils.py:1168] GPU KV cache size: 883,991 tokens, Maximum concurrency for 131,072 tokens per request: 6.74x
+(Worker_TP1 pid=563) INFO 11-25 13:31:47 [extensible_kv_cache.py:536] Extended KV cache to 1187 blocks (15.41 GiB).
+(Worker_TP2 pid=561) INFO 11-25 13:31:47 [extensible_kv_cache.py:536] Extended KV cache to 1187 blocks (15.41 GiB).
+(Worker_TP0 pid=560) INFO 11-25 13:31:47 [extensible_kv_cache.py:536] Extended KV cache to 1187 blocks (15.41 GiB).
+(Worker_TP3 pid=562) INFO 11-25 13:31:47 [extensible_kv_cache.py:536] Extended KV cache to 1187 blocks (15.41 GiB).
+(APIServer pid=1) WARNING 11-25 13:31:51 [model.py:1931] Default vLLM sampling parameters have been overridden by the model's `generation_config.json`: `{'temperature': 1.0, 'top_k': 20, 'top_p': 0.95}`. If this is not intended, please relaunch vLLM instance with `--generation-config vllm`.
+(APIServer pid=1) WARNING 11-25 13:31:51 [serving.py:320] The chat template requires system-first ordering, so inline system messages in /v1/messages requests (e.g. Claude Code's per-turn reminders) are merged into the leading system prompt. Each new one changes the prompt prefix, so the rest of the conversation misses the prefix cache. Pass a --chat-template that accepts non-leading system messages to avoid this.
+INFO:     Application startup complete.
+=== llmband (presweep) 2026-11-25T13:31:55+00:00 ===
+llmband: qwen3.8-27b-code -> FAST band
+  35.14 steps/s vs baseline 36.31, floor 31.95 (-12%) -> fast
+  mem_busy 44% vs baseline 46% (+/-30%) -> consistent
+  112 steps / 256 tok in 3.187s (2.286 accepted/step); 52/52 card-samples under load across 4 cards
+llmband exit code (presweep): 0
+=== metrics snapshot (presweep) 2026-11-25T13:32:06+00:00 ===
+vllm:spec_decode_num_drafts_total{engine="0",model_name="qwen3.8-27b-code"} 167.0
+vllm:spec_decode_num_draft_tokens_total{engine="0",model_name="qwen3.8-27b-code"} 334.0
+vllm:spec_decode_num_accepted_tokens_total{engine="0",model_name="qwen3.8-27b-code"} 215.0
+vllm:spec_decode_num_accepted_tokens_per_pos_total{engine="0",model_name="qwen3.8-27b-code",position="0"} 129.0
+vllm:spec_decode_num_accepted_tokens_per_pos_total{engine="0",model_name="qwen3.8-27b-code",position="1"} 86.0
+vllm:prompt_tokens_total{engine="0",model_name="qwen3.8-27b-code"} 96.0
+vllm:generation_tokens_total{engine="0",model_name="qwen3.8-27b-code"} 384.0
+=== sweep 2026-11-25T13:32:06+00:00 -> bench/baselines/qwen3.8-27b-code-v0.34.0-A2-peak-nothink-20261125.json ===
+sweep exit 0
+=== metrics snapshot (postsweep) 2026-11-25T13:46:13+00:00 ===
+vllm:spec_decode_num_drafts_total{engine="0",model_name="qwen3.8-27b-code"} 75953.0
+vllm:spec_decode_num_draft_tokens_total{engine="0",model_name="qwen3.8-27b-code"} 151906.0
+vllm:spec_decode_num_accepted_tokens_total{engine="0",model_name="qwen3.8-27b-code"} 76636.0
+vllm:spec_decode_num_accepted_tokens_per_pos_total{engine="0",model_name="qwen3.8-27b-code",position="0"} 49858.0
+vllm:spec_decode_num_accepted_tokens_per_pos_total{engine="0",model_name="qwen3.8-27b-code",position="1"} 26778.0
+vllm:prompt_tokens_total{engine="0",model_name="qwen3.8-27b-code"} 59876.0
+vllm:generation_tokens_total{engine="0",model_name="qwen3.8-27b-code"} 152724.0
+=== llmband (postsweep) 2026-11-25T13:46:13+00:00 ===
+llmband: qwen3.8-27b-code -> FAST band
+  34.83 steps/s vs baseline 36.31, floor 31.95 (-12%) -> fast
+  mem_busy 44% vs baseline 46% (+/-30%) -> consistent
+  112 steps / 256 tok in 3.215s (2.286 accepted/step); 56/56 card-samples under load across 4 cards
+llmband exit code (postsweep): 0
+=== metrics snapshot (presweep-rep2) 2026-11-25T13:46:19+00:00 ===
+vllm:spec_decode_num_drafts_total{engine="0",model_name="qwen3.8-27b-code"} 76120.0
+vllm:spec_decode_num_draft_tokens_total{engine="0",model_name="qwen3.8-27b-code"} 152240.0
+vllm:spec_decode_num_accepted_tokens_total{engine="0",model_name="qwen3.8-27b-code"} 76851.0
+vllm:spec_decode_num_accepted_tokens_per_pos_total{engine="0",model_name="qwen3.8-27b-code",position="0"} 49987.0
+vllm:spec_decode_num_accepted_tokens_per_pos_total{engine="0",model_name="qwen3.8-27b-code",position="1"} 26864.0
+vllm:prompt_tokens_total{engine="0",model_name="qwen3.8-27b-code"} 59972.0
+vllm:generation_tokens_total{engine="0",model_name="qwen3.8-27b-code"} 153108.0
+=== sweep 2026-11-25T13:46:19+00:00 -> bench/baselines/qwen3.8-27b-code-v0.34.0-A2-peak-nothink-20261125-rep2.json ===
+sweep exit 0
+=== metrics snapshot (postsweep-rep2) 2026-11-25T14:00:30+00:00 ===
+vllm:spec_decode_num_drafts_total{engine="0",model_name="qwen3.8-27b-code"} 152194.0
+vllm:spec_decode_num_draft_tokens_total{engine="0",model_name="qwen3.8-27b-code"} 304388.0
+vllm:spec_decode_num_accepted_tokens_total{engine="0",model_name="qwen3.8-27b-code"} 153957.0
+vllm:spec_decode_num_accepted_tokens_per_pos_total{engine="0",model_name="qwen3.8-27b-code",position="0"} 100167.0
+vllm:spec_decode_num_accepted_tokens_per_pos_total{engine="0",model_name="qwen3.8-27b-code",position="1"} 53790.0
+vllm:prompt_tokens_total{engine="0",model_name="qwen3.8-27b-code"} 119752.0
+vllm:generation_tokens_total{engine="0",model_name="qwen3.8-27b-code"} 306479.0
+=== llmband (postsweep-rep2) 2026-11-25T14:00:30+00:00 ===
+llmband: qwen3.8-27b-code -> FAST band
+  34.84 steps/s vs baseline 36.31, floor 31.95 (-12%) -> fast
+  mem_busy 44% vs baseline 46% (+/-30%) -> consistent
+  112 steps / 256 tok in 3.215s (2.286 accepted/step); 56/56 card-samples under load across 4 cards
+llmband exit code (postsweep-rep2): 0
+=== depth (full) 2026-11-25T14:00:35+00:00 metrics=http://127.0.0.1:9234/metrics ===
+depth cell c1 depths=2048,16384,65536,129984 conc=1 nonce=1795615236 -> bench/baselines/depth/qwen3.8-27b-code-v0.34.0-A2-depth-c1-prewarm-20261125.json
+depth c1 exit 0
+depth cell c8 depths=16384 conc=8 nonce=1795615237 -> bench/baselines/depth/qwen3.8-27b-code-v0.34.0-A2-depth-c8-prewarm-20261125.json
+depth c8 exit 0
+depth cell c4 depths=65536 conc=4 nonce=1795615238 -> bench/baselines/depth/qwen3.8-27b-code-v0.34.0-A2-depth-c4-prewarm-20261125.json
+depth c4 exit 0
+=== metrics snapshot (final) 2026-11-25T14:08:06+00:00 ===
+vllm:spec_decode_num_drafts_total{engine="0",model_name="qwen3.8-27b-code"} 153290.0
+vllm:spec_decode_num_draft_tokens_total{engine="0",model_name="qwen3.8-27b-code"} 306580.0
+vllm:spec_decode_num_accepted_tokens_total{engine="0",model_name="qwen3.8-27b-code"} 155286.0
+vllm:spec_decode_num_accepted_tokens_per_pos_total{engine="0",model_name="qwen3.8-27b-code",position="0"} 100964.0
+vllm:spec_decode_num_accepted_tokens_per_pos_total{engine="0",model_name="qwen3.8-27b-code",position="1"} 54322.0
+vllm:prompt_tokens_total{engine="0",model_name="qwen3.8-27b-code"} 1.346625e+06
+vllm:generation_tokens_total{engine="0",model_name="qwen3.8-27b-code"} 308930.0
+=== stopped 2026-11-25T14:08:19+00:00 ===
+GPU: 0
+        USED_VRAM: 57 MB
+GPU: 1
+        USED_VRAM: 57 MB
+GPU: 2
+        USED_VRAM: 57 MB
+GPU: 3
+        USED_VRAM: 57 MB

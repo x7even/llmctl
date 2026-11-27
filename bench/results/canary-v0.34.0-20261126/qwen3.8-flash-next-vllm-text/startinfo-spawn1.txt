@@ -1,0 +1,52 @@
+### startinfo spawn1 (qwen3.8-flash-next-vllm-text) 2026-11-26T22:06:06+00:00
+startup status=OK; 'startup complete' at 171 s, /health ok at 171 s
+version 0.34.0
+-- attention backend:
+-- resolved capture sizes:
+'cudagraph_capture_sizes': [1, 2, 4, 8]
+cudagraph_mode': <CUDAGraphMode.FULL_AND_PIECEWISE: (2
+decode_cudagraph_capture_request_sizes': [1, 2, 4, 8]
+prefill_cudagraph_capture_token_sizes': [1, 2, 4, 8]
+-- capture progress (first frame each):
+      1 Capturing CUDA graphs (FULL):   0%|          | 0/4
+      1 Capturing CUDA graphs (PIECEWISE):   0%|          | 0/4
+-- KV:
+APIServer INFO 11-26 22:03:34 [vllm.py:1429] Resolved Engram configuration: EngramConfig(cpu_offload=True, disk_offload=False, embedding_across_dp=False, dp_shared_memory=False, use_thp=False)
+EngineCore INFO 11-26 22:05:24 [kv_cache_planning.py:1466] Auto-fit max_model_len: full model context length 262144 fits in available KV cache memory (9.22 GiB GPU); the final length is set after CUDA graph capture and warmup
+EngineCore INFO 11-26 22:05:58 [kv_cache_planning.py:1458] Auto-fit max_model_len: using max_model_len=262144, which fits in the KV cache memory left after CUDA graph capture and warmup (5.04 GiB GPU).
+EngineCore INFO 11-26 22:05:58 [kv_cache_utils.py:1168] GPU KV cache size: 402,491 tokens, Maximum concurrency for 262,144 tokens per request: 1.54x
+EngineCore INFO 11-26 22:06:00 [vllm.py:1429] Resolved Engram configuration: EngramConfig(cpu_offload=True, disk_offload=False, embedding_across_dp=False, dp_shared_memory=False, use_thp=False)
+Worker_TP0_EP0 INFO 11-26 22:03:50 [ple_layer.py:283] Initialized AMD PLE embedding language_model.model.layers.1.ple.ple_embedding.ngram_embedding: quantization_config=INCConfig, quantization_method=Qwen4ExpPLEFp8EmbeddingMethod, weight_dtype=torch.float8_e4m3fn, weight_device=cpu, pinned=True
+Worker_TP0_EP0 INFO 11-26 22:05:24 [gpu_worker.py:795] Available KV cache memory: 9.23 GiB
+Worker_TP0_EP0 INFO 11-26 22:05:58 [extensible_kv_cache.py:536] Extended KV cache to 499 blocks (5.05 GiB).
+Worker_TP0_EP0 INFO 11-26 22:05:58 [extensible_kv_cache.py:693] Memory after warmup: 10.07 GiB free, 0.02 GiB committed to the KV cache, 2.01 GiB kept for transient activations (1.11 GiB allocated at peak, 2.01 GiB of torch reservation growth); 503 KV cache blocks (5.09 GiB) fit within the requested
+Worker_TP1_EP1 INFO 11-26 22:03:50 [ple_layer.py:283] Initialized AMD PLE embedding language_model.model.layers.1.ple.ple_embedding.ngram_embedding: quantization_config=INCConfig, quantization_method=Qwen4ExpPLEFp8EmbeddingMethod, weight_dtype=torch.float8_e4m3fn, weight_device=cpu, pinned=True
+Worker_TP1_EP1 INFO 11-26 22:05:58 [extensible_kv_cache.py:536] Extended KV cache to 499 blocks (5.05 GiB).
+Worker_TP1_EP1 INFO 11-26 22:05:58 [extensible_kv_cache.py:693] Memory after warmup: 10.05 GiB free, 0.02 GiB committed to the KV cache, 2.01 GiB kept for transient activations (1.11 GiB allocated at peak, 2.01 GiB of torch reservation growth); 500 KV cache blocks (5.06 GiB) fit within the requested
+Worker_TP2_EP2 INFO 11-26 22:03:50 [ple_layer.py:283] Initialized AMD PLE embedding language_model.model.layers.1.ple.ple_embedding.ngram_embedding: quantization_config=INCConfig, quantization_method=Qwen4ExpPLEFp8EmbeddingMethod, weight_dtype=torch.float8_e4m3fn, weight_device=cpu, pinned=True
+Worker_TP2_EP2 INFO 11-26 22:05:58 [extensible_kv_cache.py:536] Extended KV cache to 499 blocks (5.05 GiB).
+Worker_TP2_EP2 INFO 11-26 22:05:58 [extensible_kv_cache.py:693] Memory after warmup: 10.04 GiB free, 0.02 GiB committed to the KV cache, 2.01 GiB kept for transient activations (1.11 GiB allocated at peak, 2.01 GiB of torch reservation growth); 499 KV cache blocks (5.05 GiB) fit within the requested
+Worker_TP3_EP3 INFO 11-26 22:03:50 [ple_layer.py:283] Initialized AMD PLE embedding language_model.model.layers.1.ple.ple_embedding.ngram_embedding: quantization_config=INCConfig, quantization_method=Qwen4ExpPLEFp8EmbeddingMethod, weight_dtype=torch.float8_e4m3fn, weight_device=cpu, pinned=True
+Worker_TP3_EP3 INFO 11-26 22:05:58 [extensible_kv_cache.py:536] Extended KV cache to 499 blocks (5.05 GiB).
+Worker_TP3_EP3 INFO 11-26 22:05:58 [extensible_kv_cache.py:693] Memory after warmup: 10.12 GiB free, 0.02 GiB committed to the KV cache, 2.01 GiB kept for transient activations (1.11 GiB allocated at peak, 2.01 GiB of torch reservation growth); 507 KV cache blocks (5.13 GiB) fit within the requested
+-- graph capture / load:
+INFO 11-26 22:04:18 [model_runner.py:441] Model loading took 18.79 GiB memory and 30.401326 seconds
+INFO 11-26 22:04:18 [model_runner.py:441] Model loading took 18.79 GiB memory and 30.449540 seconds
+INFO 11-26 22:04:18 [model_runner.py:441] Model loading took 18.79 GiB memory and 30.615626 seconds
+INFO 11-26 22:04:20 [model_runner.py:441] Model loading took 18.79 GiB memory and 32.299511 seconds
+INFO 11-26 22:04:30 [backends.py:421] [backbone] Compiling a graph for compile range (1, 8192) takes 4.07 s
+INFO 11-26 22:04:31 [backends.py:421] [backbone] Compiling a graph for compile range (1, 8192) takes 4.53 s
+INFO 11-26 22:04:31 [backends.py:421] [backbone] Compiling a graph for compile range (1, 8192) takes 4.62 s
+INFO 11-26 22:05:57 [model_runner.py:1216] Graph capturing finished in 4 secs, took -0.41 GiB
+INFO 11-26 22:05:57 [model_runner.py:1216] Graph capturing finished in 4 secs, took -0.61 GiB
+INFO 11-26 22:05:57 [model_runner.py:1216] Graph capturing finished in 4 secs, took -0.76 GiB
+INFO 11-26 22:05:57 [model_runner.py:1216] Graph capturing finished in 4 secs, took -1.46 GiB
+-- warnings (deduped, counted):
+      8 /usr/local/lib/python3.12/dist-packages/torch/distributed/c10d_logger.py:83: FutureWarning: `torch.distributed.all_gather_into_tensor` is deprecated. Please use `torch.distributed.all_gather_single` instead.
+      4 WARNING [utils.py:420] lm_head skinny-GEMM guard engaged: weight (62080, 2560) (317849600 bytes) exceeds the weight cap 67108864 (VLLM_SKINNY_GEMM_MAX_WEIGHT_BYTES, or the hardware memory-side cache size when unset) at n=2; skipping wvSplitK for the generic GE
+      1 WARNING [vllm.py:2588] cudagraph_capture_sizes and max_cudagraph_capture_size are deprecated. Set the token counts of prefill CUDA graphs with prefill_cudagraph_capture_token_sizes or max_prefill_cudagraph_capture_tokens, and the request counts of decode CUDA 
+      1 WARNING [serving.py:320] The chat template requires system-first ordering, so inline system messages in /v1/messages requests (e.g. Claude Code's per-turn reminders) are merged into the leading system prompt. Each new one changes the prompt prefix, so the rest
+      1 WARNING [model.py:1931] Default vLLM sampling parameters have been overridden by the model's `generation_config.json`: `{'temperature': 1.0, 'top_k': 20, 'top_p': 0.95}`. If this is not intended, please relaunch vLLM instance with `--generation-config vllm`.
+      1 WARNING [fused_moe.py:1253] Using default MoE config. Performance might be sub-optimal! Config file not found at /usr/local/lib/python3.12/dist-packages/vllm/model_executor/layers/fused_moe/configs/E=128,N=640,device_name=AMD_Radeon_R9700,dtype=int4_w4a16.json
+      1 WARNING [compilation.py:1514] Op 'sparse_attn_indexer' not present in model, enabling with '+sparse_attn_indexer' has no effect
+-- errors:

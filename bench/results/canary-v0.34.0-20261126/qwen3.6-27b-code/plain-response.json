@@ -1,0 +1,41 @@
+{
+ "id": "chatcmpl-8fbfb882dd375223",
+ "object": "chat.completion",
+ "created": 1795725419,
+ "model": "qwen3.6-27b-code",
+ "choices": [
+  {
+   "index": 0,
+   "message": {
+    "role": "assistant",
+    "content": "Paris",
+    "refusal": null,
+    "audio": null,
+    "function_call": null,
+    "reasoning": null
+   },
+   "logprobs": null,
+   "finish_reason": "stop",
+   "stop_reason": null,
+   "token_ids": null,
+   "routed_experts": null,
+   "weight_versions": null
+  }
+ ],
+ "service_tier": null,
+ "system_fingerprint": "vllm-0.34.0-tp4-43248bec",
+ "usage": {
+  "prompt_tokens": 21,
+  "total_tokens": 23,
+  "completion_tokens": 2,
+  "completion_tokens_details": {
+   "reasoning_tokens": 0
+  }
+ },
+ "prompt_logprobs": null,
+ "prompt_token_ids": null,
+ "prompt_text": null,
+ "kv_transfer_params": null,
+ "ec_transfer_params": null,
+ "metrics": null
+}
