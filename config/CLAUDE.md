@@ -10,7 +10,7 @@ Do NOT rely on hot-reload; llama-swap caches the config in memory.
 
 ```yaml
 version: 2
-healthCheckTimeout: 300          # seconds; 300 is for warm starts
+healthCheckTimeout: 2100         # seconds; a ceiling, not the expected wait
 models:
   - name: <profile-id>           # used as OpenAI "model" field
     aliases:
@@ -23,9 +23,9 @@ models:
         cmd: podman run ...       # container launch command
 ```
 
-`healthCheckTimeout` applies globally (not per-model). 300 s is adequate for warm vLLM
-starts (~2–3 min). For a machine with no `.vllm-cache/` yet, watch manually with
-`llmctl logs <profile>` — the first compile takes ~18 min.
+`healthCheckTimeout` applies globally (not per-model). The shipped 2100 s is headroom: on
+v0.34.0 a cold compile took 171-217 s and warm starts 70-147 s. Watch a first start with
+`llmctl logs <profile>`.
 
 ---
 
@@ -143,6 +143,23 @@ mkdir -p .vllm-cache .triton-cache
 ```
 They are created automatically by `llmctl up` if missing.
 
+Three profiles carry one more mount, the **KV margin patch** (Phase 3c of
+`docs/upgrade-plan-2026-11.md`): `qwen3.8-27b-code`, `qwen3.8-flash-next-vllm` and
+`qwen3.6-35b-code`.
+
+```yaml
+-v __LLMSTACK_DIR__/config/patches/vllm-v0.34.0/extensible_kv_cache.py:/usr/local/lib/python3.12/dist-packages/vllm/v1/worker/extensible_kv_cache.py:ro
+```
+
+It is the v0.34.0 module plus upstream PR #69994 (expandable segments under the torch cap) and a
+1 GiB margin floor in place of ROCm's 3 GiB. Measured pools, stock → patched, same-day pairs:
+27B 891,289 → 1,005,399 (3 spawns per arm), Flash-Next ~394K → ~553K (2), 35B 1,088,989 →
+1,217,331 (1, no throughput sweep). Moderate confidence: 6 clean floor-1 spawns cannot rule out
+an intermittent failure. Do not set `PYTORCH_ALLOC_CONF` on these profiles. Do not copy the
+mount to another profile without its own spawns. Drop or re-validate it at the next image bump;
+`tests/test_configure.py` fails if it sits on any image other than v0.34.0, and pins the set of
+patched profiles. If it ever OOMs, set the floor to `2 << 30` in the file, then remove the mount.
+
 **Note**: llama-swap v223+ runs cmd without a shell — environment variables are NOT expanded.
 Use `__LLMSTACK_DIR__` as a placeholder in cmd strings; `scripts/configure` replaces it
 with the actual absolute path at setup time. Only `${MODEL_ID}` and `${PORT}` are
@@ -204,8 +221,10 @@ Measured same-day on this rig, 4× R9700 TP4, `qwen3.8-27b-code`, `v0.26.0`, `me
 
 The penalty is a fixed per-step tax, so it **amortises with batch size** — 1.89× on one stream,
 1.11× at conc=8. Do not quote "1.9×" for a saturated server. The flagged arm lands within 4% of
-the stored baseline at every level, so the flag itself costs nothing measurable. It is set on the three
-`qwen3.8-27b-*` profiles, and on the template at the bottom of `models.yaml`.
+the stored baseline at every level, so the flag itself costs nothing measurable. It was first set
+on the three `qwen3.8-27b-*` profiles and the template at the bottom of `models.yaml`; it is now
+on every vLLM profile (`gemma4-26b-fp8` last, 2026-11-27, unmeasured there), and
+`tests/test_configure.py` fails if a `vllm serve` profile lacks it.
 
 **It is now set on Flash-Next too, as of 2026-10-19. The 2026-10-18 pair that left it off
 measured honestly and drew the wrong conclusion**, for a reason worth keeping: its stock arm
@@ -403,11 +422,14 @@ Never reference the moving `:latest` tag — it silently changes what vLLM versi
 production runs. Version bumps happen deliberately: canary first, then update the
 pin everywhere at once (models.yaml, this file, root CLAUDE.md, scripts/) — see
 docs/upgrade-plan-2026-11.md (v0.34.0, every profile passed), docs/upgrade-plan-2026-07.md
-(v0.26.0) and docs/upgrade-plan-2026-10.md (v0.31.0 canary, held). Rollback: re-pin
-`docker.io/vllm/vllm-openai-rocm:v0.26.0`, which is still local and is the same image as
-`localhost/llmstack-vllm-rollback:v0.26.0`. Then put `--cudagraph-capture-sizes 1 2 4 8 16 32`
-back on the MTP profiles, and Flash-Next's nightly pin back on its two profiles (plan doc,
-Phase 4). On 0.34, responses carry `reasoning` in place of `reasoning_content`.
+(v0.26.0) and docs/upgrade-plan-2026-10.md (v0.31.0 canary, held).
+
+**Policy (2026-11-27): v0.34.0 is the minimum** for all new work, canaries, profiles and
+benchmarks. Older images are emergency rollback only, and 0.26-era analysis in this file is
+history. Emergency rollback: re-pin `docker.io/vllm/vllm-openai-rocm:v0.26.0`, which is still
+local and is the same image as `localhost/llmstack-vllm-rollback:v0.26.0`. Remove the KV margin
+patch mount from its three profiles. Put `--cudagraph-capture-sizes 1 2 4 8 16 32` back on the
+MTP profiles, and Flash-Next's nightly pin back on its two profiles (plan doc, Phase 4). On 0.34, responses carry `reasoning` in place of `reasoning_content`.
 
 ### MTP requires the draft head file
 

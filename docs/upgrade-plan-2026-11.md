@@ -1,8 +1,17 @@
 # vLLM 0.26.0 → 0.34.0 upgrade — November 2026
 
-**Status: in progress.** Phase 0 (fresh baseline of the stack as it runs today) finished
-2026-11-25. Phase 1 (bring-up on `v0.34.0`): `qwen3.8-27b-code` starts and is faster everywhere, and a
-12-sample quality re-check found no regression. Phase 2: every other profile passes on 0.34. Phase 4 (transition): the branch's `config/models.yaml` now pins `v0.34.0` on every vLLM profile; the live switch is pending. KV-margin tuning (Phase 3) is still open.
+**Status: switched; KV margin patch adopted on three profiles; open items listed at the end of
+Phase 4.** Phase 0 (fresh baseline of the stack as it ran) finished 2026-11-25. Phase 1
+(bring-up on `v0.34.0`): `qwen3.8-27b-code` starts and is faster everywhere, and a 12-sample
+quality re-check found no regression. Phase 2: every other profile passes on 0.34. Phase 3c:
+the KV margin backport (1 GiB floor) is adopted on `qwen3.8-27b-code`,
+`qwen3.8-flash-next-vllm` and `qwen3.6-35b-code`. Phase 4: every vLLM profile pins `v0.34.0`,
+and the live switch was done on 2026-11-27.
+
+**Policy (user, 2026-11-27): v0.34.0 is the minimum.** "At this point I don't think we should
+ever be using anything but 0.34 and above." Every new profile, canary and benchmark runs on
+v0.34.0 or newer. v0.26.0 and the old Flash-Next nightly are emergency rollback only. The 0.26
+figures in this document are history.
 
 Why now: the stack has been pinned to `v0.26.0` since the October 0.31.0 canary failed its gate
 (`docs/upgrade-plan-2026-10.md`). Eight releases have shipped since. New model support
@@ -615,6 +624,9 @@ its live arguments first. Flash-Next pools are compared with its 0.26-era nightl
 
 ### Recommendation
 
+**Adopted 2026-11-27** on the three profiles below (`config/models.yaml`; the tests in
+`tests/test_configure.py` pin the set). The text below is the recommendation as written.
+
 **Adopt the backport with a 1 GiB floor on `qwen3.8-27b-code`, `qwen3.8-flash-next-vllm` and
 `qwen3.6-35b-code`.** On each it recovers 10–27 points of the 0.26 pool.
 No spawn had a failure or an allocator
@@ -695,11 +707,45 @@ Logs are gitignored.
   the smaller KV pools and TRITON_ATTN with MTP.
 - **Not canaried on 0.34.** `qwen3.8-27b-fast` has the same weights and flags as `-code` apart
   from template defaults. `qwen3.6-35b-fast` carries `--kv-cache-dtype fp8`, which was left as is.
-  `gemma4-26b-fp8` has no `GPU_MAX_HW_QUEUES=1`, which was also left as is. Smoke-test all three
-  after the switch.
-- **Rollback.** Re-pin `docker.io/vllm/vllm-openai-rocm:v0.26.0`, which is still local and is the
-  same image as `localhost/llmstack-vllm-rollback:v0.26.0`. Restore the legacy capture flag on
-  the four MTP profiles, and Flash-Next's nightly pin. The 0.34 compile-cache key differs, so
+  `gemma4-26b-fp8` lacked `GPU_MAX_HW_QUEUES=1` at the transition; it gained it on 2026-11-27
+  (unmeasured on that profile). Smoke-test all three.
+- **Rollback (emergency only, per the 0.34-minimum policy).** Re-pin
+  `docker.io/vllm/vllm-openai-rocm:v0.26.0`, which is still local and is the same image as
+  `localhost/llmstack-vllm-rollback:v0.26.0`. **Remove the KV margin patch mount** from the three
+  patched profiles (it would shadow a different module on 0.26). Restore the legacy capture flag
+  on the four MTP profiles, and Flash-Next's nightly pin. The 0.34 compile-cache key differs, so
   the first 0.34 start is a cold compile (171-217 s measured; warm starts 70-147 s).
+- **KV margin patch fallbacks, in order:** floor 2 (set `KV_CACHE_MARGIN_FLOOR_BYTES = 2 << 30`
+  in the patch file; E2 measured 948,344 tokens on the 27B), then stock (remove the mount). Both
+  stay on v0.34.0.
 
-Live switch: pending.
+**Live switch: done 2026-11-27.** The live config moved to v0.34.0, with a backup of the
+previous live config kept. The default model (`qwen3.8-27b-code`) was verified through the
+router:
+- `llmband`: fast band, 40.03 steps/s against a 36.31 baseline.
+- `medium-256`: serial 77.1, conc=8 450.7, conc=32 1009.9 tok/s.
+- KV pool 891,289 tokens. That is stock sizing: the live check ran **before** the KV margin
+  patch was added. The patched pools above were measured with the canary file (the shipped file
+  minus two log lines). The shipped file itself has not booted yet.
+
+**Then (same day):** the KV margin patch mount went onto `qwen3.8-27b-code`,
+`qwen3.8-flash-next-vllm` and `qwen3.6-35b-code`, and `-e GPU_MAX_HW_QUEUES=1` went onto
+`gemma4-26b-fp8`. Tests now check that every vLLM profile carries the flag, and that a mounted
+patch sits on the image its directory names.
+
+### Open items
+
+- **The shipped patch file has booted only as its canary twin.** First start of each patched
+  profile: check the pool against Phase 3c (27B 1,005,399; Flash-Next ~553K; 35B 1,217,331).
+- **Profiles the patch was not tested on** stay stock: `qwen3.8-27b-think`, `qwen3.8-27b-fast`,
+  `qwen3.6-27b-code`, `qwen3.6-35b-128k-nomtp`, `qwen3.6-35b-fast`, `qwen3.8-flash-next-vllm-text`,
+  and both gemma4 vLLM profiles (where upstream's failures were).
+- **The patch's thin evidence.** 6 clean floor-1 spawns (15 across all arms) cannot rule out an
+  intermittent failure; the 35B had one spawn per arm and no throughput sweep.
+- **Not canaried on 0.34:** `qwen3.8-27b-fast`, `qwen3.6-35b-fast`, `gemma4-26b-fp8`.
+- **Upstream contribution not filed.** The R9700 measurements behind the floor and #69994 were
+  not posted upstream.
+- **35B routing by depth not re-decided.** On 0.34 `qwen3.6-35b-code` (MTP, TRITON_ATTN)
+  read 140.4 tok/s at 130K against 86.4 for `qwen3.6-35b-128k-nomtp`.
+- **The `--max-num-seqs` 3D-path threshold has not been re-read for 0.34** (it was 32 on 0.26;
+  it may be lower, around 16, untested).

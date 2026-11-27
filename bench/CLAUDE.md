@@ -394,7 +394,7 @@ python3 bench/concurrent_bench.py \
   --prompt all \
   --no-thinking \
   --requests 16 \
-  --save bench/baselines/qwen3.8-27b-code-v0.26.0-nothink.json
+  --save bench/baselines/qwen3.8-27b-code-v0.34.0-nothink-$(date +%Y%m%d).json
 ```
 
 ### Quick sanity check
@@ -469,7 +469,7 @@ level gives stable statistics. 32 is better for publication-quality comparisons.
 ### Note what's different in the filename
 
 ```
-qwen3.8-27b-code-v0.26.0-nothink.json     ← good
+qwen3.8-27b-code-v0.34.0-nothink.json     ← good
 qwen3.8-27b-code.json                      ← ambiguous
 ```
 
@@ -477,8 +477,9 @@ The image pin is not optional. `band_audit.py` only compares files within one pr
 one pin — comparing across pins would report a version regression as a slow-band draw — so a
 baseline whose name omits the pin can never be audited. Six files committed on 2026-10-19 had
 to be renamed for exactly this reason, and the rename is what revealed that the 2026-10-05
-`qwen3.6-27b-code` baseline was a slow-band record. Flash-Next's pin is its nightly SHA
-(`-nightly-8cbd5d0-`).
+`qwen3.6-27b-code` baseline was a slow-band record. Flash-Next's files before 2026-11 carry its
+old nightly SHA (`-nightly-8cbd5d0-`); since then every profile is on `-v0.34.0-`, the minimum
+for new baselines (policy 2026-11-27).
 
 ---
 
@@ -510,7 +511,7 @@ to be renamed for exactly this reason, and the rename is what revealed that the 
 **MTP effect:** Multi-Token Prediction boosts tok/s mainly at conc ≥ 4. At conc=1,
 MTP overhead can slightly reduce serial tok/s if the draft hit rate is low.
 
-**Expected baselines for `qwen3.8-27b-code` (medium-256, vLLM 0.26.0, no-thinking, MTP, 32 req/level):**
+**Expected baselines for `qwen3.8-27b-code` — history: vLLM 0.26.0 (medium-256, no-thinking, MTP, 32 req/level).** On v0.34.0 the profile reads 75.4 serial / 455.9 conc=8 / 991.2 conc=32 at `--requests 128` (root `CLAUDE.md`), and the live-switch check read 77.1 / 450.7 / 1009.9.
 
 | conc | tok/s |
 |------|-------|
@@ -537,7 +538,8 @@ bench/baselines/<profile-id>-<version>[-<variant>].json
 
 Examples:
 ```
-qwen3.8-27b-code-v0.26.0-nothink.json      ← main baseline
+qwen3.8-27b-code-v0.34.0-nothink.json      ← main baseline (current pin)
+qwen3.8-27b-code-v0.26.0-nothink.json      ← previous pin, history
 qwen3.6-35b-code-v0.22.1-nothink.json      ← previous-generation reference
 qwen3.6-35b-awq-v0.20.0-nothink.json       ← archived profile, kept for history
 ```
@@ -545,7 +547,7 @@ qwen3.6-35b-awq-v0.20.0-nothink.json       ← archived profile, kept for histor
 Commit new baselines alongside the config or code change that motivated them.
 Commit message should include the headline numbers, e.g.:
 ```
-bench: add qwen3.8-27b-code vLLM 0.26.0 baseline (conc=8: 361 tok/s)
+bench: add qwen3.8-27b-code vLLM 0.34.0 baseline (conc=8: 456 tok/s)
 ```
 
 ---

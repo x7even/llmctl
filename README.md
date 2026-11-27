@@ -4,7 +4,7 @@ OpenAI-compatible LLM serving stack for **concurrent agent use**.
 Designed for: Claude Code · OpenCode · MCP testing · agent frameworks · raw API clients.
 
 Reference hardware: 1–4× AMD Radeon AI PRO R9700 (gfx1201, 32 GB each) — `scripts/configure` auto-detects your GPU count and patches the config accordingly. See [Hardware compatibility](#hardware-compatibility) for details.  
-Backends: **vLLM 0.26.0** (FP8/AWQ/safetensors, PagedAttention, high concurrency) + **llama-server Vulkan** (GGUF models)  
+Backends: **vLLM 0.34.0** (FP8/AWQ/safetensors, PagedAttention, high concurrency; 0.34.0 is the minimum, older images are emergency rollback only) + **llama-server Vulkan** (GGUF models)  
 Router: **llama-swap** — one OpenAI endpoint, models loaded on demand by the `model` field
 
 ---
@@ -126,8 +126,13 @@ See `docs/models.md` for benchmark data, architecture details, and tuning notes.
 campaign. For the 0.34 figures, see the labelled v0.34.0 table in `CLAUDE.md` and
 `docs/upgrade-plan-2026-11.md`. Each is one spawn per profile, 2026-11-25/26, at
 `--requests 128`. For example, `qwen3.8-27b-code` reads 456 tok/s at conc=8 and 991 at
-conc=32, and `qwen3.6-35b-code` 1563 at conc=32. Two other changes come with 0.34: KV pools
-are 13-36% smaller, and responses use `reasoning` in place of `reasoning_content`.
+conc=32, and `qwen3.6-35b-code` 1563 at conc=32. Two other changes come with 0.34: stock KV
+pools are 13-36% smaller, and responses use `reasoning` in place of `reasoning_content`. Three
+profiles win most of that pool back with a KV margin patch (a backport of upstream PR #69994 plus
+a 1 GiB margin floor): `qwen3.8-27b-code` 891,289 → 1,005,399 tokens, `qwen3.8-flash-next-vllm`
+~394K → ~553K, `qwen3.6-35b-code` 1,088,989 → 1,217,331 (Phase 3c of the plan doc; moderate
+confidence, few spawns). **Policy since 2026-11-27: v0.34.0 is the minimum for all new work;**
+the 0.26 table below is history.
 
 Best-case aggregate decode throughput, run-averaged over each cell.
 `concurrent_bench.py --prompt medium-256 --no-thinking`: a 41-word prompt with
