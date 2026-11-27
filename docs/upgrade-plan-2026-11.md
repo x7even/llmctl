@@ -558,7 +558,8 @@ were sampled every 2 s. `llmband` read **fast** on every spawn.
 - Memory outside torch's allocator did not grow on any spawn, as in Phase 3a.
 - Preemptions (0–12 per spawn) all came from the pool fill, which is built to cause them, and
   appeared in every arm.
-- The soak's longest token gap was ~5.2 s on every arm: chunked-prefill pauses, not arm-specific.
+- The soak's longest token gap was 5.16–5.25 s on every spawn: chunked-prefill pauses, not
+  arm-specific. Gaps over 5 s per spawn: S3 28 / 18 / 32, E2 21 / 12 / 18, E1 5 / 13 / 13.
 - Throughput is unchanged. The sweep cells are inside spawn-to-spawn spread. Prewarmed depth
   cells (S3 / E2 / E1): 130K×1 74.7 / 80.2 / 70.8; 64K×4 170.7 / 169.7 / 170.9; 16K×8
   309.2 / 323.8 / 309.4 tok/s.
@@ -593,15 +594,20 @@ its live arguments first. Flash-Next pools are compared with its 0.26-era nightl
 - On Flash-Next, E1 leaves 0.5 GiB less free VRAM than stock (2.40 vs 2.88 GiB). This is the
   one place E1 is tighter than the shipped config. Torch's headroom under the cap is still
   0.92 GiB, with no retries.
+- `llmband` returned undecided (exit 2) on every Step 2 spawn, because these profiles have no
+  baseline. Neither arm looks like a slow draw, but that is inferred:
+  - Flash-Next serial was 60.6 on both arms, against 60.8 in Phase 2.
+  - The 35B long generations ran at 584.6 and 590.1 tok/s.
 - The soak request counts differ between spawns (58–88 on Flash-Next) because the long/short
   mix is random. Stock spawn 2 (25.3 tok/s) was as slow as E1 spawn 1 (24.1), so this is mix,
   not arm.
 - **35B: +128K tokens (+11.8 %), and E1 leaves *more* free VRAM than stock** (3.89 vs 3.28
   GiB).
-  - The torch cap fell only 1.19 GiB (16.51 → 15.32 GiB). So the pool gained ~1.2 GiB per
-    rank, not the full 2 GiB.
-  - The reason: at floor 1 the 35B's margin is set by the 0.75 × transient-peak term, not by
-    the floor.
+  - The extended KV went from 12.05 to 13.47 GiB on rank 0, a gain of 1.42 GiB, not the full
+    2 GiB. The torch cap fell 1.19 GiB (16.51 → 15.32 GiB).
+  - Both spawns logged 2.67 GiB of torch reservation growth at warmup. 0.75 × 2.67 ≈ 2.0 GiB,
+    so at floor 1 the 35B's margin is probably set by that term, not by the floor. This is
+    inferred from the log figures: the log does not print the margin itself.
   - Meanwhile expandable segments removed 1.9 GiB of reserved growth, more than the pool took.
   - One spawn per arm; the rest was cut for budget. The S3 fill
   happened to preempt nothing and E1's preempted 10 times, with KV usage at ~1.0 on both; the
@@ -653,8 +659,14 @@ and capture sizes untouched; no KV dtype change):
 - A second 35B spawn per arm (cut for budget).
 - Repeated cold starts at the rate upstream used (20 per arm).
 
-Data: `bench/results/kv-margin-v0.34.0-20261127/`. Each spawn directory has `spawnsum.json`,
-traces, argv, provenance and stress outputs. Logs are gitignored.
+Data: `bench/results/kv-margin-v0.34.0-20261127/`. Each spawn directory has:
+- `spawnsum.json`;
+- the torch and host memory traces;
+- `argv-changes.txt`, the argv diff against the live config. The raw `argv.bin` is not
+  committed, because it contains absolute paths;
+- provenance and the stress outputs.
+
+Logs are gitignored.
 
 ## Phase 4 — transition (2026-11-27)
 
